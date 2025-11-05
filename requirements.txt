@@ -1,0 +1,25 @@
+# Core Framework
+flet>=0.24.0
+
+# Database
+pandas>=2.1.0
+
+# Telegram API
+pyrogram>=2.0.106
+tgcrypto>=1.2.5
+
+# Firebase Authentication
+firebase-admin>=6.2.0
+
+# Export Libraries
+xlsxwriter>=3.1.9
+reportlab>=4.0.7
+Pillow>=10.1.0
+
+# Utilities
+python-dotenv>=1.0.0
+cryptography>=41.0.5
+
+# Build
+pyinstaller>=6.1.0
+

@@ -1,0 +1,67 @@
+"""
+Statistic card component for dashboard.
+"""
+
+import flet as ft
+from ui.theme import theme_manager
+
+
+class StatCard(ft.Container):
+    """A card displaying a statistic with icon."""
+    
+    def __init__(
+        self,
+        title: str,
+        value: str,
+        icon: str,
+        color: str = None
+    ):
+        self.title = title
+        self.value_text = value
+        self.icon = icon
+        self.color = color or theme_manager.primary_color
+        
+        super().__init__(
+            content=ft.Row([
+                ft.Container(
+                    content=ft.Icon(
+                        name=icon,
+                        size=40,
+                        color=ft.colors.WHITE
+                    ),
+                    bgcolor=self.color,
+                    border_radius=theme_manager.corner_radius,
+                    padding=15,
+                    width=70,
+                    height=70,
+                    alignment=ft.alignment.center
+                ),
+                ft.Container(width=15),
+                ft.Column([
+                    ft.Text(
+                        title,
+                        size=14,
+                        color=theme_manager.text_secondary_color
+                    ),
+                    ft.Text(
+                        value,
+                        size=28,
+                        weight=ft.FontWeight.BOLD,
+                        color=theme_manager.text_color
+                    )
+                ], spacing=5, alignment=ft.MainAxisAlignment.CENTER)
+            ], alignment=ft.MainAxisAlignment.START),
+            bgcolor=theme_manager.surface_color,
+            border=ft.border.all(1, theme_manager.border_color),
+            border_radius=theme_manager.corner_radius,
+            padding=20,
+            expand=True
+        )
+    
+    def update_value(self, new_value: str):
+        """Update the displayed value."""
+        self.value_text = new_value
+        # Update the text in the column
+        self.content.controls[2].controls[1].value = new_value
+        self.update()
+

@@ -17,6 +17,7 @@
   "refresh": "Refresh",
   "settings": "Settings",
   "logout": "Logout",
+  "logout_confirm": "Are you sure you want to logout?",
   "login": "Login",
   "email": "Email",
   "password": "Password",

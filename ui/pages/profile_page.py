@@ -167,7 +167,7 @@ class ProfilePage:
         dialog_manager.show_confirmation_dialog(
             page=self.page,
             title=theme_manager.t("logout"),
-            message="Are you sure you want to logout?",
+            message=theme_manager.t("logout_confirm"),
             on_confirm=confirm_logout,
             confirm_text=theme_manager.t("yes"),
             cancel_text=theme_manager.t("cancel"),

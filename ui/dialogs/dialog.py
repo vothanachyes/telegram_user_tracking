@@ -90,6 +90,9 @@ class DialogManager:
         def handle_confirm(confirm_e):
             """Handle confirmation."""
             confirm_dialog.open = False
+            # Clear page.dialog to ensure proper cleanup
+            if page.dialog == confirm_dialog:
+                page.dialog = None
             page.update()
             on_confirm(confirm_e)
         
@@ -97,6 +100,9 @@ class DialogManager:
             """Handle cancellation."""
             # Close confirmation dialog
             confirm_dialog.open = False
+            # Clear page.dialog if this is the current dialog
+            if page.dialog == confirm_dialog:
+                page.dialog = None
             page.update()
             
             # Restore main dialog if provided (for nested dialogs)

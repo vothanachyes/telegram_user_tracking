@@ -1,0 +1,82 @@
+"""
+License cache manager.
+"""
+
+from typing import Optional
+from database.managers.base import BaseDatabaseManager, _parse_datetime
+from database.models.auth import UserLicenseCache
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class LicenseManager(BaseDatabaseManager):
+    """Manages license cache operations."""
+    
+    def save_license_cache(self, license_cache: UserLicenseCache) -> Optional[int]:
+        """Save or update license cache."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("""
+                    INSERT INTO user_license_cache 
+                    (user_email, license_tier, expiration_date, max_devices, max_groups, last_synced, is_active)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                    ON CONFLICT(user_email) DO UPDATE SET
+                        license_tier = excluded.license_tier,
+                        expiration_date = excluded.expiration_date,
+                        max_devices = excluded.max_devices,
+                        max_groups = excluded.max_groups,
+                        last_synced = CURRENT_TIMESTAMP,
+                        is_active = excluded.is_active,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (
+                    license_cache.user_email,
+                    license_cache.license_tier,
+                    license_cache.expiration_date,
+                    license_cache.max_devices,
+                    license_cache.max_groups,
+                    license_cache.is_active
+                ))
+                conn.commit()
+                return cursor.lastrowid
+        except Exception as e:
+            logger.error(f"Error saving license cache: {e}")
+            return None
+    
+    def get_license_cache(self, user_email: str) -> Optional[UserLicenseCache]:
+        """Get license cache by user email."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM user_license_cache WHERE user_email = ?",
+                (user_email,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return UserLicenseCache(
+                    id=row['id'],
+                    user_email=row['user_email'],
+                    license_tier=row['license_tier'],
+                    expiration_date=_parse_datetime(row['expiration_date']),
+                    max_devices=row['max_devices'],
+                    max_groups=row['max_groups'],
+                    last_synced=_parse_datetime(row['last_synced']),
+                    is_active=bool(row['is_active']),
+                    created_at=_parse_datetime(row['created_at']),
+                    updated_at=_parse_datetime(row['updated_at'])
+                )
+            return None
+    
+    def delete_license_cache(self, user_email: str) -> bool:
+        """Delete license cache for a user."""
+        try:
+            with self.get_connection() as conn:
+                conn.execute(
+                    "DELETE FROM user_license_cache WHERE user_email = ?",
+                    (user_email,)
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error deleting license cache: {e}")
+            return False
+

@@ -1,0 +1,66 @@
+"""
+Telegram credentials manager.
+"""
+
+from typing import Optional, List
+from database.managers.base import BaseDatabaseManager, _parse_datetime
+from database.models.telegram import TelegramCredential
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class TelegramCredentialManager(BaseDatabaseManager):
+    """Manages Telegram credentials operations."""
+    
+    def save_telegram_credential(self, credential: TelegramCredential) -> Optional[int]:
+        """Save or update Telegram credential."""
+        try:
+            with self.get_connection() as conn:
+                # If set as default, unset all others
+                if credential.is_default:
+                    conn.execute("UPDATE telegram_credentials SET is_default = 0")
+                
+                cursor = conn.execute("""
+                    INSERT INTO telegram_credentials 
+                    (phone_number, session_string, is_default, last_used)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(phone_number) DO UPDATE SET
+                        session_string = excluded.session_string,
+                        is_default = excluded.is_default,
+                        last_used = CURRENT_TIMESTAMP
+                """, (
+                    credential.phone_number,
+                    credential.session_string,
+                    credential.is_default
+                ))
+                conn.commit()
+                return cursor.lastrowid
+        except Exception as e:
+            logger.error(f"Error saving telegram credential: {e}")
+            return None
+    
+    def get_telegram_credentials(self) -> List[TelegramCredential]:
+        """Get all saved Telegram credentials."""
+        with self.get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT * FROM telegram_credentials 
+                ORDER BY is_default DESC, last_used DESC
+            """)
+            return [TelegramCredential(
+                id=row['id'],
+                phone_number=row['phone_number'],
+                session_string=row['session_string'],
+                is_default=bool(row['is_default']),
+                last_used=_parse_datetime(row['last_used']),
+                created_at=_parse_datetime(row['created_at'])
+            ) for row in cursor.fetchall()]
+    
+    def get_default_credential(self) -> Optional[TelegramCredential]:
+        """Get default Telegram credential."""
+        credentials = self.get_telegram_credentials()
+        for cred in credentials:
+            if cred.is_default:
+                return cred
+        return credentials[0] if credentials else None
+

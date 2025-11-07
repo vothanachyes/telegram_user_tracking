@@ -2,7 +2,8 @@
 Database package.
 """
 
-from database.db_manager import DatabaseManager
+# Import from new locations
+from database.managers import DatabaseManager
 from database.models import (
     AppSettings, TelegramCredential, TelegramGroup, TelegramUser,
     Message, MediaFile, DeletedMessage, DeletedUser

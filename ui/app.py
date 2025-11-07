@@ -7,6 +7,7 @@ import logging
 import asyncio
 from typing import Optional
 from ui.theme import theme_manager
+from ui.dialogs import dialog_manager
 from ui.pages import LoginPage
 from ui.dialogs.fetch_data_dialog import FetchDataDialog
 from database.db_manager import DatabaseManager
@@ -213,8 +214,6 @@ class TelegramUserTrackingApp:
     def _show_license_expired_dialog(self):
         """Show dialog when license is expired."""
         def contact_admin(e):
-            dialog.open = False
-            self.page.update()
             self.router.navigate_to("about")
             # Switch to pricing tab if available
             if (self.router.content_area and 
@@ -222,26 +221,24 @@ class TelegramUserTrackingApp:
                 self.router.content_area.content.tabs.selected_index = 1
                 self.page.update()
         
-        dialog = ft.AlertDialog(
-            title=ft.Text(theme_manager.t("license_expired")),
-            content=ft.Text(theme_manager.t("contact_admin_to_upgrade")),
-            actions=[
-                ft.TextButton(
-                    theme_manager.t("close"),
-                    on_click=lambda e: setattr(dialog, 'open', False) or self.page.update()
-                ),
-                ft.ElevatedButton(
-                    theme_manager.t("contact_admin"),
-                    on_click=contact_admin,
-                    bgcolor=theme_manager.primary_color,
-                    color=ft.Colors.WHITE
-                )
-            ]
-        )
+        # Create actions
+        actions = [
+            ft.TextButton(theme_manager.t("close")),
+            ft.ElevatedButton(
+                theme_manager.t("contact_admin"),
+                on_click=contact_admin,
+                bgcolor=theme_manager.primary_color,
+                color=ft.Colors.WHITE
+            )
+        ]
         
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        # Show simple dialog using centralized manager
+        dialog_manager.show_simple_dialog(
+            page=self.page,
+            title=theme_manager.t("license_expired"),
+            message=theme_manager.t("contact_admin_to_upgrade"),
+            actions=actions
+        )
 
 
 def main(page: ft.Page):

@@ -87,8 +87,9 @@ class ThemeManager:
     
     @property
     def primary_color(self) -> str:
-        """Get primary color."""
-        return COLORS["primary"]
+        """Get primary color (theme-aware)."""
+        # Use lighter color for dark mode to ensure visibility
+        return COLORS["secondary"] if self.is_dark else COLORS["primary"]
     
     @property
     def background_color(self) -> str:
@@ -320,25 +321,6 @@ class ThemeManager:
         """Show an info toast notification."""
         self.show_toast(page, message, "info", duration)
     
-    def show_dialog(
-        self,
-        page: ft.Page,
-        title: str,
-        content: ft.Control,
-        actions: Optional[list] = None
-    ):
-        """Show a dialog."""
-        dialog = ft.AlertDialog(
-            title=ft.Text(title),
-            content=content,
-            actions=actions or [],
-            actions_alignment=ft.MainAxisAlignment.END
-        )
-        page.dialog = dialog
-        dialog.open = True
-        page.update()
-
-
 # Global theme manager instance
 theme_manager = ThemeManager()
 

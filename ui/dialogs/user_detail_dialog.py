@@ -6,6 +6,7 @@ import flet as ft
 from typing import Callable, Optional
 from datetime import datetime
 from ui.theme import theme_manager
+from ui.dialogs import dialog_manager
 from database.models import TelegramUser
 from database.db_manager import DatabaseManager
 
@@ -284,6 +285,14 @@ class UserDetailDialog(ft.AlertDialog):
         """Delete user's profile photo."""
         import os
         
+        if not self.user.profile_photo_path:
+            if self.page:
+                theme_manager.show_toast_warning(
+                    self.page,
+                    theme_manager.t("no_profile_photo")
+                )
+            return
+        
         def confirm_delete_photo(confirm_e):
             try:
                 # Delete the file if it exists
@@ -295,10 +304,11 @@ class UserDetailDialog(ft.AlertDialog):
                 self.user.updated_at = datetime.now()
                 self.db_manager.save_user(self.user)
                 
-                # Show success toast
-                if self.page:
+                # Get page for toast
+                page = dialog_manager._get_page_from_event(confirm_e, getattr(self, 'page', None))
+                if page:
                     theme_manager.show_toast_success(
-                        self.page,
+                        page,
                         theme_manager.t("profile_photo_deleted")
                     )
                 
@@ -306,51 +316,29 @@ class UserDetailDialog(ft.AlertDialog):
                 if self.on_update_callback:
                     self.on_update_callback()
                 
-                # Close confirmation dialog
-                confirm_dialog.open = False
-                
                 # Close main dialog
                 self._close_dialog(e)
             except Exception as ex:
-                if self.page:
+                # Get page for error toast
+                page = dialog_manager._get_page_from_event(confirm_e, getattr(self, 'page', None))
+                if page:
                     theme_manager.show_toast_error(
-                        self.page,
+                        page,
                         f"{theme_manager.t('delete_error')}: {str(ex)}"
                     )
         
-        def cancel_delete_photo(cancel_e):
-            confirm_dialog.open = False
-            if self.page:
-                self.page.update()
-        
-        if not self.user.profile_photo_path:
-            if self.page:
-                theme_manager.show_toast_warning(
-                    self.page,
-                    theme_manager.t("no_profile_photo")
-                )
-            return
-        
-        # Confirmation dialog
-        confirm_dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text(theme_manager.t("confirm_delete")),
-            content=ft.Text(theme_manager.t("delete_profile_photo_confirm")),
-            actions=[
-                ft.TextButton(theme_manager.t("cancel"), on_click=cancel_delete_photo),
-                ft.TextButton(
-                    theme_manager.t("delete"),
-                    on_click=confirm_delete_photo,
-                    style=ft.ButtonStyle(color=ft.Colors.ORANGE)
-                ),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
+        # Show confirmation dialog using centralized manager
+        dialog_manager.show_confirmation_dialog(
+            page=getattr(self, 'page', None),
+            title=theme_manager.t("confirm_delete"),
+            message=theme_manager.t("delete_profile_photo_confirm"),
+            on_confirm=confirm_delete_photo,
+            confirm_text=theme_manager.t("delete"),
+            cancel_text=theme_manager.t("cancel"),
+            confirm_color=ft.Colors.ORANGE,
+            main_dialog=self,  # Restore this dialog on cancel
+            event=e
         )
-        
-        if self.page:
-            self.page.dialog = confirm_dialog
-            confirm_dialog.open = True
-            self.page.update()
     
     def _delete_user(self, e):
         """Delete (soft delete) the user."""
@@ -359,10 +347,11 @@ class UserDetailDialog(ft.AlertDialog):
                 # Soft delete the user
                 self.db_manager.soft_delete_user(self.user.user_id)
                 
-                # Show success toast
-                if self.page:
+                # Get page for toast
+                page = dialog_manager._get_page_from_event(confirm_e, getattr(self, 'page', None))
+                if page:
                     theme_manager.show_toast_success(
-                        self.page,
+                        page,
                         theme_manager.t("delete_success")
                     )
                 
@@ -370,41 +359,27 @@ class UserDetailDialog(ft.AlertDialog):
                 if self.on_delete_callback:
                     self.on_delete_callback()
                 
-                # Close confirmation dialog
-                confirm_dialog.open = False
-                
                 # Close main dialog
                 self._close_dialog(e)
             except Exception as ex:
-                if self.page:
+                # Get page for error toast
+                page = dialog_manager._get_page_from_event(confirm_e, getattr(self, 'page', None))
+                if page:
                     theme_manager.show_toast_error(
-                        self.page,
+                        page,
                         f"{theme_manager.t('delete_error')}: {str(ex)}"
                     )
         
-        def cancel_delete(cancel_e):
-            confirm_dialog.open = False
-            if self.page:
-                self.page.update()
-        
-        # Confirmation dialog
-        confirm_dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text(theme_manager.t("confirm_delete")),
-            content=ft.Text(theme_manager.t("delete_user_confirm")),
-            actions=[
-                ft.TextButton(theme_manager.t("cancel"), on_click=cancel_delete),
-                ft.TextButton(
-                    theme_manager.t("delete"),
-                    on_click=confirm_delete,
-                    style=ft.ButtonStyle(color=ft.Colors.RED)
-                ),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
+        # Show confirmation dialog using centralized manager
+        dialog_manager.show_confirmation_dialog(
+            page=getattr(self, 'page', None),
+            title=theme_manager.t("confirm_delete"),
+            message=theme_manager.t("delete_user_confirm"),
+            on_confirm=confirm_delete,
+            confirm_text=theme_manager.t("delete"),
+            cancel_text=theme_manager.t("cancel"),
+            confirm_color=ft.Colors.RED,
+            main_dialog=self,  # Restore this dialog on cancel
+            event=e
         )
-        
-        if self.page:
-            self.page.dialog = confirm_dialog
-            confirm_dialog.open = True
-            self.page.update()
 

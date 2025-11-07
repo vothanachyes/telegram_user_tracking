@@ -6,6 +6,7 @@ import flet as ft
 import logging
 from typing import Callable, Optional
 from ui.theme import theme_manager
+from ui.dialogs import dialog_manager
 from services.auth_service import auth_service
 from services.license_service import LicenseService
 from database.db_manager import DatabaseManager
@@ -21,7 +22,6 @@ class ProfilePage:
     def __init__(self, page: ft.Page, on_logout: Callable[[], None], db_manager: Optional[DatabaseManager] = None):
         self.page = page
         self.on_logout = on_logout
-        self.logout_dialog: Optional[ft.AlertDialog] = None
         
         # Initialize license service if db_manager provided
         self.license_service = None
@@ -143,10 +143,6 @@ class ProfilePage:
         def confirm_logout(confirm_event):
             logger.info("=== CONFIRM LOGOUT CLICKED ===")
             try:
-                # Close dialog first
-                self.logout_dialog.open = False
-                self.page.update()
-                
                 # Perform logout
                 logger.info("Calling auth_service.logout()")
                 logout_result = auth_service.logout()
@@ -166,26 +162,18 @@ class ProfilePage:
             except Exception as ex:
                 logger.error(f"Logout error: {ex}", exc_info=True)
         
-        def cancel_logout(cancel_event):
-            logger.info("=== CANCEL LOGOUT CLICKED ===")
-            self.logout_dialog.open = False
-            self.page.update()
-        
-        # Create and show confirmation dialog
+        # Show confirmation dialog using centralized manager
         logger.info("Creating confirmation dialog")
-        self.logout_dialog = ft.AlertDialog(
-            title=ft.Text(theme_manager.t("logout")),
-            content=ft.Text("Are you sure you want to logout?"),
-            actions=[
-                ft.TextButton(theme_manager.t("cancel"), on_click=cancel_logout),
-                ft.TextButton(theme_manager.t("yes"), on_click=confirm_logout),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END
+        dialog_manager.show_confirmation_dialog(
+            page=self.page,
+            title=theme_manager.t("logout"),
+            message="Are you sure you want to logout?",
+            on_confirm=confirm_logout,
+            confirm_text=theme_manager.t("yes"),
+            cancel_text=theme_manager.t("cancel"),
+            confirm_color=theme_manager.primary_color,
+            event=e
         )
-        
-        self.page.dialog = self.logout_dialog
-        self.logout_dialog.open = True
-        self.page.update()
         logger.info("Dialog shown")
     
     def _build_license_status_card(self) -> ft.Container:

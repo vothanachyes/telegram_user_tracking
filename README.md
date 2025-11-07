@@ -80,6 +80,32 @@ python3 build.py
 
 The executable will be created in the `dist/` directory.
 
+## Testing
+
+Run the test suite using pytest:
+
+```bash
+pytest tests/
+```
+
+This will run all unit and integration tests for login and licensing functionality. The test suite includes:
+
+- **Unit Tests** - Tests for `AuthService` and `LicenseService` with mocked dependencies
+- **Integration Tests** - End-to-end tests for login flow and licensing enforcement
+
+To run specific test suites:
+
+```bash
+# Unit tests only
+pytest tests/unit/
+
+# Integration tests only
+pytest tests/integration/
+
+# Specific test file
+pytest tests/unit/test_auth_service.py
+```
+
 ## Usage
 
 1. **Login** - Authenticate with your Firebase email and password

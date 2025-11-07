@@ -6,6 +6,7 @@ import flet as ft
 from typing import Callable, Optional
 from datetime import datetime
 from ui.theme import theme_manager
+from ui.dialogs import dialog_manager
 from database.models import Message, TelegramUser
 from database.db_manager import DatabaseManager
 from utils.helpers import format_datetime
@@ -233,10 +234,12 @@ class MessageDetailDialog(ft.AlertDialog):
                 # Soft delete the message
                 self.db_manager.soft_delete_message(self.message.message_id, self.message.group_id)
                 
-                # Show success message
-                if self.page:
+                # Get page for snackbar
+                page = dialog_manager._get_page_from_event(confirm_e, getattr(self, 'page', None))
+                if page:
+                    # Show success message
                     theme_manager.show_snackbar(
-                        self.page,
+                        page,
                         theme_manager.t("delete_success"),
                         bgcolor=ft.Colors.GREEN
                     )
@@ -245,42 +248,28 @@ class MessageDetailDialog(ft.AlertDialog):
                 if self.on_delete_callback:
                     self.on_delete_callback()
                 
-                # Close confirmation dialog
-                confirm_dialog.open = False
-                
                 # Close main dialog
                 self._close_dialog(e)
             except Exception as ex:
-                if self.page:
+                # Get page for error snackbar
+                page = dialog_manager._get_page_from_event(confirm_e, getattr(self, 'page', None))
+                if page:
                     theme_manager.show_snackbar(
-                        self.page,
+                        page,
                         f"{theme_manager.t('delete_error')}: {str(ex)}",
                         bgcolor=ft.Colors.RED
                     )
         
-        def cancel_delete(cancel_e):
-            confirm_dialog.open = False
-            if self.page:
-                self.page.update()
-        
-        # Confirmation dialog
-        confirm_dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text(theme_manager.t("confirm_delete")),
-            content=ft.Text(theme_manager.t("delete_message_confirm")),
-            actions=[
-                ft.TextButton(theme_manager.t("cancel"), on_click=cancel_delete),
-                ft.TextButton(
-                    theme_manager.t("delete"),
-                    on_click=confirm_delete,
-                    style=ft.ButtonStyle(color=ft.Colors.RED)
-                ),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
+        # Show confirmation dialog using centralized manager
+        dialog_manager.show_confirmation_dialog(
+            page=getattr(self, 'page', None),
+            title=theme_manager.t("confirm_delete"),
+            message=theme_manager.t("delete_message_confirm"),
+            on_confirm=confirm_delete,
+            confirm_text=theme_manager.t("delete"),
+            cancel_text=theme_manager.t("cancel"),
+            confirm_color=ft.Colors.RED,
+            main_dialog=self,  # Restore this dialog on cancel
+            event=e
         )
-        
-        if self.page:
-            self.page.dialog = confirm_dialog
-            confirm_dialog.open = True
-            self.page.update()
 

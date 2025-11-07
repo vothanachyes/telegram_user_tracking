@@ -6,6 +6,7 @@ import flet as ft
 from typing import Callable, Optional, Tuple
 from datetime import datetime, timedelta
 from ui.theme import theme_manager
+from ui.dialogs import dialog_manager
 from database.db_manager import DatabaseManager
 from services.telegram import TelegramService
 from services.license_service import LicenseService
@@ -202,7 +203,6 @@ class FetchDataDialog(ft.AlertDialog):
     def _show_upgrade_dialog(self, error_message: str):
         """Show upgrade dialog when group limit is reached."""
         def contact_admin(e):
-            upgrade_dialog.open = False
             self.open = False
             if self.page:
                 self.page.update()
@@ -222,31 +222,36 @@ class FetchDataDialog(ft.AlertDialog):
                         bgcolor=theme_manager.info_color
                     )
         
-        upgrade_dialog = ft.AlertDialog(
-            title=ft.Text(theme_manager.t("upgrade_required")),
-            content=ft.Column([
-                ft.Text(error_message, size=14),
-                ft.Container(height=10),
-                ft.Text(
-                    theme_manager.t("contact_admin_to_upgrade"),
-                    size=12,
-                    color=theme_manager.text_secondary_color
-                )
-            ], tight=True, scroll=ft.ScrollMode.AUTO),
-            actions=[
-                ft.TextButton(theme_manager.t("close"), on_click=lambda e: setattr(upgrade_dialog, 'open', False) or self.page.update()),
-                ft.ElevatedButton(
-                    theme_manager.t("contact_admin"),
-                    on_click=contact_admin,
-                    bgcolor=theme_manager.primary_color,
-                    color=ft.Colors.WHITE
-                )
-            ]
-        )
+        # Create custom content
+        content = ft.Column([
+            ft.Text(error_message, size=14),
+            ft.Container(height=10),
+            ft.Text(
+                theme_manager.t("contact_admin_to_upgrade"),
+                size=12,
+                color=theme_manager.text_secondary_color
+            )
+        ], tight=True, scroll=ft.ScrollMode.AUTO)
         
-        self.page.dialog = upgrade_dialog
-        upgrade_dialog.open = True
-        self.page.update()
+        # Create actions - close button will restore main dialog automatically
+        actions = [
+            ft.TextButton(theme_manager.t("close")),  # Will restore main dialog on click
+            ft.ElevatedButton(
+                theme_manager.t("contact_admin"),
+                on_click=contact_admin,  # Will restore main dialog then call contact_admin
+                bgcolor=theme_manager.primary_color,
+                color=ft.Colors.WHITE
+            )
+        ]
+        
+        # Show custom dialog using centralized manager
+        dialog_manager.show_custom_dialog(
+            page=self.page,
+            title=theme_manager.t("upgrade_required"),
+            content=content,
+            actions=actions,
+            main_dialog=self  # This is nested, so restore main dialog
+        )
     
     def _start_fetch(self, e):
         """Start fetching data from Telegram."""

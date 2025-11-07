@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from ui.theme import theme_manager
 from database.db_manager import DatabaseManager
 from services.telegram_service import TelegramService
+from services.license_service import LicenseService
 import asyncio
 import logging
 
@@ -26,6 +27,7 @@ class FetchDataDialog(ft.AlertDialog):
         self.db_manager = db_manager
         self.telegram_service = telegram_service
         self.on_fetch_complete_callback = on_fetch_complete
+        self.license_service = LicenseService(db_manager)
         
         # Default date range (last 30 days)
         today = datetime.now()
@@ -197,6 +199,55 @@ class FetchDataDialog(ft.AlertDialog):
         if self.page:
             self.page.update()
     
+    def _show_upgrade_dialog(self, error_message: str):
+        """Show upgrade dialog when group limit is reached."""
+        def contact_admin(e):
+            upgrade_dialog.open = False
+            self.open = False
+            if self.page:
+                self.page.update()
+                # Navigate to about page (this requires access to app's navigation)
+                # For now, just show contact info
+                try:
+                    from config.settings import settings
+                    import webbrowser
+                    from urllib.parse import quote
+                    email_url = f"mailto:{settings.developer_email}?subject={quote('License Upgrade Request')}&body={quote('I would like to upgrade my subscription.')}"
+                    webbrowser.open(email_url)
+                except Exception as ex:
+                    from config.settings import settings
+                    theme_manager.show_snackbar(
+                        self.page,
+                        f"Please contact admin: {settings.developer_email}",
+                        bgcolor=theme_manager.info_color
+                    )
+        
+        upgrade_dialog = ft.AlertDialog(
+            title=ft.Text(theme_manager.t("upgrade_required")),
+            content=ft.Column([
+                ft.Text(error_message, size=14),
+                ft.Container(height=10),
+                ft.Text(
+                    theme_manager.t("contact_admin_to_upgrade"),
+                    size=12,
+                    color=theme_manager.text_secondary_color
+                )
+            ], tight=True, scroll=ft.ScrollMode.AUTO),
+            actions=[
+                ft.TextButton(theme_manager.t("close"), on_click=lambda e: setattr(upgrade_dialog, 'open', False) or self.page.update()),
+                ft.ElevatedButton(
+                    theme_manager.t("contact_admin"),
+                    on_click=contact_admin,
+                    bgcolor=theme_manager.primary_color,
+                    color=ft.Colors.WHITE
+                )
+            ]
+        )
+        
+        self.page.dialog = upgrade_dialog
+        upgrade_dialog.open = True
+        self.page.update()
+    
     def _start_fetch(self, e):
         """Start fetching data from Telegram."""
         logger.info("=== START FETCH CLICKED ===")
@@ -212,6 +263,14 @@ class FetchDataDialog(ft.AlertDialog):
                     error_msg,
                     bgcolor=ft.Colors.RED
                 )
+            return
+        
+        # Check license - can user add more groups?
+        can_add, license_error = self.license_service.can_add_group()
+        if not can_add:
+            logger.warning(f"License check failed: {license_error}")
+            if self.page:
+                self._show_upgrade_dialog(license_error)
             return
         
         logger.info("Validation passed, checking Telegram connection...")

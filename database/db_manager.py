@@ -11,10 +11,21 @@ import logging
 from database.models import (
     AppSettings, TelegramCredential, TelegramGroup, TelegramUser,
     Message, MediaFile, DeletedMessage, DeletedUser, LoginCredential,
-    CREATE_TABLES_SQL
+    Reaction, UserLicenseCache, CREATE_TABLES_SQL
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_get_row_value(row: sqlite3.Row, key: str, default: Any = None) -> Any:
+    """
+    Safely get a value from a sqlite3.Row object.
+    sqlite3.Row doesn't have a .get() method, so we use try-except.
+    """
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
 
 
 def _parse_datetime(dt_value: Any) -> Optional[datetime]:
@@ -72,6 +83,9 @@ class DatabaseManager:
             with sqlite3.connect(self.db_path) as conn:
                 conn.executescript(CREATE_TABLES_SQL)
                 
+                # Run migrations
+                self._run_migrations(conn)
+                
                 # Initialize default settings if not exists
                 cursor = conn.execute("SELECT COUNT(*) FROM app_settings")
                 if cursor.fetchone()[0] == 0:
@@ -83,6 +97,78 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error initializing database: {e}")
             raise
+    
+    def _run_migrations(self, conn: sqlite3.Connection):
+        """Run database migrations to update schema."""
+        try:
+            # Check if messages table has new columns
+            cursor = conn.execute("PRAGMA table_info(messages)")
+            columns = {row[1] for row in cursor.fetchall()}
+            
+            # Add message_type column if missing
+            if 'message_type' not in columns:
+                conn.execute("ALTER TABLE messages ADD COLUMN message_type TEXT")
+                logger.info("Added message_type column to messages table")
+            
+            # Add has_sticker column if missing
+            if 'has_sticker' not in columns:
+                conn.execute("ALTER TABLE messages ADD COLUMN has_sticker BOOLEAN NOT NULL DEFAULT 0")
+                logger.info("Added has_sticker column to messages table")
+            
+            # Add has_link column if missing
+            if 'has_link' not in columns:
+                conn.execute("ALTER TABLE messages ADD COLUMN has_link BOOLEAN NOT NULL DEFAULT 0")
+                logger.info("Added has_link column to messages table")
+            
+            # Add sticker_emoji column if missing
+            if 'sticker_emoji' not in columns:
+                conn.execute("ALTER TABLE messages ADD COLUMN sticker_emoji TEXT")
+                logger.info("Added sticker_emoji column to messages table")
+            
+            # Check if app_settings table has new columns
+            cursor = conn.execute("PRAGMA table_info(app_settings)")
+            settings_columns = {row[1] for row in cursor.fetchall()}
+            
+            # Add track_reactions column if missing
+            if 'track_reactions' not in settings_columns:
+                conn.execute("ALTER TABLE app_settings ADD COLUMN track_reactions BOOLEAN NOT NULL DEFAULT 1")
+                logger.info("Added track_reactions column to app_settings table")
+            
+            # Add reaction_fetch_delay column if missing
+            if 'reaction_fetch_delay' not in settings_columns:
+                conn.execute("ALTER TABLE app_settings ADD COLUMN reaction_fetch_delay REAL NOT NULL DEFAULT 0.5")
+                logger.info("Added reaction_fetch_delay column to app_settings table")
+            
+            # Check if user_license_cache table exists
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_license_cache'")
+            if not cursor.fetchone():
+                conn.execute("""
+                    CREATE TABLE user_license_cache (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_email TEXT NOT NULL UNIQUE,
+                        license_tier TEXT NOT NULL DEFAULT 'silver',
+                        expiration_date TIMESTAMP,
+                        max_devices INTEGER NOT NULL DEFAULT 1,
+                        max_groups INTEGER NOT NULL DEFAULT 3,
+                        last_synced TIMESTAMP,
+                        is_active BOOLEAN NOT NULL DEFAULT 1,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_user_license_cache_email ON user_license_cache(user_email)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_user_license_cache_active ON user_license_cache(is_active)")
+                logger.info("Created user_license_cache table")
+            
+            # Create indexes if they don't exist
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_message_type ON messages(message_type)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_reactions_message_id ON reactions(message_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_reactions_user_id_group_id ON reactions(user_id, group_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_reactions_message_link ON reactions(message_link)")
+            
+        except Exception as e:
+            logger.error(f"Error running migrations: {e}")
+            # Don't raise - migrations are best effort
     
     def get_connection(self) -> sqlite3.Connection:
         """Get database connection."""
@@ -113,6 +199,8 @@ class DatabaseManager:
                     download_videos=bool(row['download_videos']),
                     download_documents=bool(row['download_documents']),
                     download_audio=bool(row['download_audio']),
+                    track_reactions=bool(_safe_get_row_value(row, 'track_reactions', True)),
+                    reaction_fetch_delay=_safe_get_row_value(row, 'reaction_fetch_delay', 0.5),
                     created_at=_parse_datetime(row['created_at']),
                     updated_at=_parse_datetime(row['updated_at'])
                 )
@@ -137,6 +225,8 @@ class DatabaseManager:
                         download_videos = ?,
                         download_documents = ?,
                         download_audio = ?,
+                        track_reactions = ?,
+                        reaction_fetch_delay = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = 1
                 """, (
@@ -152,7 +242,9 @@ class DatabaseManager:
                     settings.download_photos,
                     settings.download_videos,
                     settings.download_documents,
-                    settings.download_audio
+                    settings.download_audio,
+                    settings.track_reactions,
+                    settings.reaction_fetch_delay
                 ))
                 conn.commit()
                 return True
@@ -396,6 +488,75 @@ class DatabaseManager:
                 updated_at=_parse_datetime(row['updated_at'])
             ) for row in cursor.fetchall()]
     
+    def search_users(
+        self,
+        query: str,
+        limit: int = 10,
+        include_deleted: bool = False
+    ) -> List[TelegramUser]:
+        """Search users by full name, username, or phone."""
+        if not query or not query.strip():
+            return []
+        
+        search_term = f"%{query.strip()}%"
+        conditions = []
+        params = []
+        
+        # Check if query starts with @ (username search)
+        if query.strip().startswith('@'):
+            username_query = query.strip().lstrip('@')
+            conditions.append("(username LIKE ? OR username LIKE ?)")
+            params.extend([f"%{username_query}%", username_query])
+        else:
+            # Search in full_name, first_name, last_name, username, phone
+            conditions.append("""
+                (full_name LIKE ? OR 
+                 first_name LIKE ? OR 
+                 last_name LIKE ? OR 
+                 username LIKE ? OR 
+                 phone LIKE ?)
+            """)
+            params.extend([search_term, search_term, search_term, search_term, search_term])
+        
+        if not include_deleted:
+            conditions.append("is_deleted = 0")
+        
+        where_clause = " AND ".join(conditions)
+        
+        sql = f"""
+            SELECT * FROM telegram_users
+            WHERE {where_clause}
+            ORDER BY 
+                CASE 
+                    WHEN full_name LIKE ? THEN 1
+                    WHEN username LIKE ? THEN 2
+                    WHEN phone LIKE ? THEN 3
+                    ELSE 4
+                END,
+                full_name
+            LIMIT ?
+        """
+        
+        # Add ordering params
+        params.extend([search_term, search_term, search_term, limit])
+        
+        with self.get_connection() as conn:
+            cursor = conn.execute(sql, params)
+            return [TelegramUser(
+                id=row['id'],
+                user_id=row['user_id'],
+                username=row['username'],
+                first_name=row['first_name'],
+                last_name=row['last_name'],
+                full_name=row['full_name'],
+                phone=row['phone'],
+                bio=row['bio'],
+                profile_photo_path=row['profile_photo_path'],
+                is_deleted=bool(row['is_deleted']),
+                created_at=_parse_datetime(row['created_at']),
+                updated_at=_parse_datetime(row['updated_at'])
+            ) for row in cursor.fetchall()]
+    
     def soft_delete_user(self, user_id: int) -> bool:
         """Soft delete a user."""
         try:
@@ -429,14 +590,19 @@ class DatabaseManager:
                 cursor = conn.execute("""
                     INSERT INTO messages 
                     (message_id, group_id, user_id, content, caption, date_sent, 
-                     has_media, media_type, media_count, message_link)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     has_media, media_type, media_count, message_link,
+                     message_type, has_sticker, has_link, sticker_emoji)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(message_id, group_id) DO UPDATE SET
                         content = excluded.content,
                         caption = excluded.caption,
                         has_media = excluded.has_media,
                         media_type = excluded.media_type,
                         media_count = excluded.media_count,
+                        message_type = excluded.message_type,
+                        has_sticker = excluded.has_sticker,
+                        has_link = excluded.has_link,
+                        sticker_emoji = excluded.sticker_emoji,
                         updated_at = CURRENT_TIMESTAMP
                 """, (
                     message.message_id,
@@ -448,7 +614,11 @@ class DatabaseManager:
                     message.has_media,
                     message.media_type,
                     message.media_count,
-                    message.message_link
+                    message.message_link,
+                    message.message_type,
+                    message.has_sticker,
+                    message.has_link,
+                    message.sticker_emoji
                 ))
                 conn.commit()
                 return cursor.lastrowid
@@ -508,6 +678,10 @@ class DatabaseManager:
                 media_type=row['media_type'],
                 media_count=row['media_count'],
                 message_link=row['message_link'],
+                message_type=_safe_get_row_value(row, 'message_type'),
+                has_sticker=bool(_safe_get_row_value(row, 'has_sticker', False)),
+                has_link=bool(_safe_get_row_value(row, 'has_link', False)),
+                sticker_emoji=_safe_get_row_value(row, 'sticker_emoji'),
                 is_deleted=bool(row['is_deleted']),
                 created_at=_parse_datetime(row['created_at']),
                 updated_at=_parse_datetime(row['updated_at'])
@@ -654,6 +828,214 @@ class DatabaseManager:
             
             return stats
     
+    # ==================== Reactions ====================
+    
+    def save_reaction(self, reaction: Reaction) -> Optional[int]:
+        """Save a reaction."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("""
+                    INSERT INTO reactions 
+                    (message_id, group_id, user_id, emoji, message_link, reacted_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(message_id, group_id, user_id, emoji) DO NOTHING
+                """, (
+                    reaction.message_id,
+                    reaction.group_id,
+                    reaction.user_id,
+                    reaction.emoji,
+                    reaction.message_link,
+                    reaction.reacted_at
+                ))
+                conn.commit()
+                return cursor.lastrowid if cursor.rowcount > 0 else None
+        except Exception as e:
+            logger.error(f"Error saving reaction: {e}")
+            return None
+    
+    def get_reactions_by_message(self, message_id: int, group_id: int) -> List[Reaction]:
+        """Get all reactions for a specific message."""
+        with self.get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT * FROM reactions 
+                WHERE message_id = ? AND group_id = ?
+                ORDER BY created_at DESC
+            """, (message_id, group_id))
+            return [Reaction(
+                id=row['id'],
+                message_id=row['message_id'],
+                group_id=row['group_id'],
+                user_id=row['user_id'],
+                emoji=row['emoji'],
+                message_link=row['message_link'],
+                reacted_at=_parse_datetime(row['reacted_at']),
+                created_at=_parse_datetime(row['created_at'])
+            ) for row in cursor.fetchall()]
+    
+    def get_reactions_by_user(
+        self, 
+        user_id: int, 
+        group_id: Optional[int] = None
+    ) -> List[Reaction]:
+        """Get all reactions given by a user."""
+        query = "SELECT * FROM reactions WHERE user_id = ?"
+        params = [user_id]
+        
+        if group_id:
+            query += " AND group_id = ?"
+            params.append(group_id)
+        
+        query += " ORDER BY created_at DESC"
+        
+        with self.get_connection() as conn:
+            cursor = conn.execute(query, params)
+            return [Reaction(
+                id=row['id'],
+                message_id=row['message_id'],
+                group_id=row['group_id'],
+                user_id=row['user_id'],
+                emoji=row['emoji'],
+                message_link=row['message_link'],
+                reacted_at=_parse_datetime(row['reacted_at']),
+                created_at=_parse_datetime(row['created_at'])
+            ) for row in cursor.fetchall()]
+    
+    def delete_reaction(self, reaction_id: int) -> bool:
+        """Delete a reaction by ID."""
+        try:
+            with self.get_connection() as conn:
+                conn.execute("DELETE FROM reactions WHERE id = ?", (reaction_id,))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error deleting reaction: {e}")
+            return False
+    
+    # ==================== User Activity Statistics ====================
+    
+    def get_user_activity_stats(
+        self,
+        user_id: int,
+        group_id: Optional[int] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Get comprehensive activity statistics for a user."""
+        stats = {}
+        
+        with self.get_connection() as conn:
+            # Build base query conditions
+            msg_conditions = ["m.user_id = ?", "m.is_deleted = 0"]
+            params = [user_id]
+            
+            if group_id:
+                msg_conditions.append("m.group_id = ?")
+                params.append(group_id)
+            
+            if start_date:
+                msg_conditions.append("m.date_sent >= ?")
+                params.append(start_date)
+            
+            if end_date:
+                msg_conditions.append("m.date_sent <= ?")
+                params.append(end_date)
+            
+            where_clause = " AND ".join(msg_conditions)
+            
+            # Total messages
+            cursor = conn.execute(f"""
+                SELECT COUNT(*) FROM messages m
+                WHERE {where_clause}
+            """, params)
+            stats['total_messages'] = cursor.fetchone()[0]
+            
+            # Total reactions given by user
+            reaction_conditions = ["r.user_id = ?"]
+            reaction_params = [user_id]
+            
+            if group_id:
+                reaction_conditions.append("r.group_id = ?")
+                reaction_params.append(group_id)
+            
+            reaction_where = " AND ".join(reaction_conditions)
+            cursor = conn.execute(f"""
+                SELECT COUNT(*) FROM reactions r
+                WHERE {reaction_where}
+            """, reaction_params)
+            stats['total_reactions'] = cursor.fetchone()[0]
+            
+            # Message type breakdown
+            cursor = conn.execute(f"""
+                SELECT 
+                    COUNT(CASE WHEN m.message_type = 'sticker' OR m.has_sticker = 1 THEN 1 END) as stickers,
+                    COUNT(CASE WHEN m.message_type = 'video' OR m.media_type = 'video' THEN 1 END) as videos,
+                    COUNT(CASE WHEN m.message_type = 'photo' OR m.media_type = 'photo' THEN 1 END) as photos,
+                    COUNT(CASE WHEN m.has_link = 1 THEN 1 END) as links,
+                    COUNT(CASE WHEN m.message_type = 'document' OR m.media_type = 'document' THEN 1 END) as documents,
+                    COUNT(CASE WHEN m.message_type IN ('audio', 'voice') OR m.media_type = 'audio' THEN 1 END) as audio,
+                    COUNT(CASE WHEN m.message_type = 'text' OR (m.content IS NOT NULL AND m.content != '') THEN 1 END) as text_messages
+                FROM messages m
+                WHERE {where_clause}
+            """, params)
+            row = cursor.fetchone()
+            stats['total_stickers'] = row[0] or 0
+            stats['total_videos'] = row[1] or 0
+            stats['total_photos'] = row[2] or 0
+            stats['total_links'] = row[3] or 0
+            stats['total_documents'] = row[4] or 0
+            stats['total_audio'] = row[5] or 0
+            stats['total_text_messages'] = row[6] or 0
+            
+            # First and last activity dates
+            cursor = conn.execute(f"""
+                SELECT MIN(m.date_sent), MAX(m.date_sent)
+                FROM messages m
+                WHERE {where_clause}
+            """, params)
+            row = cursor.fetchone()
+            stats['first_activity_date'] = _parse_datetime(row[0]) if row[0] else None
+            stats['last_activity_date'] = _parse_datetime(row[1]) if row[1] else None
+            
+            # Messages by group (if group_id not specified)
+            if not group_id:
+                cursor = conn.execute(f"""
+                    SELECT m.group_id, COUNT(*) as count
+                    FROM messages m
+                    WHERE {where_clause}
+                    GROUP BY m.group_id
+                """, params)
+                stats['messages_by_group'] = {row[0]: row[1] for row in cursor.fetchall()}
+            else:
+                stats['messages_by_group'] = {}
+        
+        return stats
+    
+    def get_message_type_breakdown(
+        self,
+        user_id: int,
+        group_id: Optional[int] = None
+    ) -> Dict[str, int]:
+        """Get detailed message type breakdown for a user."""
+        conditions = ["user_id = ?", "is_deleted = 0"]
+        params = [user_id]
+        
+        if group_id:
+            conditions.append("group_id = ?")
+            params.append(group_id)
+        
+        where_clause = " AND ".join(conditions)
+        
+        with self.get_connection() as conn:
+            cursor = conn.execute(f"""
+                SELECT 
+                    COALESCE(message_type, 'unknown') as msg_type,
+                    COUNT(*) as count
+                FROM messages
+                WHERE {where_clause}
+                GROUP BY msg_type
+            """, params)
+            return {row[0]: row[1] for row in cursor.fetchall()}
+    
     # ==================== Login Credentials ====================
     
     def save_login_credential(self, email: str, encrypted_password: str) -> bool:
@@ -708,5 +1090,74 @@ class DatabaseManager:
                 return True
         except Exception as e:
             logger.error(f"Error deleting login credential: {e}")
+            return False
+    
+    # ==================== User License Cache ====================
+    
+    def save_license_cache(self, license_cache: UserLicenseCache) -> Optional[int]:
+        """Save or update license cache."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("""
+                    INSERT INTO user_license_cache 
+                    (user_email, license_tier, expiration_date, max_devices, max_groups, last_synced, is_active)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                    ON CONFLICT(user_email) DO UPDATE SET
+                        license_tier = excluded.license_tier,
+                        expiration_date = excluded.expiration_date,
+                        max_devices = excluded.max_devices,
+                        max_groups = excluded.max_groups,
+                        last_synced = CURRENT_TIMESTAMP,
+                        is_active = excluded.is_active,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (
+                    license_cache.user_email,
+                    license_cache.license_tier,
+                    license_cache.expiration_date,
+                    license_cache.max_devices,
+                    license_cache.max_groups,
+                    license_cache.is_active
+                ))
+                conn.commit()
+                return cursor.lastrowid
+        except Exception as e:
+            logger.error(f"Error saving license cache: {e}")
+            return None
+    
+    def get_license_cache(self, user_email: str) -> Optional[UserLicenseCache]:
+        """Get license cache by user email."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM user_license_cache WHERE user_email = ?",
+                (user_email,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return UserLicenseCache(
+                    id=row['id'],
+                    user_email=row['user_email'],
+                    license_tier=row['license_tier'],
+                    expiration_date=_parse_datetime(row['expiration_date']),
+                    max_devices=row['max_devices'],
+                    max_groups=row['max_groups'],
+                    last_synced=_parse_datetime(row['last_synced']),
+                    is_active=bool(row['is_active']),
+                    created_at=_parse_datetime(row['created_at']),
+                    updated_at=_parse_datetime(row['updated_at'])
+                )
+            return None
+    
+    def delete_license_cache(self, user_email: str) -> bool:
+        """Delete license cache for a user."""
+        try:
+            with self.get_connection() as conn:
+                conn.execute(
+                    "DELETE FROM user_license_cache WHERE user_email = ?",
+                    (user_email,)
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error deleting license cache: {e}")
             return False
 

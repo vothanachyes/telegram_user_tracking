@@ -9,9 +9,15 @@ import logging
 try:
     import firebase_admin
     from firebase_admin import credentials, auth
+    try:
+        from firebase_admin import firestore
+        FIRESTORE_AVAILABLE = True
+    except ImportError:
+        FIRESTORE_AVAILABLE = False
     FIREBASE_AVAILABLE = True
 except ImportError:
     FIREBASE_AVAILABLE = False
+    FIRESTORE_AVAILABLE = False
     logging.warning("Firebase Admin SDK not installed")
 
 from utils.constants import FIREBASE_CREDENTIALS_PATH, FIREBASE_PROJECT_ID
@@ -33,6 +39,7 @@ class FirebaseConfig:
     def __init__(self):
         self.app: Optional[firebase_admin.App] = None
         self.is_available = FIREBASE_AVAILABLE
+        self.db: Optional[firestore.Client] = None
     
     def initialize(self, credentials_path: Optional[str] = None) -> bool:
         """
@@ -58,6 +65,10 @@ class FirebaseConfig:
             # Initialize Firebase
             cred = credentials.Certificate(cred_path)
             self.app = firebase_admin.initialize_app(cred)
+            
+            # Initialize Firestore if available
+            if FIRESTORE_AVAILABLE:
+                self.db = firestore.client()
             
             self._initialized = True
             logger.info("Firebase initialized successfully")
@@ -163,6 +174,131 @@ class FirebaseConfig:
         except Exception as e:
             logger.error(f"Error setting custom claims: {e}")
             return False
+    
+    # ==================== Firestore License Methods ====================
+    
+    def get_user_license(self, uid: str) -> Optional[dict]:
+        """
+        Get user license from Firestore.
+        Returns license document if found, None otherwise.
+        """
+        if not self._initialized or not self.db:
+            logger.error("Firebase not initialized")
+            return None
+        
+        try:
+            doc_ref = self.db.collection('user_licenses').document(uid)
+            doc = doc_ref.get()
+            if doc.exists:
+                data = doc.to_dict()
+                data['uid'] = uid
+                return data
+            return None
+        except Exception as e:
+            logger.error(f"Error getting user license: {e}")
+            return None
+    
+    def set_user_license(self, uid: str, license_data: dict) -> bool:
+        """
+        Set or update user license in Firestore.
+        Returns True if successful.
+        """
+        if not self._initialized or not self.db:
+            logger.error("Firebase not initialized")
+            return False
+        
+        try:
+            doc_ref = self.db.collection('user_licenses').document(uid)
+            # Remove uid from data if present (it's the document ID)
+            data = {k: v for k, v in license_data.items() if k != 'uid'}
+            doc_ref.set(data, merge=True)
+            logger.info(f"License updated for user: {uid}")
+            return True
+        except Exception as e:
+            logger.error(f"Error setting user license: {e}")
+            return False
+    
+    def add_device_to_license(self, uid: str, device_id: str) -> bool:
+        """
+        Add a device ID to user's active devices list.
+        Returns True if successful.
+        """
+        if not self._initialized or not self.db:
+            logger.error("Firebase not initialized")
+            return False
+        
+        try:
+            doc_ref = self.db.collection('user_licenses').document(uid)
+            doc = doc_ref.get()
+            
+            if doc.exists:
+                data = doc.to_dict()
+                active_devices = data.get('active_device_ids', [])
+                if device_id not in active_devices:
+                    active_devices.append(device_id)
+                    doc_ref.update({'active_device_ids': active_devices})
+                    logger.info(f"Device {device_id} added to user {uid}")
+                return True
+            else:
+                # Create new license document with this device
+                doc_ref.set({
+                    'active_device_ids': [device_id],
+                    'license_tier': 'silver',  # Default tier
+                    'max_devices': 1,
+                    'max_groups': 3
+                })
+                logger.info(f"Created new license for user {uid} with device {device_id}")
+                return True
+        except Exception as e:
+            logger.error(f"Error adding device to license: {e}")
+            return False
+    
+    def remove_device_from_license(self, uid: str, device_id: str) -> bool:
+        """
+        Remove a device ID from user's active devices list.
+        Returns True if successful.
+        """
+        if not self._initialized or not self.db:
+            logger.error("Firebase not initialized")
+            return False
+        
+        try:
+            doc_ref = self.db.collection('user_licenses').document(uid)
+            doc = doc_ref.get()
+            
+            if doc.exists:
+                data = doc.to_dict()
+                active_devices = data.get('active_device_ids', [])
+                if device_id in active_devices:
+                    active_devices.remove(device_id)
+                    doc_ref.update({'active_device_ids': active_devices})
+                    logger.info(f"Device {device_id} removed from user {uid}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error removing device from license: {e}")
+            return False
+    
+    def get_active_devices(self, uid: str) -> list:
+        """
+        Get list of active device IDs for a user.
+        Returns list of device IDs.
+        """
+        if not self._initialized or not self.db:
+            logger.error("Firebase not initialized")
+            return []
+        
+        try:
+            doc_ref = self.db.collection('user_licenses').document(uid)
+            doc = doc_ref.get()
+            
+            if doc.exists:
+                data = doc.to_dict()
+                return data.get('active_device_ids', [])
+            return []
+        except Exception as e:
+            logger.error(f"Error getting active devices: {e}")
+            return []
 
 
 # Global Firebase config instance

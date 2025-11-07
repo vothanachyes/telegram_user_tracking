@@ -29,6 +29,7 @@ class Sidebar(ft.Container):
                 controls=[
                     self._create_nav_button("dashboard", ft.Icons.DASHBOARD, theme_manager.t("dashboard")),
                     self._create_nav_button("telegram", ft.Icons.TELEGRAM, theme_manager.t("telegram")),
+                    self._create_nav_button("user_dashboard", ft.Icons.PERSON_SEARCH, theme_manager.t("user_dashboard")),
                     self._create_nav_button("settings", ft.Icons.SETTINGS, theme_manager.t("settings")),
                     ft.Container(expand=True),  # Spacer
                     self._create_fetch_button(),
@@ -36,7 +37,9 @@ class Sidebar(ft.Container):
                 ],
                 spacing=10,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER
-            )
+            ),
+            # Ensure Container doesn't block pointer events to children
+            clip_behavior=ft.ClipBehavior.NONE
         )
     
     def _create_nav_button(
@@ -44,47 +47,94 @@ class Sidebar(ft.Container):
         page_id: str,
         icon: str,
         tooltip: str
-    ) -> ft.Container:
+    ) -> ft.GestureDetector:
         """Create a navigation button."""
         is_active = self.current_page == page_id
         
-        return ft.Container(
-            content=ft.IconButton(
-                icon=icon,
-                icon_color=ft.Colors.WHITE if is_active else theme_manager.text_secondary_color,
-                icon_size=28,
-                tooltip=tooltip,
-                on_click=lambda _: self._handle_click(page_id)
-            ),
-            bgcolor=theme_manager.primary_color if is_active else None,
-            border_radius=theme_manager.corner_radius,
+        # Create a proper closure to capture page_id
+        def make_click_handler(pid: str):
+            def handler(e):
+                self._handle_click(pid)
+            return handler
+        
+        click_handler = make_click_handler(page_id)
+        
+        # Create IconButton with styling
+        icon_button = ft.IconButton(
+            icon=icon,
+            icon_color=ft.Colors.WHITE if is_active else theme_manager.text_secondary_color,
+            icon_size=28,
+            tooltip=tooltip,
+            style=ft.ButtonStyle(
+                bgcolor=theme_manager.primary_color if is_active else ft.Colors.TRANSPARENT,
+                shape=ft.RoundedRectangleBorder(radius=theme_manager.corner_radius),
+                padding=0
+            )
+        )
+        
+        # Wrap in Container for sizing and background
+        button_container = ft.Container(
+            content=icon_button,
             width=60,
             height=60,
-            alignment=ft.alignment.center
+            alignment=ft.alignment.center,
+            bgcolor=theme_manager.primary_color if is_active else None,
+            border_radius=theme_manager.corner_radius
+        )
+        
+        # Use GestureDetector to handle clicks - this ensures clicks work
+        return ft.GestureDetector(
+            content=button_container,
+            on_tap=click_handler,
+            mouse_cursor=ft.MouseCursor.CLICK
         )
     
     def _handle_click(self, page_id: str):
         """Handle navigation button click."""
-        if page_id != self.current_page:
+        import logging
+        logger = logging.getLogger(__name__)
+        try:
+            logger.debug(f"Sidebar navigation clicked: {page_id} (current: {self.current_page})")
+            # Always navigate, even if same page (allows refresh)
             self.current_page = page_id
-            self.on_navigate(page_id)
+            if self.on_navigate:
+                logger.debug(f"Calling on_navigate with page_id: {page_id}")
+                self.on_navigate(page_id)
+            else:
+                logger.warning("on_navigate callback is None!")
             self._update_buttons()
+        except Exception as e:
+            logger.error(f"Error handling navigation click to '{page_id}': {e}", exc_info=True)
     
-    def _create_fetch_button(self) -> ft.Container:
+    def _create_fetch_button(self) -> ft.GestureDetector:
         """Create the fetch data button."""
-        return ft.Container(
-            content=ft.IconButton(
-                icon=ft.Icons.DOWNLOAD,
-                icon_color=ft.Colors.WHITE,
-                icon_size=28,
-                tooltip=theme_manager.t("fetch_data"),
-                on_click=lambda _: self._handle_fetch_click(),
-                bgcolor=ft.Colors.GREEN
-            ),
-            border_radius=theme_manager.corner_radius,
+        icon_button = ft.IconButton(
+            icon=ft.Icons.DOWNLOAD,
+            icon_color=ft.Colors.WHITE,
+            icon_size=28,
+            tooltip=theme_manager.t("fetch_data"),
+            style=ft.ButtonStyle(
+                bgcolor=ft.Colors.GREEN,
+                shape=ft.RoundedRectangleBorder(radius=theme_manager.corner_radius),
+                padding=0
+            )
+        )
+        
+        # Wrap in Container for sizing
+        button_container = ft.Container(
+            content=icon_button,
             width=60,
             height=60,
-            alignment=ft.alignment.center
+            alignment=ft.alignment.center,
+            bgcolor=ft.Colors.GREEN,
+            border_radius=theme_manager.corner_radius
+        )
+        
+        # Use GestureDetector to handle clicks
+        return ft.GestureDetector(
+            content=button_container,
+            on_tap=lambda e: self._handle_fetch_click(),
+            mouse_cursor=ft.MouseCursor.CLICK
         )
     
     def _handle_fetch_click(self):
@@ -94,14 +144,33 @@ class Sidebar(ft.Container):
     
     def _update_buttons(self):
         """Update button styles based on current page."""
-        # Recreate navigation
-        self.content.controls = [
-            self._create_nav_button("dashboard", ft.Icons.DASHBOARD, theme_manager.t("dashboard")),
-            self._create_nav_button("telegram", ft.Icons.TELEGRAM, theme_manager.t("telegram")),
-            self._create_nav_button("settings", ft.Icons.SETTINGS, theme_manager.t("settings")),
-            ft.Container(expand=True),
-            self._create_fetch_button(),
-            self._create_nav_button("profile", ft.Icons.PERSON, theme_manager.t("profile")),
-        ]
-        self.update()
+        import logging
+        logger = logging.getLogger(__name__)
+        try:
+            # Recreate navigation buttons with updated active state
+            self.content.controls = [
+                self._create_nav_button("dashboard", ft.Icons.DASHBOARD, theme_manager.t("dashboard")),
+                self._create_nav_button("telegram", ft.Icons.TELEGRAM, theme_manager.t("telegram")),
+                self._create_nav_button("user_dashboard", ft.Icons.PERSON_SEARCH, theme_manager.t("user_dashboard")),
+                self._create_nav_button("settings", ft.Icons.SETTINGS, theme_manager.t("settings")),
+                ft.Container(expand=True),
+                self._create_fetch_button(),
+                self._create_nav_button("profile", ft.Icons.PERSON, theme_manager.t("profile")),
+            ]
+            # Update through page if available, otherwise try self.update()
+            if hasattr(self, 'page') and self.page:
+                self.page.update()
+            else:
+                self.update()
+        except (AssertionError, AttributeError) as e:
+            # Control not yet added to page, will update when added
+            logger.debug(f"Could not update sidebar buttons: {e}")
+        except Exception as e:
+            logger.error(f"Error updating sidebar buttons: {e}", exc_info=True)
+    
+    def set_current_page(self, page_id: str):
+        """Update current page from external source (e.g., when navigating from app)."""
+        if self.current_page != page_id:
+            self.current_page = page_id
+            self._update_buttons()
 

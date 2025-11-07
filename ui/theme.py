@@ -116,6 +116,26 @@ class ThemeManager:
         return COLORS["border_dark"] if self.is_dark else COLORS["border_light"]
     
     @property
+    def success_color(self) -> str:
+        """Get success color."""
+        return COLORS["success"]
+    
+    @property
+    def error_color(self) -> str:
+        """Get error color."""
+        return COLORS["error"]
+    
+    @property
+    def warning_color(self) -> str:
+        """Get warning color."""
+        return COLORS["warning"]
+    
+    @property
+    def info_color(self) -> str:
+        """Get info color."""
+        return COLORS["info"]
+    
+    @property
     def corner_radius(self) -> int:
         """Get corner radius."""
         return self._corner_radius

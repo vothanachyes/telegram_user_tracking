@@ -24,6 +24,8 @@ class AppSettings:
     download_videos: bool = True
     download_documents: bool = True
     download_audio: bool = True
+    track_reactions: bool = True
+    reaction_fetch_delay: float = 0.5
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -83,9 +85,26 @@ class Message:
     media_type: Optional[str] = None  # photo, video, document, audio
     media_count: int = 0
     message_link: Optional[str] = None
+    message_type: Optional[str] = None  # text, sticker, video, photo, document, audio, voice, video_note, location, contact, link, poll, etc.
+    has_sticker: bool = False
+    has_link: bool = False  # URLs detected in content
+    sticker_emoji: Optional[str] = None  # Emoji if sticker
     is_deleted: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+@dataclass
+class Reaction:
+    """Reaction model for tracking user reactions to messages."""
+    id: Optional[int] = None
+    message_id: int = 0  # Telegram message ID that was reacted to
+    group_id: int = 0  # Group where the message exists
+    user_id: int = 0  # User who reacted
+    emoji: str = ""  # Emoji used for reaction
+    message_link: Optional[str] = None  # Telegram link to the original message
+    reacted_at: Optional[datetime] = None  # When reaction was made (uses message date_sent as proxy)
+    created_at: Optional[datetime] = None
 
 
 @dataclass
@@ -129,6 +148,21 @@ class LoginCredential:
     updated_at: Optional[datetime] = None
 
 
+@dataclass
+class UserLicenseCache:
+    """User license cache model for local storage."""
+    id: Optional[int] = None
+    user_email: str = ""
+    license_tier: str = "silver"  # silver, gold, premium
+    expiration_date: Optional[datetime] = None
+    max_devices: int = 1
+    max_groups: int = 3
+    last_synced: Optional[datetime] = None
+    is_active: bool = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
 # SQL Schema Creation Statements
 CREATE_TABLES_SQL = """
 -- App Settings Table
@@ -147,6 +181,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
     download_videos BOOLEAN NOT NULL DEFAULT 1,
     download_documents BOOLEAN NOT NULL DEFAULT 1,
     download_audio BOOLEAN NOT NULL DEFAULT 1,
+    track_reactions BOOLEAN NOT NULL DEFAULT 1,
+    reaction_fetch_delay REAL NOT NULL DEFAULT 0.5,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CHECK (id = 1)
@@ -203,11 +239,30 @@ CREATE TABLE IF NOT EXISTS messages (
     media_type TEXT,
     media_count INTEGER DEFAULT 0,
     message_link TEXT,
+    message_type TEXT,
+    has_sticker BOOLEAN NOT NULL DEFAULT 0,
+    has_link BOOLEAN NOT NULL DEFAULT 0,
+    sticker_emoji TEXT,
     is_deleted BOOLEAN NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(message_id, group_id),
     FOREIGN KEY (group_id) REFERENCES telegram_groups(group_id),
+    FOREIGN KEY (user_id) REFERENCES telegram_users(user_id)
+);
+
+-- Reactions Table
+CREATE TABLE IF NOT EXISTS reactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    emoji TEXT NOT NULL,
+    message_link TEXT,
+    reacted_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(message_id, group_id, user_id, emoji),
+    FOREIGN KEY (message_id, group_id) REFERENCES messages(message_id, group_id),
     FOREIGN KEY (user_id) REFERENCES telegram_users(user_id)
 );
 
@@ -249,14 +304,34 @@ CREATE TABLE IF NOT EXISTS login_credentials (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- User License Cache Table
+CREATE TABLE IF NOT EXISTS user_license_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_email TEXT NOT NULL UNIQUE,
+    license_tier TEXT NOT NULL DEFAULT 'silver',
+    expiration_date TIMESTAMP,
+    max_devices INTEGER NOT NULL DEFAULT 1,
+    max_groups INTEGER NOT NULL DEFAULT 3,
+    last_synced TIMESTAMP,
+    is_active BOOLEAN NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_messages_group_id ON messages(group_id);
 CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_date_sent ON messages(date_sent);
 CREATE INDEX IF NOT EXISTS idx_messages_deleted ON messages(is_deleted);
+CREATE INDEX IF NOT EXISTS idx_messages_message_type ON messages(message_type);
 CREATE INDEX IF NOT EXISTS idx_media_files_message_id ON media_files(message_id);
 CREATE INDEX IF NOT EXISTS idx_telegram_users_deleted ON telegram_users(is_deleted);
 CREATE INDEX IF NOT EXISTS idx_deleted_messages_message_id ON deleted_messages(message_id);
 CREATE INDEX IF NOT EXISTS idx_deleted_users_user_id ON deleted_users(user_id);
+CREATE INDEX IF NOT EXISTS idx_reactions_message_id ON reactions(message_id);
+CREATE INDEX IF NOT EXISTS idx_reactions_user_id_group_id ON reactions(user_id, group_id);
+CREATE INDEX IF NOT EXISTS idx_reactions_message_link ON reactions(message_link);
+CREATE INDEX IF NOT EXISTS idx_user_license_cache_email ON user_license_cache(user_email);
+CREATE INDEX IF NOT EXISTS idx_user_license_cache_active ON user_license_cache(is_active);
 """
 

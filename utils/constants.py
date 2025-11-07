@@ -3,6 +3,7 @@ Application constants and configuration.
 """
 
 import os
+import platform
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -12,14 +13,37 @@ load_dotenv()
 # Application Info
 APP_NAME = os.getenv("APP_NAME", "Telegram User Tracking")
 APP_VERSION = os.getenv("APP_VERSION", "1.0.0")
-DEVELOPER_NAME = os.getenv("DEVELOPER_NAME", "Your Name")
-DEVELOPER_EMAIL = os.getenv("DEVELOPER_EMAIL", "your.email@example.com")
-DEVELOPER_CONTACT = os.getenv("DEVELOPER_CONTACT", "+1234567890")
+DEVELOPER_NAME = os.getenv("DEVELOPER_NAME", "Vothana CHY")
+DEVELOPER_EMAIL = os.getenv("DEVELOPER_EMAIL", "vothanachy.es@gmail.com")
+DEVELOPER_CONTACT = os.getenv("DEVELOPER_CONTACT", "+85510826027")
 
 # Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATABASE_PATH = os.getenv("DATABASE_PATH", str(BASE_DIR / "data" / "app.db"))
-DEFAULT_DOWNLOAD_DIR = os.getenv("DEFAULT_DOWNLOAD_DIR", str(BASE_DIR / "downloads"))
+
+def get_user_data_dir() -> Path:
+    """Get platform-specific user data directory for secure storage."""
+    system = platform.system()
+    
+    if system == "Windows":
+        # %APPDATA%\Telegram User Tracking
+        base = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming"))
+        return base / APP_NAME
+    elif system == "Darwin":  # macOS
+        # ~/Library/Application Support/Telegram User Tracking
+        return Path.home() / "Library" / "Application Support" / APP_NAME
+    else:  # Linux and others
+        # ~/.config/Telegram User Tracking
+        return Path.home() / ".config" / APP_NAME
+
+# Get secure user data directory and ensure it exists
+USER_DATA_DIR = get_user_data_dir()
+USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# Database path: Use env var if set (for development), otherwise use secure directory
+DATABASE_PATH = os.getenv("DATABASE_PATH", str(USER_DATA_DIR / "app.db"))
+
+# Downloads: Can also use secure directory or keep in project for development
+DEFAULT_DOWNLOAD_DIR = os.getenv("DEFAULT_DOWNLOAD_DIR", str(USER_DATA_DIR / "downloads"))
 
 # Theme
 PRIMARY_COLOR = os.getenv("PRIMARY_COLOR", "#082f49")
@@ -109,4 +133,40 @@ def format_bytes(bytes_size: int) -> str:
 # Validation Patterns
 PHONE_PATTERN = r"^\+?[1-9]\d{1,14}$"
 EMAIL_PATTERN = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+
+# License Tiers
+LICENSE_TIER_SILVER = "silver"
+LICENSE_TIER_GOLD = "gold"
+LICENSE_TIER_PREMIUM = "premium"
+
+# License Pricing (USD and KHR)
+LICENSE_PRICING = {
+    LICENSE_TIER_SILVER: {
+        "name": "Silver",
+        "price_usd": 5,
+        "price_khr": 20000,
+        "max_groups": 3,
+        "max_devices": 1,
+        "features": ["max_groups", "max_devices"]
+    },
+    LICENSE_TIER_GOLD: {
+        "name": "Gold",
+        "price_usd": 12,
+        "price_khr": 48000,
+        "max_groups": 10,
+        "max_devices": 2,
+        "features": ["max_groups", "max_devices"]
+    },
+    LICENSE_TIER_PREMIUM: {
+        "name": "Premium",
+        "price_usd": 25,
+        "price_khr": 100000,
+        "max_groups": -1,  # -1 means unlimited
+        "max_devices": 5,
+        "features": ["unlimited_groups", "max_devices", "priority_support"]
+    }
+}
+
+# Default license tier
+DEFAULT_LICENSE_TIER = LICENSE_TIER_SILVER
 

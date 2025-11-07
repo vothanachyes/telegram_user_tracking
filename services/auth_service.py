@@ -17,6 +17,8 @@ except ImportError:
 
 from config.firebase_config import firebase_config
 from utils.constants import FIREBASE_WEB_API_KEY
+from database.db_manager import DatabaseManager
+from services.license_service import LicenseService
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +26,12 @@ logger = logging.getLogger(__name__)
 class AuthService:
     """Handles Firebase authentication with single-device enforcement."""
     
-    def __init__(self):
+    def __init__(self, db_manager: Optional[DatabaseManager] = None):
         self.current_user: Optional[dict] = None
         self._device_id: Optional[str] = None
+        self.db_manager = db_manager
+        # Pass self to LicenseService to avoid circular import
+        self.license_service = LicenseService(db_manager, auth_service_instance=self) if db_manager else None
     
     @property
     def device_id(self) -> str:
@@ -138,6 +143,19 @@ class AuthService:
                 # User is logged in on another device
                 return False, "This account is already logged in on another device. Please logout from the other device first."
             
+            # Check device limit if license service is available
+            if self.license_service:
+                can_add, error_msg, active_devices = self.license_service.can_add_device(
+                    self.device_id, user_email=email, uid=uid
+                )
+                if not can_add:
+                    # Device limit reached
+                    logger.warning(f"Device limit reached: {error_msg}")
+                    return False, error_msg
+                
+                # Add device to license
+                firebase_config.add_device_to_license(uid, self.device_id)
+            
             # Set device ID in custom claims
             firebase_config.set_custom_claims(uid, {
                 'device_id': self.device_id,
@@ -212,6 +230,6 @@ class AuthService:
         return None
 
 
-# Global auth service instance
+# Global auth service instance (will be initialized with db_manager in app)
 auth_service = AuthService()
 

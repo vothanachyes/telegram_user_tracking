@@ -6,13 +6,14 @@ import flet as ft
 import logging
 from typing import Optional
 from ui.theme import theme_manager
-from ui.components import Sidebar
-from ui.pages import LoginPage, DashboardPage, SettingsPage, TelegramPage, ProfilePage
+from ui.components import Sidebar, TopHeader
+from ui.pages import LoginPage, DashboardPage, SettingsPage, TelegramPage, ProfilePage, UserDashboardPage, AboutPage
 from ui.dialogs.fetch_data_dialog import FetchDataDialog
 from database.db_manager import DatabaseManager
 from services.auth_service import auth_service
 from services.connectivity_service import connectivity_service
 from services.telegram_service import TelegramService
+from services.license_service import LicenseService
 from config.settings import settings
 from utils.constants import DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT
 
@@ -35,6 +36,11 @@ class TelegramUserTrackingApp:
         # Initialize services
         self._initialize_services()
         
+        # Initialize auth service with db_manager for license checks
+        from services.auth_service import auth_service
+        auth_service.db_manager = self.db_manager
+        auth_service.license_service = LicenseService(self.db_manager, auth_service_instance=auth_service)
+        
         # Build UI
         self._build_ui()
     
@@ -43,10 +49,18 @@ class TelegramUserTrackingApp:
         self.page.title = settings.app_name
         self.page.theme_mode = theme_manager.theme_mode
         self.page.theme = theme_manager.get_theme()
-        self.page.window_width = DEFAULT_WINDOW_WIDTH
-        self.page.window_height = DEFAULT_WINDOW_HEIGHT
-        self.page.window_min_width = MIN_WINDOW_WIDTH
-        self.page.window_min_height = MIN_WINDOW_HEIGHT
+        
+        # Window size settings only apply to desktop mode
+        # In web mode, these are ignored
+        try:
+            self.page.window_width = DEFAULT_WINDOW_WIDTH
+            self.page.window_height = DEFAULT_WINDOW_HEIGHT
+            self.page.window_min_width = MIN_WINDOW_WIDTH
+            self.page.window_min_height = MIN_WINDOW_HEIGHT
+        except AttributeError:
+            # Web mode doesn't support window size settings
+            pass
+        
         self.page.padding = 0
         self.page.bgcolor = theme_manager.background_color
         
@@ -120,6 +134,8 @@ class TelegramUserTrackingApp:
         """Handle successful login."""
         self.is_logged_in = True
         self._show_main_app()
+        # Check license status after login
+        self._check_license_on_startup()
     
     def _show_main_app(self):
         """Show main application."""
@@ -136,6 +152,8 @@ class TelegramUserTrackingApp:
             on_fetch_data=self._show_fetch_dialog,
             current_page=self.current_page_id
         )
+        # Store page reference in sidebar for updates
+        self.sidebar.page = self.page
         
         # Create main content area
         self.content_area = ft.Container(
@@ -159,14 +177,23 @@ class TelegramUserTrackingApp:
             visible=not connectivity_service.is_connected
         )
         
+        # Top header
+        self.top_header = TopHeader(on_navigate=self._navigate_to)
+        self.top_header.page = self.page
+        
         # Main layout
         self.page.controls = [
             ft.Column([
                 self.connectivity_banner,
+                self.top_header,
                 ft.Row([
                     self.sidebar,
                     self.content_area,
-                ], expand=True)
+                ], 
+                expand=True,
+                spacing=0,  # No spacing between sidebar and content
+                vertical_alignment=ft.CrossAxisAlignment.START  # Align to top
+                )
             ], spacing=0, expand=True)
         ]
         
@@ -174,9 +201,21 @@ class TelegramUserTrackingApp:
     
     def _navigate_to(self, page_id: str):
         """Navigate to a page."""
-        self.current_page_id = page_id
-        self.content_area.content = self._get_page_content(page_id)
-        self.page.update()
+        try:
+            logger.debug(f"Navigating to page: {page_id}")
+            self.current_page_id = page_id
+            if hasattr(self, 'content_area'):
+                self.content_area.content = self._get_page_content(page_id)
+            else:
+                logger.error("content_area not found, cannot navigate")
+                return
+            # Update sidebar to reflect new current page
+            if hasattr(self, 'sidebar'):
+                self.sidebar.set_current_page(page_id)
+            self.page.update()
+            logger.debug(f"Successfully navigated to page: {page_id}")
+        except Exception as e:
+            logger.error(f"Error navigating to page '{page_id}': {e}", exc_info=True)
     
     def _get_page_content(self, page_id: str) -> ft.Control:
         """Get page content by ID."""
@@ -199,8 +238,15 @@ class TelegramUserTrackingApp:
                 return page_content
             elif page_id == "profile":
                 # ProfilePage now requires page reference in constructor
-                profile_page = ProfilePage(page=self.page, on_logout=self._on_logout)
+                profile_page = ProfilePage(page=self.page, on_logout=self._on_logout, db_manager=self.db_manager)
                 return profile_page.build()
+            elif page_id == "user_dashboard":
+                page_content = UserDashboardPage(self.db_manager)
+                page_content.set_page(self.page)
+                return page_content
+            elif page_id == "about":
+                page_content = AboutPage(self.page, self.db_manager)
+                return page_content.build()
             else:
                 return ft.Container(
                     content=ft.Text(f"Page '{page_id}' not found"),
@@ -314,6 +360,59 @@ class TelegramUserTrackingApp:
                 self.page.update()
             except:
                 pass  # Page might not be ready
+    
+    def _check_license_on_startup(self):
+        """Check license status on app startup."""
+        try:
+            from services.license_service import LicenseService
+            from services.auth_service import auth_service
+            license_service = LicenseService(self.db_manager, auth_service_instance=auth_service)
+            status = license_service.check_license_status()
+            
+            if status['expired']:
+                # Show expiration dialog
+                self._show_license_expired_dialog()
+            elif status['days_until_expiration'] is not None and status['days_until_expiration'] < 7:
+                # Show warning for expiring soon
+                from ui.theme import theme_manager
+                theme_manager.show_snackbar(
+                    self.page,
+                    f"License expiring in {status['days_until_expiration']} days. Please contact admin to renew.",
+                    bgcolor=ft.Colors.ORANGE
+                )
+        except Exception as e:
+            logger.error(f"Error checking license on startup: {e}")
+    
+    def _show_license_expired_dialog(self):
+        """Show dialog when license is expired."""
+        from ui.theme import theme_manager
+        
+        def contact_admin(e):
+            dialog.open = False
+            self.page.update()
+            self._navigate_to("about")
+            # Switch to pricing tab
+            if hasattr(self, 'content_area') and hasattr(self.content_area.content, 'tabs'):
+                self.content_area.content.tabs.selected_index = 1
+                self.page.update()
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text(theme_manager.t("license_expired")),
+            content=ft.Text(theme_manager.t("contact_admin_to_upgrade")),
+            actions=[
+                ft.TextButton(theme_manager.t("close"), on_click=lambda e: setattr(dialog, 'open', False) or self.page.update()),
+                ft.ElevatedButton(
+                    theme_manager.t("contact_admin"),
+                    on_click=contact_admin,
+                    bgcolor=theme_manager.primary_color,
+                    color=ft.Colors.WHITE
+                )
+            ]
+        )
+        
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
 
 
 def main(page: ft.Page):

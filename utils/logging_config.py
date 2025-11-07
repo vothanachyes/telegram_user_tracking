@@ -27,8 +27,9 @@ def setup_logging(allowed_levels=None, log_file='app.log'):
         log_file: Path to log file. Defaults to 'app.log'
     """
     if allowed_levels is None:
-        allowed_levels = [logging.INFO, logging.WARNING, logging.ERROR]
-    
+        allowed_levels = [logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL, logging.DEBUG, logging.FATAL]
+        # allowed_levels = [logging.NOTSET]
+
     # Create handlers
     file_handler = logging.FileHandler(log_file)
     console_handler = logging.StreamHandler(sys.stdout)

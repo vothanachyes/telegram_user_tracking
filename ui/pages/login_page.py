@@ -3,10 +3,11 @@ Login page with Firebase authentication.
 """
 
 import flet as ft
-from typing import Callable
+from typing import Callable, Optional, Tuple
 from ui.theme import theme_manager
 from services.auth_service import auth_service
 from config.settings import settings
+from utils.credential_storage import credential_storage
 
 
 class LoginPage(ft.Container):
@@ -15,33 +16,37 @@ class LoginPage(ft.Container):
     def __init__(self, on_login_success: Callable[[], None]):
         self.on_login_success = on_login_success
         
+        # Load saved credentials
+        saved_email, saved_password = self._load_saved_credentials()
+        
         # Create form fields
         self.email_field = theme_manager.create_text_field(
             label=theme_manager.t("email"),
-            value="",
+            value=saved_email or "",
         )
         
         self.password_field = theme_manager.create_text_field(
             label=theme_manager.t("password"),
             password=True,
-            can_reveal_password=True
+            can_reveal_password=True,
+            value=saved_password or ""
         )
         
         self.remember_checkbox = ft.Checkbox(
             label=theme_manager.t("remember_me"),
-            value=False
+            value=bool(saved_email and saved_password)
         )
         
         self.error_text = ft.Text(
             "",
-            color=ft.colors.RED,
+            color=ft.Colors.RED,
             size=14,
             visible=False
         )
         
         self.login_button = theme_manager.create_button(
             text=theme_manager.t("login"),
-            icon=ft.icons.LOGIN,
+            icon=ft.Icons.LOGIN,
             on_click=self._handle_login
         )
         
@@ -55,7 +60,7 @@ class LoginPage(ft.Container):
                 ft.Container(
                     content=ft.Column([
                         ft.Icon(
-                            name=ft.icons.TELEGRAM,
+                            name=ft.Icons.TELEGRAM,
                             size=80,
                             color=theme_manager.primary_color
                         ),
@@ -126,28 +131,26 @@ class LoginPage(ft.Container):
         self.error_text.visible = False
         self.update()
         
-        # Note: In a real implementation, you would need to get the ID token
-        # from client-side Firebase auth. For now, this is a placeholder.
-        # You'll need to implement a web view or use Firebase REST API.
-        
-        # Placeholder: Initialize auth service
+        # Initialize auth service
         if not auth_service.initialize():
-            self._show_error("Failed to initialize authentication")
+            self._show_error("Failed to initialize authentication. Please check Firebase configuration.")
             self._set_loading(False)
             return
         
-        # For demo purposes, we'll simulate a successful login
-        # In production, you need proper Firebase client auth flow
-        self._show_error("Firebase client authentication not yet implemented. Please configure Firebase web auth.")
-        self._set_loading(False)
-        
-        # TODO: Implement proper Firebase authentication with web view or REST API
-        # success, error = auth_service.login(email, password, id_token)
-        # if success:
-        #     self.on_login_success()
-        # else:
-        #     self._show_error(error or "Login failed")
-        #     self._set_loading(False)
+        # Authenticate and login using Firebase REST API
+        # The login method will automatically authenticate using REST API if no token is provided
+        success, error = auth_service.login(email, password)
+        if success:
+            # Save or delete credentials based on "Remember Me" checkbox
+            if self.remember_checkbox.value:
+                self._save_credentials(email, password)
+            else:
+                self._delete_credentials()
+            
+            self.on_login_success()
+        else:
+            self._show_error(error or "Login failed")
+            self._set_loading(False)
     
     def _show_error(self, message: str):
         """Show error message."""
@@ -160,4 +163,52 @@ class LoginPage(ft.Container):
         self.loading_indicator.visible = loading
         self.login_button.disabled = loading
         self.update()
+    
+    def _load_saved_credentials(self) -> Tuple[Optional[str], Optional[str]]:
+        """Load saved login credentials from database."""
+        try:
+            from config.settings import settings
+            db_manager = settings.db_manager
+            
+            credential = db_manager.get_login_credential()
+            if credential:
+                # Decrypt password
+                try:
+                    password = credential_storage.decrypt(credential.encrypted_password)
+                    return credential.email, password
+                except Exception as e:
+                    # If decryption fails, delete the corrupted credential
+                    db_manager.delete_login_credential(credential.email)
+                    return None, None
+            return None, None
+        except Exception as e:
+            # Silently fail - user can still login manually
+            return None, None
+    
+    def _save_credentials(self, email: str, password: str):
+        """Save login credentials to database (encrypted)."""
+        try:
+            from config.settings import settings
+            db_manager = settings.db_manager
+            
+            # Encrypt password
+            encrypted_password = credential_storage.encrypt(password)
+            
+            # Save to database
+            db_manager.save_login_credential(email, encrypted_password)
+        except Exception as e:
+            # Silently fail - credentials not saved but login still succeeds
+            pass
+    
+    def _delete_credentials(self):
+        """Delete saved login credentials."""
+        try:
+            from config.settings import settings
+            db_manager = settings.db_manager
+            
+            # Delete all saved credentials
+            db_manager.delete_login_credential()
+        except Exception as e:
+            # Silently fail
+            pass
 

@@ -2,236 +2,69 @@
 Theme and styling management with i18n support.
 """
 
-import flet as ft
+import json
+import logging
+from pathlib import Path
 from typing import Dict, Optional
+
+import flet as ft
 from config.settings import settings
 from utils.constants import COLORS
 
 
-# Translation dictionaries
-TRANSLATIONS = {
-    "en": {
-        # General
-        "app_name": "Telegram User Tracking",
-        "welcome": "Welcome",
-        "loading": "Loading...",
-        "save": "Save",
-        "cancel": "Cancel",
-        "delete": "Delete",
-        "edit": "Edit",
-        "close": "Close",
-        "confirm": "Confirm",
-        "yes": "Yes",
-        "no": "No",
-        "search": "Search",
-        "filter": "Filter",
-        "export": "Export",
-        "refresh": "Refresh",
-        "settings": "Settings",
-        "logout": "Logout",
-        
-        # Auth
-        "login": "Login",
-        "email": "Email",
-        "password": "Password",
-        "remember_me": "Remember me",
-        "login_error": "Login failed",
-        "logout_success": "Logged out successfully",
-        
-        # Navigation
-        "dashboard": "Dashboard",
-        "telegram": "Telegram",
-        "messages": "Messages",
-        "users": "Users",
-        "profile": "Profile",
-        
-        # Dashboard
-        "total_messages": "Total Messages",
-        "total_users": "Total Users",
-        "total_groups": "Total Groups",
-        "media_storage": "Media Storage",
-        "messages_today": "Messages Today",
-        "messages_this_month": "Messages This Month",
-        "recent_activity": "Recent Activity",
-        "statistics": "Statistics",
-        
-        # Messages
-        "message": "Message",
-        "date_sent": "Date Sent",
-        "has_media": "Has Media",
-        "media_type": "Media Type",
-        "message_link": "Message Link",
-        "fetch_messages": "Fetch Messages",
-        "select_group": "Select Group",
-        "start_date": "Start Date",
-        "end_date": "End Date",
-        "fetching": "Fetching...",
-        "fetch_complete": "Fetch complete",
-        
-        # Users
-        "username": "Username",
-        "full_name": "Full Name",
-        "phone": "Phone",
-        "bio": "Bio",
-        "profile_photo": "Profile Photo",
-        "user_details": "User Details",
-        
-        # Settings
-        "appearance": "Appearance",
-        "theme": "Theme",
-        "dark_mode": "Dark Mode",
-        "light_mode": "Light Mode",
-        "language": "Language",
-        "corner_radius": "Corner Radius",
-        "telegram_auth": "Telegram Authentication",
-        "api_id": "API ID",
-        "api_hash": "API Hash",
-        "test_connection": "Test Connection",
-        "fetch_settings": "Fetch Settings",
-        "download_directory": "Download Directory",
-        "download_media": "Download Media",
-        "max_file_size": "Max File Size (MB)",
-        "fetch_delay": "Fetch Delay (seconds)",
-        "media_types": "Media Types to Download",
-        "photos": "Photos",
-        "videos": "Videos",
-        "documents": "Documents",
-        "audio": "Audio",
-        "settings_saved": "Settings saved successfully",
-        
-        # Export
-        "export_to_excel": "Export to Excel",
-        "export_to_pdf": "Export to PDF",
-        "export_success": "Export successful",
-        "export_error": "Export failed",
-        
-        # Errors
-        "error": "Error",
-        "success": "Success",
-        "warning": "Warning",
-        "info": "Info",
-        "no_data": "No data available",
-        "connection_error": "Connection error",
-        "offline": "You are offline",
-        "online": "Connected",
-        
-        # Developer
-        "developer_info": "Developer Info",
-        "version": "Version",
-        "contact": "Contact",
-    },
+# Initialize logger
+logger = logging.getLogger(__name__)
+
+
+def load_translations() -> Dict[str, Dict[str, str]]:
+    """
+    Load translations from JSON files in the locales directory.
+    Returns a dictionary with language codes as keys and translation dicts as values.
+    Falls back to English if a language file is missing or invalid.
+    """
+    translations: Dict[str, Dict[str, str]] = {}
     
-    "km": {  # Khmer translations
-        # General
-        "app_name": "តាមដានអ្នកប្រើ Telegram",
-        "welcome": "សូមស្វាគមន៍",
-        "loading": "កំពុងផ្ទុក...",
-        "save": "រក្សាទុក",
-        "cancel": "បោះបង់",
-        "delete": "លុប",
-        "edit": "កែសម្រួល",
-        "close": "បិទ",
-        "confirm": "បញ្ជាក់",
-        "yes": "បាទ/ចាស",
-        "no": "ទេ",
-        "search": "ស្វែងរក",
-        "filter": "តម្រង",
-        "export": "នាំចេញ",
-        "refresh": "ផ្ទុកឡើងវិញ",
-        "settings": "ការកំណត់",
-        "logout": "ចាកចេញ",
+    # Get project root (parent of ui directory)
+    project_root = Path(__file__).parent.parent
+    locales_dir = project_root / "locales"
+    
+    # Default English translations (fallback)
+    default_en: Dict[str, str] = {}
+    
+    # Load English translations first (required as fallback)
+    en_file = locales_dir / "en.json"
+    if en_file.exists():
+        try:
+            with open(en_file, "r", encoding="utf-8") as f:
+                default_en = json.load(f)
+                translations["en"] = default_en
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Failed to load English translations: {e}")
+            translations["en"] = {}
+    else:
+        logger.warning(f"English translation file not found: {en_file}")
+        translations["en"] = {}
+    
+    # Load other language files
+    for lang_file in locales_dir.glob("*.json"):
+        lang_code = lang_file.stem
+        if lang_code == "en":
+            continue  # Already loaded
         
-        # Auth
-        "login": "ចូល",
-        "email": "អ៊ីមែល",
-        "password": "ពាក្យសម្ងាត់",
-        "remember_me": "ចងចាំខ្ញុំ",
-        "login_error": "ការចូលបានបរាជ័យ",
-        "logout_success": "បានចាកចេញដោយជោគជ័យ",
-        
-        # Navigation
-        "dashboard": "ផ្ទាំងគ្រប់គ្រង",
-        "telegram": "តេឡេក្រាម",
-        "messages": "សារ",
-        "users": "អ្នកប្រើ",
-        "profile": "ប្រវត្តិរូប",
-        
-        # Dashboard
-        "total_messages": "សារសរុប",
-        "total_users": "អ្នកប្រើសរុប",
-        "total_groups": "ក្រុមសរុប",
-        "media_storage": "ឃ្លាំងផ្ទុកមេឌៀ",
-        "messages_today": "សារថ្ងៃនេះ",
-        "messages_this_month": "សារខែនេះ",
-        "recent_activity": "សកម្មភាពថ្មីៗ",
-        "statistics": "ស្ថិតិ",
-        
-        # Messages
-        "message": "សារ",
-        "date_sent": "កាលបរិច្ឆេទផ្ញើ",
-        "has_media": "មានមេឌៀ",
-        "media_type": "ប្រភេទមេឌៀ",
-        "message_link": "តំណសារ",
-        "fetch_messages": "ទាញយកសារ",
-        "select_group": "ជ្រើសរើសក្រុម",
-        "start_date": "កាលបរិច្ឆេទចាប់ផ្តើម",
-        "end_date": "កាលបរិច្ឆេទបញ្ចប់",
-        "fetching": "កំពុងទាញយក...",
-        "fetch_complete": "ទាញយករួចរាល់",
-        
-        # Users
-        "username": "ឈ្មោះអ្នកប្រើ",
-        "full_name": "ឈ្មោះពេញ",
-        "phone": "ទូរស័ព្ទ",
-        "bio": "ជីវប្រវត្តិ",
-        "profile_photo": "រូបថតប្រវត្តិរូប",
-        "user_details": "ព័ត៌មានលម្អិតអ្នកប្រើ",
-        
-        # Settings
-        "appearance": "រូបរាង",
-        "theme": "ស្បែក",
-        "dark_mode": "របៀបងងឹត",
-        "light_mode": "របៀបភ្លឺ",
-        "language": "ភាសា",
-        "corner_radius": "កាច់ជ្រុង",
-        "telegram_auth": "ការផ្ទៀងផ្ទាត់ Telegram",
-        "api_id": "លេខ API",
-        "api_hash": "លេខកូដ API",
-        "test_connection": "សាកល្បងការតភ្ជាប់",
-        "fetch_settings": "ការកំណត់ទាញយក",
-        "download_directory": "ថតទាញយក",
-        "download_media": "ទាញយកមេឌៀ",
-        "max_file_size": "ទំហំឯកសារអតិបរមា (MB)",
-        "fetch_delay": "ការពន្យាពេលទាញយក (វិនាទី)",
-        "media_types": "ប្រភេទមេឌៀដែលត្រូវទាញយក",
-        "photos": "រូបថត",
-        "videos": "វីដេអូ",
-        "documents": "ឯកសារ",
-        "audio": "សម្លេង",
-        "settings_saved": "បានរក្សាទុកការកំណត់ដោយជោគជ័យ",
-        
-        # Export
-        "export_to_excel": "នាំចេញទៅ Excel",
-        "export_to_pdf": "នាំចេញទៅ PDF",
-        "export_success": "នាំចេញបានជោគជ័យ",
-        "export_error": "នាំចេញបានបរាជ័យ",
-        
-        # Errors
-        "error": "កំហុស",
-        "success": "ជោគជ័យ",
-        "warning": "ការព្រមាន",
-        "info": "ព័ត៌មាន",
-        "no_data": "គ្មានទិន្នន័យ",
-        "connection_error": "កំហុសក្នុងការតភ្ជាប់",
-        "offline": "អ្នកស្ថិតក្រៅបណ្តាញ",
-        "online": "បានតភ្ជាប់",
-        
-        # Developer
-        "developer_info": "ព័ត៌មានអ្នកបង្កើត",
-        "version": "កំណែ",
-        "contact": "ទំនាក់ទំនង",
-    }
-}
+        try:
+            with open(lang_file, "r", encoding="utf-8") as f:
+                lang_translations = json.load(f)
+                translations[lang_code] = lang_translations
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Failed to load translations for {lang_code}: {e}")
+            # Use English as fallback for this language
+            translations[lang_code] = default_en.copy() if default_en else {}
+    
+    return translations
+
+
+# Load translations at module level
+TRANSLATIONS = load_translations()
 
 
 class ThemeManager:
@@ -310,18 +143,25 @@ class ThemeManager:
         """
         Translate key to current language.
         Returns the key if translation not found.
+        Falls back to English if current language is not available.
         """
-        lang_dict = TRANSLATIONS.get(self._current_language, TRANSLATIONS["en"])
+        # Get translations for current language, fallback to English
+        lang_dict = TRANSLATIONS.get(self._current_language, TRANSLATIONS.get("en", {}))
+        # If key not found in current language, try English
+        if key not in lang_dict and self._current_language != "en":
+            lang_dict = TRANSLATIONS.get("en", {})
         return lang_dict.get(key, key)
     
     def create_card(self, content: ft.Control, **kwargs) -> ft.Container:
         """Create a themed card container."""
+        # Set default padding only if not provided in kwargs
+        if 'padding' not in kwargs:
+            kwargs['padding'] = 15
         return ft.Container(
             content=content,
             bgcolor=self.surface_color,
             border=ft.border.all(1, self.border_color),
             border_radius=self.corner_radius,
-            padding=15,
             **kwargs
         )
     
@@ -347,7 +187,7 @@ class ThemeManager:
             icon=icon,
             on_click=on_click,
             style=ft.ButtonStyle(
-                color=ft.colors.WHITE,
+                color=ft.Colors.WHITE,
                 bgcolor=colors_map.get(style, COLORS["primary"]),
                 shape=ft.RoundedRectangleBorder(radius=self.corner_radius)
             ),
@@ -402,7 +242,7 @@ class ThemeManager:
     ):
         """Show a snackbar notification."""
         snackbar = ft.SnackBar(
-            content=ft.Text(message, color=ft.colors.WHITE),
+            content=ft.Text(message, color=ft.Colors.WHITE),
             action=action_label,
             on_action=on_action,
             bgcolor=bgcolor or self.primary_color
@@ -410,6 +250,55 @@ class ThemeManager:
         page.snack_bar = snackbar
         page.snack_bar.open = True
         page.update()
+    
+    def show_toast(
+        self,
+        page: ft.Page,
+        message: str,
+        toast_type: str = "info",
+        duration: int = 3000
+    ):
+        """
+        Show a toast notification.
+        
+        Args:
+            page: Flet page instance
+            message: Message to display
+            toast_type: Type of toast (success, error, warning, info)
+            duration: Duration in milliseconds before auto-dismiss
+        """
+        from ui.components.toast import toast, ToastType
+        
+        # Initialize toast if not already initialized
+        if not hasattr(toast, '_page') or toast._page != page:
+            toast.initialize(page)
+        
+        # Map string type to ToastType enum
+        type_map = {
+            "success": ToastType.SUCCESS,
+            "error": ToastType.ERROR,
+            "warning": ToastType.WARNING,
+            "info": ToastType.INFO,
+        }
+        
+        toast_type_enum = type_map.get(toast_type.lower(), ToastType.INFO)
+        toast.show(message, toast_type_enum, duration)
+    
+    def show_toast_success(self, page: ft.Page, message: str, duration: int = 3000):
+        """Show a success toast notification."""
+        self.show_toast(page, message, "success", duration)
+    
+    def show_toast_error(self, page: ft.Page, message: str, duration: int = 4000):
+        """Show an error toast notification."""
+        self.show_toast(page, message, "error", duration)
+    
+    def show_toast_warning(self, page: ft.Page, message: str, duration: int = 3500):
+        """Show a warning toast notification."""
+        self.show_toast(page, message, "warning", duration)
+    
+    def show_toast_info(self, page: ft.Page, message: str, duration: int = 3000):
+        """Show an info toast notification."""
+        self.show_toast(page, message, "info", duration)
     
     def show_dialog(
         self,

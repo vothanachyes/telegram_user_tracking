@@ -8,14 +8,9 @@ import flet as ft
 from pathlib import Path
 
 # Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('app.log'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+from utils.logging_config import setup_logging
+
+setup_logging()  # Uses default: [INFO, WARNING, ERROR]
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +24,7 @@ def main():
         logger.info("Starting Telegram User Tracking application...")
         
         # Run Flet app
+        # Window size is configured in ui/app.py _configure_page method
         ft.app(target=app_main)
         
     except Exception as e:

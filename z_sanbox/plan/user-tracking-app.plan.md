@@ -180,7 +180,7 @@ user_tracking/
 - Custom icon bundling
 - Version information
 - Developer contact info embedded
-- One-command build: `python build.py`
+- One-command build: `python3 build.py`
 
 ## Technology Stack
 

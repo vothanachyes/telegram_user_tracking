@@ -164,7 +164,7 @@ pip install -r requirements.txt
 
 3. **Run the app:**
 ```bash
-python main.py
+python3 main.py
 ```
 
 4. **Configure settings:**
@@ -179,7 +179,7 @@ python main.py
 
 ### To Build Executable:
 ```bash
-python build.py
+python3 build.py
 ```
 
 ## 🎯 Key Capabilities

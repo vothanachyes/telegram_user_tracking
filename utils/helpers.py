@@ -203,3 +203,20 @@ def is_directory_empty(path: str) -> bool:
     except Exception:
         return True
 
+
+def get_telegram_user_link(username: Optional[str]) -> Optional[str]:
+    """
+    Generate Telegram user profile link.
+    Format: https://t.me/{username}
+    Returns None if username is not provided or empty.
+    """
+    if not username or not username.strip():
+        return None
+    
+    # Remove @ prefix if present
+    clean_username = username.strip().lstrip('@')
+    if not clean_username:
+        return None
+    
+    return f"https://t.me/{clean_username}"
+

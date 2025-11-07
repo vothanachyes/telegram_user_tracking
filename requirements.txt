@@ -1,5 +1,5 @@
 # Core Framework
-flet>=0.24.0
+flet[all]>=0.28.3  # Latest stable version (May 20, 2025) - supports Python 3.9-3.13
 
 # Database
 pandas>=2.1.0
@@ -19,6 +19,7 @@ Pillow>=10.1.0
 # Utilities
 python-dotenv>=1.0.0
 cryptography>=41.0.5
+requests>=2.31.0
 
 # Build
 pyinstaller>=6.1.0

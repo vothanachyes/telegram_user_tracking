@@ -35,8 +35,8 @@ cd telegram_user_tracking
 
 2. Create a virtual environment:
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
 3. Install dependencies:
@@ -52,7 +52,7 @@ cp .env.example .env
 
 5. Run the application:
 ```bash
-python main.py
+python3 main.py
 ```
 
 ## Configuration
@@ -75,7 +75,7 @@ python main.py
 Build the application for your platform:
 
 ```bash
-python build.py
+python3 build.py
 ```
 
 The executable will be created in the `dist/` directory.

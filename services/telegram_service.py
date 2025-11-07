@@ -23,6 +23,7 @@ from database.models import TelegramCredential, TelegramGroup, TelegramUser, Mes
 from config.settings import settings
 from utils.helpers import get_telegram_message_link
 from utils.validators import sanitize_username
+from utils.constants import BASE_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ class TelegramService:
         self.db_manager = db_manager
         self.client: Optional[Client] = None
         self.is_available = PYROGRAM_AVAILABLE
-        self._session_path = Path("./data/sessions")
+        self._session_path = BASE_DIR / "data" / "sessions"
         self._session_path.mkdir(parents=True, exist_ok=True)
     
     def create_client(self, phone: str, api_id: str, api_hash: str) -> Optional[Client]:
@@ -45,10 +46,9 @@ class TelegramService:
         
         try:
             session_name = f"session_{phone.replace('+', '')}"
-            session_file = self._session_path / session_name
             
             client = Client(
-                name=str(session_file),
+                name=session_name,
                 api_id=int(api_id),
                 api_hash=api_hash,
                 phone_number=phone,
@@ -79,11 +79,16 @@ class TelegramService:
             
             await client.connect()
             
-            # Check if already authorized
-            if await client.is_authorized():
-                self.client = client
-                logger.info(f"Already authorized for {phone}")
-                return True, None
+            # Check if already authorized by trying to get user info
+            try:
+                me = await client.get_me()
+                if me:
+                    self.client = client
+                    logger.info(f"Already authorized for {phone} as {me.first_name or me.phone_number}")
+                    return True, None
+            except Exception:
+                # Not authorized, continue with authentication flow
+                pass
             
             # Send code
             sent_code = await client.send_code(phone)
@@ -120,9 +125,11 @@ class TelegramService:
             self.client = client
             
             # Save credential
+            # Construct session file path properly
+            session_file_path = Path(client.workdir) / client.name
             credential = TelegramCredential(
                 phone_number=phone,
-                session_string=str(client.workdir / client.name),
+                session_string=str(session_file_path),
                 is_default=True
             )
             self.db_manager.save_telegram_credential(credential)
@@ -153,7 +160,13 @@ class TelegramService:
             
             await client.connect()
             
-            if not await client.is_authorized():
+            # Check if authorized by trying to get user info
+            try:
+                me = await client.get_me()
+                if not me:
+                    await client.disconnect()
+                    return False, "Session expired or invalid"
+            except Exception:
                 await client.disconnect()
                 return False, "Session expired or invalid"
             
@@ -170,6 +183,39 @@ class TelegramService:
         if self.client:
             await self.client.disconnect()
             self.client = None
+    
+    def is_connected(self) -> bool:
+        """Check if Telegram client is connected and authorized."""
+        return self.client is not None
+    
+    async def is_authorized(self) -> bool:
+        """Check if Telegram client is authorized (async check)."""
+        if not self.client:
+            return False
+        try:
+            # Try to get user info to verify authorization
+            me = await self.client.get_me()
+            return me is not None
+        except Exception as e:
+            logger.error(f"Error checking authorization: {e}")
+            return False
+    
+    async def auto_load_session(self) -> Tuple[bool, Optional[str]]:
+        """
+        Automatically load the default Telegram session if available.
+        Returns (success, error_message)
+        """
+        try:
+            # Get default credential
+            credential = self.db_manager.get_default_credential()
+            if not credential:
+                return False, "No saved Telegram session found"
+            
+            # Load the session
+            return await self.load_session(credential)
+        except Exception as e:
+            logger.error(f"Error auto-loading session: {e}")
+            return False, str(e)
     
     async def fetch_group_info(self, group_id: int) -> Tuple[bool, Optional[TelegramGroup], Optional[str]]:
         """

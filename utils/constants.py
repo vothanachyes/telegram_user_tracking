@@ -4,6 +4,10 @@ Application constants and configuration.
 
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables FIRST
+load_dotenv()
 
 # Application Info
 APP_NAME = os.getenv("APP_NAME", "Telegram User Tracking")
@@ -71,9 +75,9 @@ DEFAULT_MAX_FILE_SIZE_MB = 50
 DEFAULT_CORNER_RADIUS = 10
 MIN_CORNER_RADIUS = 0
 MAX_CORNER_RADIUS = 30
-DEFAULT_WINDOW_WIDTH = 1400
-DEFAULT_WINDOW_HEIGHT = 900
-MIN_WINDOW_WIDTH = 1200
+DEFAULT_WINDOW_WIDTH = 800
+DEFAULT_WINDOW_HEIGHT = 700
+MIN_WINDOW_WIDTH = 600
 MIN_WINDOW_HEIGHT = 700
 
 # Table Settings
@@ -87,6 +91,7 @@ PDF_PAGE_SIZE = "A4"
 # Firebase Settings
 FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "")
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
+FIREBASE_WEB_API_KEY = os.getenv("FIREBASE_WEB_API_KEY", "")
 
 # Folder Structure Template
 # {rootDir}/{group_id}/{username}/{date}/{messageId_time}/

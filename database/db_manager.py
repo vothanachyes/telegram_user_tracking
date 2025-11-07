@@ -10,10 +10,46 @@ import logging
 
 from database.models import (
     AppSettings, TelegramCredential, TelegramGroup, TelegramUser,
-    Message, MediaFile, DeletedMessage, DeletedUser, CREATE_TABLES_SQL
+    Message, MediaFile, DeletedMessage, DeletedUser, LoginCredential,
+    CREATE_TABLES_SQL
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_datetime(dt_value: Any) -> Optional[datetime]:
+    """
+    Parse datetime from various formats (string, datetime, None).
+    Handles SQLite timestamp strings in multiple formats.
+    """
+    if dt_value is None:
+        return None
+    
+    if isinstance(dt_value, datetime):
+        return dt_value
+    
+    if isinstance(dt_value, str):
+        # Try common SQLite timestamp formats
+        formats = [
+            "%Y-%m-%d %H:%M:%S.%f",  # With microseconds
+            "%Y-%m-%d %H:%M:%S",      # Standard format
+            "%Y-%m-%dT%H:%M:%S.%f",   # ISO format with microseconds
+            "%Y-%m-%dT%H:%M:%S",      # ISO format
+            "%Y-%m-%d %H:%M",         # Without seconds
+            "%Y-%m-%d",               # Date only
+        ]
+        
+        for fmt in formats:
+            try:
+                return datetime.strptime(dt_value, fmt)
+            except (ValueError, TypeError):
+                continue
+        
+        # If all formats fail, log warning and return None
+        logger.warning(f"Could not parse datetime: {dt_value}")
+        return None
+    
+    return None
 
 
 class DatabaseManager:
@@ -77,8 +113,8 @@ class DatabaseManager:
                     download_videos=bool(row['download_videos']),
                     download_documents=bool(row['download_documents']),
                     download_audio=bool(row['download_audio']),
-                    created_at=row['created_at'],
-                    updated_at=row['updated_at']
+                    created_at=_parse_datetime(row['created_at']),
+                    updated_at=_parse_datetime(row['updated_at'])
                 )
             return AppSettings()
     
@@ -165,8 +201,8 @@ class DatabaseManager:
                 phone_number=row['phone_number'],
                 session_string=row['session_string'],
                 is_default=bool(row['is_default']),
-                last_used=row['last_used'],
-                created_at=row['created_at']
+                last_used=_parse_datetime(row['last_used']),
+                created_at=_parse_datetime(row['created_at'])
             ) for row in cursor.fetchall()]
     
     def get_default_credential(self) -> Optional[TelegramCredential]:
@@ -218,10 +254,10 @@ class DatabaseManager:
                 group_id=row['group_id'],
                 group_name=row['group_name'],
                 group_username=row['group_username'],
-                last_fetch_date=row['last_fetch_date'],
+                last_fetch_date=_parse_datetime(row['last_fetch_date']),
                 total_messages=row['total_messages'],
-                created_at=row['created_at'],
-                updated_at=row['updated_at']
+                created_at=_parse_datetime(row['created_at']),
+                updated_at=_parse_datetime(row['updated_at'])
             ) for row in cursor.fetchall()]
     
     def get_group_by_id(self, group_id: int) -> Optional[TelegramGroup]:
@@ -238,10 +274,10 @@ class DatabaseManager:
                     group_id=row['group_id'],
                     group_name=row['group_name'],
                     group_username=row['group_username'],
-                    last_fetch_date=row['last_fetch_date'],
+                    last_fetch_date=_parse_datetime(row['last_fetch_date']),
                     total_messages=row['total_messages'],
-                    created_at=row['created_at'],
-                    updated_at=row['updated_at']
+                    created_at=_parse_datetime(row['created_at']),
+                    updated_at=_parse_datetime(row['updated_at'])
                 )
             return None
     
@@ -300,8 +336,8 @@ class DatabaseManager:
                 bio=row['bio'],
                 profile_photo_path=row['profile_photo_path'],
                 is_deleted=bool(row['is_deleted']),
-                created_at=row['created_at'],
-                updated_at=row['updated_at']
+                created_at=_parse_datetime(row['created_at']),
+                updated_at=_parse_datetime(row['updated_at'])
             ) for row in cursor.fetchall()]
     
     def get_user_by_id(self, user_id: int) -> Optional[TelegramUser]:
@@ -324,10 +360,41 @@ class DatabaseManager:
                     bio=row['bio'],
                     profile_photo_path=row['profile_photo_path'],
                     is_deleted=bool(row['is_deleted']),
-                    created_at=row['created_at'],
-                    updated_at=row['updated_at']
+                    created_at=_parse_datetime(row['created_at']),
+                    updated_at=_parse_datetime(row['updated_at'])
                 )
             return None
+    
+    def get_users_by_group(self, group_id: int, include_deleted: bool = False) -> List[TelegramUser]:
+        """Get users who have sent messages in a specific group."""
+        query = """
+            SELECT DISTINCT u.* FROM telegram_users u
+            INNER JOIN messages m ON u.user_id = m.user_id
+            WHERE m.group_id = ?
+        """
+        params = [group_id]
+        
+        if not include_deleted:
+            query += " AND u.is_deleted = 0 AND m.is_deleted = 0"
+        
+        query += " ORDER BY u.full_name"
+        
+        with self.get_connection() as conn:
+            cursor = conn.execute(query, params)
+            return [TelegramUser(
+                id=row['id'],
+                user_id=row['user_id'],
+                username=row['username'],
+                first_name=row['first_name'],
+                last_name=row['last_name'],
+                full_name=row['full_name'],
+                phone=row['phone'],
+                bio=row['bio'],
+                profile_photo_path=row['profile_photo_path'],
+                is_deleted=bool(row['is_deleted']),
+                created_at=_parse_datetime(row['created_at']),
+                updated_at=_parse_datetime(row['updated_at'])
+            ) for row in cursor.fetchall()]
     
     def soft_delete_user(self, user_id: int) -> bool:
         """Soft delete a user."""
@@ -436,19 +503,20 @@ class DatabaseManager:
                 user_id=row['user_id'],
                 content=row['content'],
                 caption=row['caption'],
-                date_sent=row['date_sent'],
+                date_sent=_parse_datetime(row['date_sent']),
                 has_media=bool(row['has_media']),
                 media_type=row['media_type'],
                 media_count=row['media_count'],
                 message_link=row['message_link'],
                 is_deleted=bool(row['is_deleted']),
-                created_at=row['created_at'],
-                updated_at=row['updated_at']
+                created_at=_parse_datetime(row['created_at']),
+                updated_at=_parse_datetime(row['updated_at'])
             ) for row in cursor.fetchall()]
     
     def get_message_count(
         self,
         group_id: Optional[int] = None,
+        user_id: Optional[int] = None,
         include_deleted: bool = False
     ) -> int:
         """Get total message count."""
@@ -458,6 +526,10 @@ class DatabaseManager:
         if group_id:
             query += " AND group_id = ?"
             params.append(group_id)
+        
+        if user_id:
+            query += " AND user_id = ?"
+            params.append(user_id)
         
         if not include_deleted:
             query += " AND is_deleted = 0"
@@ -534,7 +606,7 @@ class DatabaseManager:
                 file_type=row['file_type'],
                 mime_type=row['mime_type'],
                 thumbnail_path=row['thumbnail_path'],
-                created_at=row['created_at']
+                created_at=_parse_datetime(row['created_at'])
             ) for row in cursor.fetchall()]
     
     def get_total_media_size(self) -> int:
@@ -581,4 +653,60 @@ class DatabaseManager:
             stats['messages_this_month'] = cursor.fetchone()[0]
             
             return stats
+    
+    # ==================== Login Credentials ====================
+    
+    def save_login_credential(self, email: str, encrypted_password: str) -> bool:
+        """Save or update login credential."""
+        try:
+            with self.get_connection() as conn:
+                conn.execute("""
+                    INSERT INTO login_credentials (email, encrypted_password)
+                    VALUES (?, ?)
+                    ON CONFLICT(email) DO UPDATE SET
+                        encrypted_password = excluded.encrypted_password,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (email, encrypted_password))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error saving login credential: {e}")
+            return False
+    
+    def get_login_credential(self) -> Optional[LoginCredential]:
+        """Get saved login credential (returns the first one if multiple exist)."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT * FROM login_credentials 
+                    ORDER BY updated_at DESC 
+                    LIMIT 1
+                """)
+                row = cursor.fetchone()
+                if row:
+                    return LoginCredential(
+                        id=row['id'],
+                        email=row['email'],
+                        encrypted_password=row['encrypted_password'],
+                        created_at=_parse_datetime(row['created_at']),
+                        updated_at=_parse_datetime(row['updated_at'])
+                    )
+                return None
+        except Exception as e:
+            logger.error(f"Error getting login credential: {e}")
+            return None
+    
+    def delete_login_credential(self, email: Optional[str] = None) -> bool:
+        """Delete login credential(s). If email is None, delete all."""
+        try:
+            with self.get_connection() as conn:
+                if email:
+                    conn.execute("DELETE FROM login_credentials WHERE email = ?", (email,))
+                else:
+                    conn.execute("DELETE FROM login_credentials")
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error deleting login credential: {e}")
+            return False
 

@@ -27,7 +27,7 @@ class StatCard(ft.Container):
                     content=ft.Icon(
                         name=icon,
                         size=40,
-                        color=ft.colors.WHITE
+                        color=ft.Colors.WHITE
                     ),
                     bgcolor=self.color,
                     border_radius=theme_manager.corner_radius,
@@ -55,7 +55,7 @@ class StatCard(ft.Container):
             border=ft.border.all(1, theme_manager.border_color),
             border_radius=theme_manager.corner_radius,
             padding=20,
-            expand=True
+            width=250
         )
     
     def update_value(self, new_value: str):

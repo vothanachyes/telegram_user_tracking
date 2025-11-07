@@ -49,7 +49,8 @@ class FirebaseConfig:
         try:
             # Get credentials path
             cred_path = credentials_path or FIREBASE_CREDENTIALS_PATH
-            
+
+            print(f"cred_path: {cred_path}")
             if not cred_path or not os.path.exists(cred_path):
                 logger.error(f"Firebase credentials file not found: {cred_path}")
                 return False

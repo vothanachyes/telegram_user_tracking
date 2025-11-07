@@ -119,6 +119,16 @@ class DeletedUser:
     deleted_at: Optional[datetime] = None
 
 
+@dataclass
+class LoginCredential:
+    """Firebase login credential model for saved email/password."""
+    id: Optional[int] = None
+    email: str = ""
+    encrypted_password: str = ""  # Encrypted password
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
 # SQL Schema Creation Statements
 CREATE_TABLES_SQL = """
 -- App Settings Table
@@ -228,6 +238,15 @@ CREATE TABLE IF NOT EXISTS deleted_users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL UNIQUE,
     deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Login Credentials Table (for Firebase login)
+CREATE TABLE IF NOT EXISTS login_credentials (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    encrypted_password TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Indexes for performance

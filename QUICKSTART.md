@@ -5,8 +5,8 @@
 1. **Create and activate virtual environment:**
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
 2. **Install dependencies:**
@@ -48,7 +48,7 @@ PRIMARY_COLOR=#082f49
 ### Development Mode
 
 ```bash
-python main.py
+python3 main.py
 ```
 
 The application will start and open a window. If Firebase is not configured, it will skip the login screen and go directly to the dashboard.
@@ -148,7 +148,7 @@ downloads/
 To create a standalone executable:
 
 ```bash
-python build.py
+python3 build.py
 ```
 
 The executable will be created in the `dist/` directory.

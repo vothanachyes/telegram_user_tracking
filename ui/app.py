@@ -3,15 +3,20 @@ Main Flet application with navigation.
 """
 
 import flet as ft
+import logging
 from typing import Optional
 from ui.theme import theme_manager
 from ui.components import Sidebar
 from ui.pages import LoginPage, DashboardPage, SettingsPage, TelegramPage, ProfilePage
+from ui.dialogs.fetch_data_dialog import FetchDataDialog
 from database.db_manager import DatabaseManager
 from services.auth_service import auth_service
 from services.connectivity_service import connectivity_service
+from services.telegram_service import TelegramService
 from config.settings import settings
 from utils.constants import DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT
+
+logger = logging.getLogger(__name__)
 
 
 class TelegramUserTrackingApp:
@@ -20,6 +25,7 @@ class TelegramUserTrackingApp:
     def __init__(self, page: ft.Page):
         self.page = page
         self.db_manager = DatabaseManager()
+        self.telegram_service = TelegramService(self.db_manager)
         self.current_page_id = "dashboard"
         self.is_logged_in = False
         
@@ -43,6 +49,13 @@ class TelegramUserTrackingApp:
         self.page.window_min_height = MIN_WINDOW_HEIGHT
         self.page.padding = 0
         self.page.bgcolor = theme_manager.background_color
+        
+        # Initialize toast notification system
+        from ui.components.toast import toast
+        toast.initialize(self.page, position="top-right")
+        
+        # Update page to apply window settings
+        self.page.update()
     
     def _initialize_services(self):
         """Initialize application services."""
@@ -57,12 +70,45 @@ class TelegramUserTrackingApp:
     
     def _build_ui(self):
         """Build main UI."""
-        # For demo purposes, skip login if Firebase is not configured
-        if not auth_service.initialize():
-            self.is_logged_in = True
-            self._show_main_app()
-        else:
-            self._show_login()
+        try:
+            # Check if Firebase is available and initialized
+            # If Firebase is not configured or initialization failed, skip login
+            from config.firebase_config import firebase_config
+            firebase_available = firebase_config.is_available if hasattr(firebase_config, 'is_available') else False
+            firebase_initialized = firebase_config.is_initialized() if hasattr(firebase_config, 'is_initialized') else False
+            
+            # Show login only if Firebase is available and initialized
+            # Otherwise, show main app directly (skip login)
+            if firebase_available and firebase_initialized:
+                self._show_login()
+            else:
+                # Firebase not configured or not available - skip login
+                logger.info("Firebase not configured, showing main app directly")
+                self.is_logged_in = True
+                self._show_main_app()
+        except Exception as e:
+            # If anything fails, show main app as fallback
+            logger.error(f"Error building UI: {e}", exc_info=True)
+            try:
+                self.is_logged_in = True
+                self._show_main_app()
+            except Exception as fallback_error:
+                # Last resort: show error message
+                logger.error(f"Critical error showing UI: {fallback_error}", exc_info=True)
+                self.page.controls = [
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Icon(ft.Icons.ERROR_OUTLINE, size=48, color=ft.Colors.RED),
+                            ft.Text("Application Error", size=20, weight=ft.FontWeight.BOLD),
+                            ft.Text(f"Failed to initialize application: {str(e)}", size=14, color=ft.Colors.RED),
+                            ft.Text("Please check the logs for more details.", size=12, color=ft.Colors.GREY),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+                        alignment=ft.alignment.center,
+                        padding=40,
+                        expand=True
+                    )
+                ]
+                self.page.update()
     
     def _show_login(self):
         """Show login page."""
@@ -77,9 +123,17 @@ class TelegramUserTrackingApp:
     
     def _show_main_app(self):
         """Show main application."""
+        # Try to auto-load Telegram session in background
+        if self.page and hasattr(self.page, 'run_task'):
+            self.page.run_task(self._auto_load_telegram_session)
+        else:
+            import asyncio
+            asyncio.create_task(self._auto_load_telegram_session())
+        
         # Create sidebar
         self.sidebar = Sidebar(
             on_navigate=self._navigate_to,
+            on_fetch_data=self._show_fetch_dialog,
             current_page=self.current_page_id
         )
         
@@ -93,14 +147,14 @@ class TelegramUserTrackingApp:
         # Connectivity banner
         self.connectivity_banner = ft.Container(
             content=ft.Row([
-                ft.Icon(ft.icons.WIFI_OFF, color=ft.colors.WHITE, size=16),
+                ft.Icon(ft.Icons.WIFI_OFF, color=ft.Colors.WHITE, size=16),
                 ft.Text(
                     theme_manager.t("offline"),
-                    color=ft.colors.WHITE,
+                    color=ft.Colors.WHITE,
                     size=14
                 )
             ], alignment=ft.MainAxisAlignment.CENTER),
-            bgcolor=ft.colors.RED,
+            bgcolor=ft.Colors.RED,
             padding=10,
             visible=not connectivity_service.is_connected
         )
@@ -126,18 +180,42 @@ class TelegramUserTrackingApp:
     
     def _get_page_content(self, page_id: str) -> ft.Control:
         """Get page content by ID."""
-        if page_id == "dashboard":
-            return DashboardPage(self.db_manager)
-        elif page_id == "telegram":
-            return TelegramPage(self.db_manager)
-        elif page_id == "settings":
-            return SettingsPage(on_settings_changed=self._on_settings_changed)
-        elif page_id == "profile":
-            return ProfilePage(on_logout=self._on_logout)
-        else:
+        try:
+            if page_id == "dashboard":
+                page_content = DashboardPage(self.db_manager)
+                page_content.page = self.page
+                return page_content
+            elif page_id == "telegram":
+                page_content = TelegramPage(self.db_manager)
+                page_content.set_page(self.page)
+                return page_content
+            elif page_id == "settings":
+                page_content = SettingsPage(
+                    on_settings_changed=self._on_settings_changed,
+                    telegram_service=self.telegram_service,
+                    db_manager=self.db_manager
+                )
+                page_content.page = self.page
+                return page_content
+            elif page_id == "profile":
+                # ProfilePage now requires page reference in constructor
+                profile_page = ProfilePage(page=self.page, on_logout=self._on_logout)
+                return profile_page.build()
+            else:
+                return ft.Container(
+                    content=ft.Text(f"Page '{page_id}' not found"),
+                    alignment=ft.alignment.center
+                )
+        except Exception as e:
+            logger.error(f"Error loading page '{page_id}': {e}", exc_info=True)
             return ft.Container(
-                content=ft.Text(f"Page '{page_id}' not found"),
-                alignment=ft.alignment.center
+                content=ft.Column([
+                    ft.Icon(ft.Icons.ERROR_OUTLINE, size=48, color=ft.Colors.RED),
+                    ft.Text("Error loading page", size=20, weight=ft.FontWeight.BOLD),
+                    ft.Text(str(e), size=14, color=ft.Colors.RED),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+                alignment=ft.alignment.center,
+                padding=40
             )
     
     def _on_settings_changed(self):
@@ -155,8 +233,68 @@ class TelegramUserTrackingApp:
     
     def _on_logout(self):
         """Handle logout."""
+        # Clear saved credentials
+        try:
+            self.db_manager.delete_login_credential()
+        except Exception:
+            pass  # Silently fail
+        
         self.is_logged_in = False
         self._show_login()
+    
+    def _show_fetch_dialog(self):
+        """Show fetch data dialog."""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("=== FETCH DIALOG BUTTON CLICKED ===")
+        
+        if not self.page:
+            logger.error("No page reference available!")
+            return
+        
+        try:
+            logger.info("Creating FetchDataDialog...")
+            dialog = FetchDataDialog(
+                db_manager=self.db_manager,
+                telegram_service=self.telegram_service,
+                on_fetch_complete=self._on_fetch_complete
+            )
+            
+            # Set page reference for dialog
+            dialog.page = self.page
+            logger.info(f"Dialog created successfully. Type: {type(dialog)}")
+            logger.info(f"Dialog.open value: {dialog.open}")
+            logger.info(f"Dialog.modal value: {dialog.modal}")
+            
+            # Show dialog
+            self.page.open(dialog)
+            logger.info("Dialog opened using page.open()")
+            
+        except Exception as e:
+            logger.error(f"Error showing dialog: {e}", exc_info=True)
+            theme_manager.show_snackbar(
+                self.page,
+                f"Error opening dialog: {str(e)}",
+                bgcolor=ft.Colors.RED
+            )
+    
+    def _on_fetch_complete(self):
+        """Handle fetch completion - refresh current page."""
+        # Refresh the current page content
+        if self.current_page_id == "telegram" or self.current_page_id == "dashboard":
+            self.content_area.content = self._get_page_content(self.current_page_id)
+            self.page.update()
+    
+    async def _auto_load_telegram_session(self):
+        """Automatically load Telegram session if available."""
+        try:
+            success, error = await self.telegram_service.auto_load_session()
+            if success:
+                logger.info("Telegram session auto-loaded successfully")
+            else:
+                logger.info(f"Could not auto-load Telegram session: {error}")
+        except Exception as e:
+            logger.error(f"Error auto-loading Telegram session: {e}")
     
     def _on_connectivity_change(self, is_connected: bool):
         """Handle connectivity status change."""
@@ -164,12 +302,12 @@ class TelegramUserTrackingApp:
             self.connectivity_banner.visible = not is_connected
             
             if is_connected:
-                self.connectivity_banner.bgcolor = ft.colors.GREEN
-                self.connectivity_banner.content.controls[0].name = ft.icons.WIFI
+                self.connectivity_banner.bgcolor = ft.Colors.GREEN
+                self.connectivity_banner.content.controls[0].name = ft.Icons.WIFI
                 self.connectivity_banner.content.controls[1].value = theme_manager.t("online")
             else:
-                self.connectivity_banner.bgcolor = ft.colors.RED
-                self.connectivity_banner.content.controls[0].name = ft.icons.WIFI_OFF
+                self.connectivity_banner.bgcolor = ft.Colors.RED
+                self.connectivity_banner.content.controls[0].name = ft.Icons.WIFI_OFF
                 self.connectivity_banner.content.controls[1].value = theme_manager.t("offline")
             
             try:

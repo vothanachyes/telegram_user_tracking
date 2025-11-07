@@ -8,7 +8,15 @@ import platform
 from typing import Optional, Tuple
 from datetime import datetime
 
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+    logging.warning("requests library not installed")
+
 from config.firebase_config import firebase_config
+from utils.constants import FIREBASE_WEB_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +41,76 @@ class AuthService:
         """Initialize Firebase authentication."""
         return firebase_config.initialize()
     
-    def login(self, email: str, password: str, id_token: str) -> Tuple[bool, Optional[str]]:
+    def authenticate_with_email_password(self, email: str, password: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        Authenticate user with email and password using Firebase REST API.
+        Returns (success, error_message, id_token)
+        """
+        if not REQUESTS_AVAILABLE:
+            return False, "requests library is required for authentication", None
+        
+        if not FIREBASE_WEB_API_KEY:
+            return False, "Firebase Web API key not configured. Please set FIREBASE_WEB_API_KEY in .env file", None
+        
+        try:
+            # Firebase REST API endpoint for email/password authentication
+            url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_WEB_API_KEY}"
+            
+            payload = {
+                "email": email,
+                "password": password,
+                "returnSecureToken": True
+            }
+            
+            response = requests.post(url, json=payload, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                id_token = data.get("idToken")
+                if id_token:
+                    return True, None, id_token
+                else:
+                    return False, "Failed to get authentication token", None
+            else:
+                error_data = response.json()
+                error_message = error_data.get("error", {}).get("message", "Authentication failed")
+                
+                # Map Firebase error messages to user-friendly messages
+                error_mapping = {
+                    "EMAIL_NOT_FOUND": "No account found with this email address",
+                    "INVALID_PASSWORD": "Invalid password",
+                    "USER_DISABLED": "This account has been disabled",
+                    "INVALID_EMAIL": "Invalid email address",
+                    "TOO_MANY_ATTEMPTS_TRY_LATER": "Too many failed login attempts. Please try again later"
+                }
+                
+                error_code = error_data.get("error", {}).get("message", "")
+                user_message = error_mapping.get(error_code, error_message)
+                
+                return False, user_message, None
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error during authentication: {e}")
+            return False, "Network error. Please check your internet connection", None
+        except Exception as e:
+            logger.error(f"Authentication error: {e}")
+            return False, f"Authentication failed: {str(e)}", None
+    
+    def login(self, email: str, password: str, id_token: Optional[str] = None) -> Tuple[bool, Optional[str]]:
         """
         Login user with email and password.
-        This method expects an ID token from the client-side Firebase auth.
+        If id_token is not provided, it will authenticate using Firebase REST API first.
         
         Returns (success, error_message)
         """
         try:
+            # If no ID token provided, authenticate first using REST API
+            if not id_token:
+                success, error, token = self.authenticate_with_email_password(email, password)
+                if not success:
+                    return False, error
+                id_token = token
+            
             if not firebase_config.is_initialized():
                 return False, "Firebase not initialized"
             
@@ -87,22 +157,39 @@ class AuthService:
     def logout(self) -> bool:
         """Logout current user."""
         try:
+            logger.info("Logout method called")
+            
             if self.current_user:
-                uid = self.current_user['uid']
+                uid = self.current_user.get('uid')
+                email = self.current_user.get('email')
                 
-                # Clear device ID from custom claims
-                firebase_config.set_custom_claims(uid, {
-                    'device_id': None,
-                    'last_logout': datetime.now().isoformat()
-                })
+                logger.info(f"Logging out user: {email}")
                 
-                logger.info(f"User logged out: {self.current_user.get('email')}")
+                # Try to clear device ID from custom claims
+                try:
+                    if firebase_config.is_initialized() and uid:
+                        firebase_config.set_custom_claims(uid, {
+                            'device_id': None,
+                            'last_logout': datetime.now().isoformat()
+                        })
+                        logger.info(f"Cleared custom claims for user: {email}")
+                except Exception as e:
+                    logger.warning(f"Failed to clear custom claims: {e}")
+                    # Continue with logout even if clearing claims fails
+                
+                logger.info(f"User logged out successfully: {email}")
                 self.current_user = None
                 return True
-            return False
+            else:
+                logger.warning("No user logged in to logout")
+                # Still return True because there's no user session to clear
+                return True
+                
         except Exception as e:
-            logger.error(f"Logout error: {e}")
-            return False
+            logger.error(f"Logout error: {e}", exc_info=True)
+            # Even if there's an error, clear the current user
+            self.current_user = None
+            return True
     
     def is_logged_in(self) -> bool:
         """Check if user is logged in."""

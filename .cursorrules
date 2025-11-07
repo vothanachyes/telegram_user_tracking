@@ -1,0 +1,194 @@
+# Telegram User Tracking - Cursor AI Rules
+
+## Language & Runtime
+- **ALWAYS use Python 3.10+** (prefer Python 3.13 when available)
+- Use type hints for all function parameters and return values
+- Follow PEP 8 style guide strictly
+- Use f-strings for string formatting
+- Prefer pathlib.Path over os.path for file operations
+
+## Project Context
+This is a cross-platform desktop application for tracking Telegram group messages with:
+- Flet UI framework for cross-platform GUI
+- Pyrogram for Telegram API integration
+- Firebase Admin SDK for authentication
+- SQLite for local data storage
+- Export capabilities (PDF, Excel)
+
+## Architecture & Structure
+```
+config/          # Configuration, settings, Firebase setup
+database/        # SQLite models, db_manager, migrations
+services/        # Business logic (auth, telegram, export, media, connectivity)
+ui/              # Flet UI components
+  ├── pages/     # Main application pages
+  ├── components/# Reusable UI components
+  └── dialogs/   # Modal dialogs
+utils/           # Helpers, validators, constants, credential storage
+assets/          # Icons, images
+data/            # Database and session files
+```
+
+## Tech Stack Guidelines
+
+### Flet Framework
+- Use `ft.` prefix for all Flet components
+- Follow reactive state management patterns
+- Use `page.update()` sparingly - prefer component-level updates
+- Implement proper event handlers with async/await where needed
+- Use `ft.Container` with `expand=True` for responsive layouts
+- Leverage `ft.Column` and `ft.Row` with proper spacing and alignment
+
+### Pyrogram (Telegram)
+- Always handle Pyrogram client lifecycle properly (connect/disconnect)
+- Store sessions in `data/sessions/` directory
+- Use async/await for all Telegram operations
+- Handle API rate limits and errors gracefully
+- Check if client is connected before operations
+
+### Firebase Authentication
+- Use Firebase Admin SDK (not client SDK)
+- Implement single-device session enforcement
+- Handle token expiration and refresh
+- Secure credential storage using `utils/credential_storage.py`
+- Never log or expose Firebase credentials
+
+### SQLite Database
+- Use SQLAlchemy ORM (if present) or raw SQL with proper parameterization
+- Always use transactions for write operations
+- Implement proper connection pooling
+- Create indexes for frequently queried columns
+- Handle database migrations in `database/migrations/`
+
+## Coding Standards
+
+### Error Handling
+- Use try-except blocks for all external operations (API calls, file I/O, database)
+- Log errors with proper context using the logging module
+- Show user-friendly error messages in UI (snackbars, dialogs)
+- Never expose stack traces to end users
+
+### Logging
+- Use Python's logging module (configured in main.py)
+- Log levels: DEBUG for development, INFO for important events, WARNING for issues, ERROR for failures
+- Include context in log messages (user actions, API calls, file operations)
+- Log to both file (app.log) and console
+
+### Async/Await
+- Use async/await for all I/O operations (Telegram API, file downloads, database queries)
+- Don't block the UI thread - use threading or async for long-running tasks
+- Properly handle exceptions in async functions
+- Use `asyncio.create_task()` for fire-and-forget operations
+
+### Security
+- Never hardcode credentials or API keys
+- Use environment variables via python-dotenv
+- Encrypt sensitive data at rest using cryptography module
+- Validate and sanitize all user inputs
+- Use parameterized queries to prevent SQL injection
+
+## UI/UX Guidelines
+- Support both dark and light themes
+- Implement bilingual support (English and Khmer)
+- Use consistent spacing and padding (theme.py)
+- Show loading indicators for async operations
+- Provide feedback for all user actions (success/error messages)
+- Implement proper form validation before submission
+- Use dialogs for confirmations and detailed views
+
+## File Operations
+- Use pathlib.Path for all file paths
+- Create directories if they don't exist before writing files
+- Handle file encoding properly (UTF-8 default)
+- Clean up temporary files after use
+- Organize media downloads in `downloads/` with proper structure
+
+## Testing & Quality
+- Write defensive code - validate inputs at boundaries
+- Handle edge cases (empty lists, None values, network failures)
+- Test with both online and offline scenarios
+- Verify cross-platform compatibility (Windows, macOS, Linux)
+
+## Dependencies
+- Keep requirements.txt updated with exact versions
+- Pin major versions to avoid breaking changes
+- Document any new dependencies added
+- Use virtual environment (venv) for isolation
+
+## Git & Version Control
+- Don't commit credentials, API keys, or Firebase config files
+- Don't commit data/ directory contents (database, sessions)
+- Don't commit app.log or build artifacts
+- Follow conventional commit messages
+
+## Performance
+- Implement pagination for large datasets
+- Use lazy loading for media files
+- Cache frequently accessed data
+- Optimize database queries with proper indexes
+- Batch operations when possible
+
+## Common Patterns
+
+### Creating a new UI page:
+```python
+import flet as ft
+from typing import Optional
+
+class NewPage:
+    def __init__(self, page: ft.Page, on_navigate):
+        self.page = page
+        self.on_navigate = on_navigate
+        
+    def build(self) -> ft.Control:
+        return ft.Container(
+            # UI components
+        )
+```
+
+### Service layer pattern:
+```python
+class NewService:
+    def __init__(self, db_manager):
+        self.db = db_manager
+        self.logger = logging.getLogger(__name__)
+    
+    async def operation(self) -> Optional[Result]:
+        try:
+            # Business logic
+            return result
+        except Exception as e:
+            self.logger.error(f"Operation failed: {e}")
+            return None
+```
+
+### Database operations:
+```python
+def get_items(self, filters: dict) -> list:
+    with self.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM table WHERE field = ?", (value,))
+        return cursor.fetchall()
+```
+
+## Build & Distribution
+- Use build.py for PyInstaller builds
+- Include all assets and dependencies in spec file
+- Test executable on target platforms before release
+- Follow semantic versioning (MAJOR.MINOR.PATCH)
+
+## When Making Changes
+1. Understand the full context before modifying code
+2. Maintain consistency with existing patterns
+3. Update related documentation if needed
+4. Test changes thoroughly (especially UI flows)
+5. Consider impact on other components/services
+6. Don't break existing functionality
+
+## Remember
+- Python 3 is the standard - use modern Python features
+- User experience is paramount - make the UI responsive and intuitive
+- Security first - protect user credentials and data
+- Log everything important - it helps with debugging
+- Handle errors gracefully - never crash the app
+

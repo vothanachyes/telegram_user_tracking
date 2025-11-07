@@ -57,7 +57,6 @@ class FirebaseConfig:
             # Get credentials path
             cred_path = credentials_path or FIREBASE_CREDENTIALS_PATH
 
-            print(f"cred_path: {cred_path}")
             if not cred_path or not os.path.exists(cred_path):
                 logger.error(f"Firebase credentials file not found: {cred_path}")
                 return False
@@ -69,6 +68,10 @@ class FirebaseConfig:
             # Initialize Firestore if available
             if FIRESTORE_AVAILABLE:
                 self.db = firestore.client()
+                logger.info("Firestore client initialized successfully")
+            else:
+                logger.warning("Firestore is not available - license features will not work")
+                self.db = None
             
             self._initialized = True
             logger.info("Firebase initialized successfully")
@@ -182,20 +185,27 @@ class FirebaseConfig:
         Get user license from Firestore.
         Returns license document if found, None otherwise.
         """
-        if not self._initialized or not self.db:
+        if not self._initialized:
             logger.error("Firebase not initialized")
+            return None
+        
+        if not self.db:
+            logger.error("Firestore database not available")
             return None
         
         try:
             doc_ref = self.db.collection('user_licenses').document(uid)
+            logger.debug(f"Checking for license document for user {uid}")
             doc = doc_ref.get()
             if doc.exists:
                 data = doc.to_dict()
                 data['uid'] = uid
+                logger.debug(f"License found for user {uid}: {data}")
                 return data
+            logger.debug(f"No license document found for user {uid}")
             return None
         except Exception as e:
-            logger.error(f"Error getting user license: {e}")
+            logger.error(f"Error getting user license: {e}", exc_info=True)
             return None
     
     def set_user_license(self, uid: str, license_data: dict) -> bool:
@@ -203,19 +213,24 @@ class FirebaseConfig:
         Set or update user license in Firestore.
         Returns True if successful.
         """
-        if not self._initialized or not self.db:
+        if not self._initialized:
             logger.error("Firebase not initialized")
+            return False
+        
+        if not self.db:
+            logger.error("Firestore database not available")
             return False
         
         try:
             doc_ref = self.db.collection('user_licenses').document(uid)
             # Remove uid from data if present (it's the document ID)
             data = {k: v for k, v in license_data.items() if k != 'uid'}
+            logger.info(f"Attempting to create/update license document for user {uid} with data: {data}")
             doc_ref.set(data, merge=True)
-            logger.info(f"License updated for user: {uid}")
+            logger.info(f"License successfully created/updated for user: {uid}")
             return True
         except Exception as e:
-            logger.error(f"Error setting user license: {e}")
+            logger.error(f"Error setting user license: {e}", exc_info=True)
             return False
     
     def add_device_to_license(self, uid: str, device_id: str) -> bool:

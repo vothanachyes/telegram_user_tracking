@@ -135,18 +135,29 @@ PHONE_PATTERN = r"^\+?[1-9]\d{1,14}$"
 EMAIL_PATTERN = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
 
 # License Tiers
+LICENSE_TIER_BRONZE = "bronze"
 LICENSE_TIER_SILVER = "silver"
 LICENSE_TIER_GOLD = "gold"
 LICENSE_TIER_PREMIUM = "premium"
 
 # License Pricing (USD and KHR)
 LICENSE_PRICING = {
+    LICENSE_TIER_BRONZE: {
+        "name": "Bronze",
+        "price_usd": 0,
+        "price_khr": 0,
+        "max_groups": 1,
+        "max_devices": 1,
+        "period": 3,  # 7 days trial period
+        "features": ["max_groups", "max_devices"]
+    },
     LICENSE_TIER_SILVER: {
         "name": "Silver",
         "price_usd": 5,
         "price_khr": 20000,
         "max_groups": 3,
         "max_devices": 1,
+        "period": 30,  # 30 days subscription period
         "features": ["max_groups", "max_devices"]
     },
     LICENSE_TIER_GOLD: {
@@ -155,6 +166,7 @@ LICENSE_PRICING = {
         "price_khr": 48000,
         "max_groups": 10,
         "max_devices": 2,
+        "period": 30,  # 30 days subscription period
         "features": ["max_groups", "max_devices"]
     },
     LICENSE_TIER_PREMIUM: {
@@ -163,10 +175,11 @@ LICENSE_PRICING = {
         "price_khr": 100000,
         "max_groups": -1,  # -1 means unlimited
         "max_devices": 5,
+        "period": 30,  # 30 days subscription period
         "features": ["unlimited_groups", "max_devices", "priority_support"]
     }
 }
 
 # Default license tier
-DEFAULT_LICENSE_TIER = LICENSE_TIER_SILVER
+DEFAULT_LICENSE_TIER = LICENSE_TIER_BRONZE
 

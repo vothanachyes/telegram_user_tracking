@@ -207,6 +207,7 @@ class ProfilePage:
         
         # Tier color
         tier_colors = {
+            'bronze': ft.Colors.BROWN,
             'silver': ft.Colors.GREY,
             'gold': ft.Colors.AMBER,
             'premium': ft.Colors.PURPLE
@@ -298,6 +299,26 @@ class ProfilePage:
                         size=14
                     )
                 ], spacing=10),
+                # Show remaining days prominently
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon(
+                            ft.Icons.ACCESS_TIME,
+                            color=ft.Colors.WHITE,
+                            size=20
+                        ),
+                        ft.Text(
+                            f"{days_remaining} {theme_manager.t('days_remaining')}" if days_remaining is not None else theme_manager.t("no_expiration"),
+                            size=16,
+                            weight=ft.FontWeight.BOLD,
+                            color=ft.Colors.WHITE
+                        )
+                    ], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
+                    bgcolor=ft.Colors.BLUE_700 if days_remaining is not None and days_remaining > 7 else (ft.Colors.ORANGE_700 if days_remaining is not None and days_remaining > 0 else ft.Colors.RED_700),
+                    padding=ft.padding.symmetric(horizontal=16, vertical=10),
+                    border_radius=theme_manager.corner_radius,
+                    width=500
+                ) if days_remaining is not None or expiration_date is None else ft.Container(height=0),
                 ft.Container(height=10),
                 ft.ElevatedButton(
                     theme_manager.t("view_pricing"),

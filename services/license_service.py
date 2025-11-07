@@ -9,7 +9,7 @@ from config.firebase_config import firebase_config
 from database.db_manager import DatabaseManager
 from database.models import UserLicenseCache
 from utils.constants import (
-    LICENSE_PRICING, LICENSE_TIER_SILVER, LICENSE_TIER_GOLD, LICENSE_TIER_PREMIUM,
+    LICENSE_PRICING, LICENSE_TIER_BRONZE, LICENSE_TIER_SILVER, LICENSE_TIER_GOLD, LICENSE_TIER_PREMIUM,
     DEFAULT_LICENSE_TIER
 )
 
@@ -61,12 +61,12 @@ class LicenseService:
         
         return DEFAULT_LICENSE_TIER
     
-    def check_license_status(self, user_email: Optional[str] = None) -> Dict[str, Any]:
+    def check_license_status(self, user_email: Optional[str] = None, uid: Optional[str] = None) -> Dict[str, Any]:
         """
         Check if user has an active license.
         Returns dict with status, tier, expiration, etc.
         """
-        if not user_email:
+        if not user_email or not uid:
             auth_service = self._get_auth_service()
             current_user = auth_service.get_current_user()
             if not current_user:
@@ -81,19 +81,27 @@ class LicenseService:
                     'max_devices': default_tier_info.get('max_devices', 1),
                     'max_groups': default_tier_info.get('max_groups', 3)
                 }
-            user_email = current_user.get('email')
-            uid = current_user.get('uid')
-        else:
-            uid = None
+            if not user_email:
+                user_email = current_user.get('email')
+            if not uid:
+                uid = current_user.get('uid')
         
         # Check local cache
         cache = self.db_manager.get_license_cache(user_email)
+
+        logger.debug(f"License cache for {user_email}: {cache}")
         
-        # Sync from Firebase if cache is stale or missing
+        # Sync from Firebase if cache is stale or missing - ALWAYS sync if we have uid
         if not cache or not cache.is_active:
             if uid:
-                self.sync_from_firebase(user_email, uid)
-                cache = self.db_manager.get_license_cache(user_email)
+                logger.info(f"Syncing license from Firebase for user {user_email} (uid: {uid})")
+                sync_success = self.sync_from_firebase(user_email, uid)
+                if sync_success:
+                    cache = self.db_manager.get_license_cache(user_email)
+                else:
+                    logger.warning(f"Failed to sync license from Firebase for user {user_email}")
+            else:
+                logger.warning(f"No UID provided, cannot sync from Firebase for user {user_email}")
         
         if not cache:
             # Return default values with max_devices and max_groups
@@ -122,7 +130,7 @@ class LicenseService:
             else:
                 delta = cache.expiration_date - now
                 days_until_expiration = delta.days
-        
+    
         return {
             'is_active': cache.is_active and not expired,
             'tier': cache.license_tier,
@@ -155,8 +163,34 @@ class LicenseService:
             license_data = firebase_config.get_user_license(uid)
             
             if not license_data:
-                logger.warning(f"No license found in Firebase for user {uid}")
-                return False
+                logger.info(f"No license found in Firebase for user {uid}, creating default license")
+                # Create default license document for new user
+                default_tier = DEFAULT_LICENSE_TIER
+                tier_info = LICENSE_PRICING.get(default_tier, {})
+                # Get period from tier info (default to 7 days if not specified)
+                period_days = tier_info.get('period', 7)
+                default_license = {
+                    'license_tier': default_tier,
+                    'max_devices': tier_info.get('max_devices', 1),
+                    'max_groups': tier_info.get('max_groups', 1),
+                    'active_device_ids': [],
+                    # Set expiration based on tier's period
+                    # Admin can extend this later
+                    'expiration_date': (datetime.now() + timedelta(days=period_days)).isoformat()
+                }
+                
+                # Create the license document in Firestore
+                if not firebase_config.set_user_license(uid, default_license):
+                    logger.error(f"Failed to create default license for user {uid}")
+                    return False
+                
+                # Retry getting the license
+                license_data = firebase_config.get_user_license(uid)
+                if not license_data:
+                    logger.error(f"Failed to retrieve newly created license for user {uid}")
+                    return False
+                
+                logger.info(f"Created default {default_tier} license for user {uid}")
             
             # Parse expiration date
             expiration_date = None
@@ -176,6 +210,67 @@ class LicenseService:
             
             # Get tier and limits
             tier = license_data.get('license_tier', DEFAULT_LICENSE_TIER)
+            
+            # Check if license is expired and auto-renew Bronze (free trial) licenses
+            if expiration_date:
+                now = datetime.now()
+                # Handle timezone-aware dates
+                if expiration_date.tzinfo:
+                    now = now.replace(tzinfo=expiration_date.tzinfo)
+                elif expiration_date.tzinfo is None and now.tzinfo:
+                    # If expiration is naive but now is timezone-aware, make expiration aware
+                    expiration_date = expiration_date.replace(tzinfo=now.tzinfo)
+                
+                if expiration_date < now:
+                    if tier == LICENSE_TIER_BRONZE:
+                        # Auto-renew expired Bronze (free trial) licenses
+                        logger.info(f"Bronze license expired for user {uid}, auto-renewing")
+                        tier_info = LICENSE_PRICING.get(LICENSE_TIER_BRONZE, {})
+                        period_days = tier_info.get('period', 7)
+                        new_expiration = datetime.now() + timedelta(days=period_days)
+                        
+                        # Preserve timezone if original had one
+                        if expiration_date.tzinfo:
+                            new_expiration = new_expiration.replace(tzinfo=expiration_date.tzinfo)
+                        
+                        # Update expiration date in Firestore
+                        updated_license = {
+                            'expiration_date': new_expiration.isoformat(),
+                            'license_tier': LICENSE_TIER_BRONZE,
+                            'max_devices': tier_info.get('max_devices', 1),
+                            'max_groups': tier_info.get('max_groups', 1)
+                        }
+                        firebase_config.set_user_license(uid, updated_license)
+                        
+                        # Update expiration_date for local processing
+                        expiration_date = new_expiration
+                        logger.info(f"Auto-renewed Bronze license for user {uid}, new expiration: {new_expiration.isoformat()}")
+                    else:
+                        # For expired paid tiers, convert to Bronze and renew (grace period)
+                        # This handles cases where users had expired licenses before Bronze tier existed
+                        original_tier = tier
+                        logger.info(f"Expired {original_tier} license for user {uid}, converting to Bronze and renewing")
+                        tier_info = LICENSE_PRICING.get(LICENSE_TIER_BRONZE, {})
+                        period_days = tier_info.get('period', 7)
+                        new_expiration = datetime.now() + timedelta(days=period_days)
+                        
+                        # Preserve timezone if original had one
+                        if expiration_date.tzinfo:
+                            new_expiration = new_expiration.replace(tzinfo=expiration_date.tzinfo)
+                        
+                        # Convert to Bronze and renew
+                        updated_license = {
+                            'expiration_date': new_expiration.isoformat(),
+                            'license_tier': LICENSE_TIER_BRONZE,
+                            'max_devices': tier_info.get('max_devices', 1),
+                            'max_groups': tier_info.get('max_groups', 1)
+                        }
+                        firebase_config.set_user_license(uid, updated_license)
+                        
+                        # Update tier and expiration_date for local processing
+                        tier = LICENSE_TIER_BRONZE
+                        expiration_date = new_expiration
+                        logger.info(f"Converted expired {original_tier} license to Bronze and renewed for user {uid}, new expiration: {new_expiration.isoformat()}")
             max_devices = license_data.get('max_devices', LICENSE_PRICING.get(tier, {}).get('max_devices', 1))
             max_groups = license_data.get('max_groups', LICENSE_PRICING.get(tier, {}).get('max_groups', 3))
             
@@ -198,12 +293,12 @@ class LicenseService:
             logger.error(f"Error syncing license from Firebase: {e}")
             return False
     
-    def can_add_group(self, user_email: Optional[str] = None) -> Tuple[bool, Optional[str]]:
+    def can_add_group(self, user_email: Optional[str] = None, uid: Optional[str] = None) -> Tuple[bool, Optional[str]]:
         """
         Check if user can add another group.
         Returns (can_add, error_message)
         """
-        status = self.check_license_status(user_email)
+        status = self.check_license_status(user_email, uid)
         
         if not status['is_active']:
             return False, "Your license has expired. Please contact admin to renew."
@@ -242,7 +337,13 @@ class LicenseService:
             if not user_email:
                 user_email = current_user.get('email')
         
-        status = self.check_license_status(user_email)
+        # Ensure we sync from Firebase before checking status
+        # This ensures license is created if it doesn't exist
+        if uid and user_email:
+            logger.info(f"Syncing license before device check for user {user_email} (uid: {uid})")
+            self.sync_from_firebase(user_email, uid)
+        
+        status = self.check_license_status(user_email, uid)
         
         if not status['is_active']:
             return False, "Your license has expired. Please contact admin to renew.", []
@@ -286,12 +387,12 @@ class LicenseService:
         can_add, _ = self.can_add_group(user_email)
         return can_add
     
-    def get_license_info(self, user_email: Optional[str] = None) -> Dict[str, Any]:
+    def get_license_info(self, user_email: Optional[str] = None, uid: Optional[str] = None) -> Dict[str, Any]:
         """
         Get comprehensive license information for current user.
         Returns dict with all license details.
         """
-        status = self.check_license_status(user_email)
+        status = self.check_license_status(user_email, uid)
         tier = status['tier']
         pricing_info = LICENSE_PRICING.get(tier, {})
         

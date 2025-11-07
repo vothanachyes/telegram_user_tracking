@@ -29,6 +29,131 @@ assets/          # Icons, images
 data/            # Database and session files
 ```
 
+## File Size & Code Organization (CRITICAL)
+
+### File Line Count Limits
+**NEVER create files that exceed these limits. Refactor immediately if approaching limits:**
+
+| File Type | Target | Maximum | Action Required |
+|-----------|--------|---------|----------------|
+| **Service files** | < 300 lines | < 500 lines | Split if > 400 lines |
+| **UI Page files** | < 250 lines | < 400 lines | Split if > 350 lines |
+| **Component files** | < 200 lines | < 300 lines | Split if > 250 lines |
+| **Utility/Helper files** | < 150 lines | < 250 lines | Split if > 200 lines |
+| **Model files** | < 200 lines | < 300 lines | Split if > 250 lines |
+| **Manager files** | < 300 lines | < 400 lines | Split if > 350 lines |
+
+**SonarQube Compliance**: Files should not exceed 1,000 lines (warning threshold). Target < 500 lines for maintainability.
+
+### Separation of Concerns (MANDATORY)
+
+**Single Responsibility Principle**: Each file must have ONE clear purpose.
+
+#### ❌ AVOID - Mixed Concerns:
+```python
+# BAD: UI, data fetching, and export logic in one file
+class UserDashboardPage:
+    def build_ui(self): ...      # UI building
+    def fetch_data(self): ...    # Data fetching  
+    def export_excel(self): ...  # Export logic
+    def handle_events(self): ... # Event handling
+```
+
+#### ✅ PREFER - Separated Concerns:
+```python
+# GOOD: Separate files for each concern
+# ui/pages/user_dashboard_page.py - Main orchestration (~200 lines)
+# ui/pages/user_dashboard/view_model.py - Data logic (~150 lines)
+# ui/pages/user_dashboard/components.py - UI components (~200 lines)
+# services/user_dashboard_service.py - Business logic (~150 lines)
+```
+
+### When to Split a File
+
+**Split immediately if:**
+- File exceeds maximum line count for its type
+- File has multiple responsibilities (UI + business logic + data access)
+- File mixes concerns (e.g., UI building + data fetching + export)
+- File has duplicate code patterns that could be extracted
+- File is difficult to test in isolation
+- File is hard to navigate or understand
+
+### How to Refactor Large Files
+
+1. **Identify distinct responsibilities** - What does this file do?
+2. **Extract to separate modules/classes** - One responsibility per file
+3. **Use composition over inheritance** - Compose smaller classes
+4. **Maintain clear interfaces** - Well-defined public APIs
+5. **Update imports systematically** - Ensure all imports are updated
+
+### Refactoring Patterns
+
+#### For Large UI Pages:
+```python
+# BEFORE: 800+ lines in one file
+class UserDashboardPage:
+    # All UI, data, export logic mixed
+
+# AFTER: Separated structure
+# ui/pages/user_dashboard_page.py (~200 lines) - Orchestration
+class UserDashboardPage:
+    def __init__(self):
+        self.view_model = UserDashboardViewModel(db_manager)
+        self.components = UserDashboardComponents()
+    
+    def build(self):
+        return self.components.build(self.view_model)
+
+# ui/pages/user_dashboard/view_model.py (~150 lines) - Data/State
+class UserDashboardViewModel:
+    # Data fetching, filtering, state management
+
+# ui/pages/user_dashboard/components.py (~200 lines) - UI Building
+class UserDashboardComponents:
+    # UI building logic only
+
+# services/user_dashboard_service.py (~100 lines) - Business Logic
+class UserDashboardService:
+    # Business logic only
+```
+
+#### For Large Services:
+```python
+# BEFORE: 600+ lines with duplicate patterns
+class ExportService:
+    def export_messages_to_excel(...): ...
+    def export_users_to_excel(...): ...
+    def export_messages_to_pdf(...): ...
+    # 6 similar methods with duplicated formatting code
+
+# AFTER: Strategy pattern with formatters
+# services/export/base_exporter.py - Base interface
+# services/export/excel_exporter.py - Excel-specific logic
+# services/export/pdf_exporter.py - PDF-specific logic
+# services/export/formatters/excel_formatter.py - Excel formatting
+# services/export/formatters/pdf_formatter.py - PDF formatting
+```
+
+### Code Review Checklist
+
+Before committing, verify:
+- [ ] File is under maximum line count for its type
+- [ ] File has single, clear responsibility
+- [ ] No mixing of UI, business logic, and data access
+- [ ] Reusable code is extracted to components/utilities
+- [ ] File is testable in isolation
+- [ ] Related code is grouped logically
+
+### Benefits of Following These Rules
+
+1. **Maintainability** - Easier to understand and modify
+2. **Testability** - Smaller units easier to test
+3. **Reusability** - Components can be reused
+4. **Collaboration** - Multiple developers can work without conflicts
+5. **Navigation** - Easier to find relevant code
+6. **Code Review** - Smaller diffs easier to review
+7. **SonarQube Compliance** - Passes static analysis checks
+
 ## Tech Stack Guidelines
 
 ### Flet Framework

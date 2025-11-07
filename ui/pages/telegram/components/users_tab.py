@@ -153,6 +153,9 @@ class UsersTabComponent:
         """Create users data table."""
         column_alignments = ["center", "center", "center", "center", "left"]
         
+        # Check filters before table is created (only group filter at this point)
+        has_filters = self.filters_bar.get_selected_group() is not None
+        
         return DataTable(
             columns=["No", "Username", "Full Name", "Phone", "Bio"],
             rows=[],
@@ -161,7 +164,7 @@ class UsersTabComponent:
             column_alignments=column_alignments,
             row_metadata=[],
             on_clear_filters=self.clear_filters,
-            has_filters=self._has_filters()
+            has_filters=has_filters
         )
     
     def _has_filters(self) -> bool:

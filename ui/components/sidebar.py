@@ -47,7 +47,7 @@ class Sidebar(ft.Container):
         page_id: str,
         icon: str,
         tooltip: str
-    ) -> ft.GestureDetector:
+    ) -> ft.Container:
         """Create a navigation button."""
         is_active = self.current_page == page_id
         
@@ -59,34 +59,28 @@ class Sidebar(ft.Container):
         
         click_handler = make_click_handler(page_id)
         
-        # Create IconButton with styling
+        # Create IconButton with styling and click handler
         icon_button = ft.IconButton(
             icon=icon,
             icon_color=ft.Colors.WHITE if is_active else theme_manager.text_secondary_color,
             icon_size=28,
             tooltip=tooltip,
+            on_click=click_handler,
             style=ft.ButtonStyle(
                 bgcolor=theme_manager.primary_color if is_active else ft.Colors.TRANSPARENT,
                 shape=ft.RoundedRectangleBorder(radius=theme_manager.corner_radius),
-                padding=0
+                padding=16  # Padding to center the icon
             )
         )
         
-        # Wrap in Container for sizing and background
-        button_container = ft.Container(
+        # Wrap in Container for sizing only - IconButton handles clicks and tooltips
+        # Don't set bgcolor or on_click on Container to avoid blocking events
+        return ft.Container(
             content=icon_button,
             width=60,
             height=60,
             alignment=ft.alignment.center,
-            bgcolor=theme_manager.primary_color if is_active else None,
-            border_radius=theme_manager.corner_radius
-        )
-        
-        # Use GestureDetector to handle clicks - this ensures clicks work
-        return ft.GestureDetector(
-            content=button_container,
-            on_tap=click_handler,
-            mouse_cursor=ft.MouseCursor.CLICK
+            ink=False
         )
     
     def _handle_click(self, page_id: str):
@@ -106,35 +100,28 @@ class Sidebar(ft.Container):
         except Exception as e:
             logger.error(f"Error handling navigation click to '{page_id}': {e}", exc_info=True)
     
-    def _create_fetch_button(self) -> ft.GestureDetector:
+    def _create_fetch_button(self) -> ft.Container:
         """Create the fetch data button."""
         icon_button = ft.IconButton(
             icon=ft.Icons.DOWNLOAD,
             icon_color=ft.Colors.WHITE,
             icon_size=28,
             tooltip=theme_manager.t("fetch_data"),
+            on_click=lambda e: self._handle_fetch_click(),
             style=ft.ButtonStyle(
                 bgcolor=ft.Colors.GREEN,
                 shape=ft.RoundedRectangleBorder(radius=theme_manager.corner_radius),
-                padding=0
+                padding=16  # Padding to center the icon
             )
         )
         
-        # Wrap in Container for sizing
-        button_container = ft.Container(
+        # Wrap in Container for sizing only - IconButton handles clicks and tooltips
+        return ft.Container(
             content=icon_button,
             width=60,
             height=60,
             alignment=ft.alignment.center,
-            bgcolor=ft.Colors.GREEN,
-            border_radius=theme_manager.corner_radius
-        )
-        
-        # Use GestureDetector to handle clicks
-        return ft.GestureDetector(
-            content=button_container,
-            on_tap=lambda e: self._handle_fetch_click(),
-            mouse_cursor=ft.MouseCursor.CLICK
+            ink=False
         )
     
     def _handle_fetch_click(self):

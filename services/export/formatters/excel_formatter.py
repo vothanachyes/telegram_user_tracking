@@ -3,7 +3,7 @@ Excel formatting utilities.
 """
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import xlsxwriter
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ class ExcelFormatter:
     HEADER_BG_COLOR = '#082f49'
     HEADER_FONT_COLOR = 'white'
     
-    def create_header_format(self, workbook: xlsxwriter.Workbook) -> xlsxwriter.Format:
+    def create_header_format(self, workbook: Any) -> Any:
         """
         Create header format for Excel worksheets.
         
@@ -35,10 +35,10 @@ class ExcelFormatter:
     
     def create_cell_format(
         self,
-        workbook: xlsxwriter.Workbook,
+        workbook: Any,
         text_wrap: bool = True,
         valign: str = 'top'
-    ) -> xlsxwriter.Format:
+    ) -> Any:
         """
         Create cell format for Excel worksheets.
         
@@ -58,7 +58,7 @@ class ExcelFormatter:
     
     def set_column_widths(
         self,
-        worksheet: xlsxwriter.Worksheet,
+        worksheet: Any,
         column_widths: Dict[str, float]
     ) -> None:
         """
@@ -73,8 +73,8 @@ class ExcelFormatter:
     
     def apply_header_format(
         self,
-        worksheet: xlsxwriter.Worksheet,
-        header_format: xlsxwriter.Format,
+        worksheet: Any,
+        header_format: Any,
         headers: List[str],
         start_row: int = 0
     ) -> None:
@@ -92,7 +92,7 @@ class ExcelFormatter:
     
     def add_autofilter(
         self,
-        worksheet: xlsxwriter.Worksheet,
+        worksheet: Any,
         first_row: int,
         first_col: int,
         last_row: int,

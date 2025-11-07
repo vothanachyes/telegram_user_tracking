@@ -73,7 +73,7 @@ class AuthenticateTab:
         self.error_text = ft.Text("", color=ft.Colors.RED, visible=False)
         
         # Update button states
-        self._update_connection_buttons()
+        self.update_connection_buttons()
     
     def build(self) -> ft.Container:
         """Build the authenticate tab."""
@@ -200,7 +200,7 @@ class AuthenticateTab:
         self.api_hash_field.value = self.current_settings.telegram_api_hash or ""
         self.api_status_text.value = self._get_api_status_text()
         self.account_status_text.value = self._get_account_status_text()
-        self._update_connection_buttons()
+        self.update_connection_buttons()
         self.error_text.visible = False
         if hasattr(self, 'page') and self.page:
             self.page.update()

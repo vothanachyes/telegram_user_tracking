@@ -23,6 +23,7 @@ class TelegramUserTrackingApp:
         self.page = page
         self.db_manager = DatabaseManager()
         self.is_logged_in = False
+        self.connectivity_banner: Optional[ft.Container] = None
         
         # Initialize service initializer
         self.service_initializer = ServiceInitializer(self.db_manager)
@@ -43,7 +44,6 @@ class TelegramUserTrackingApp:
         )
         
         self.router = Router(self.page, self.page_factory)
-        self.connectivity_banner: Optional[ft.Container] = None
         
         # Build UI
         self._build_ui()
@@ -188,7 +188,7 @@ class TelegramUserTrackingApp:
     
     def _on_connectivity_change(self, is_connected: bool):
         """Handle connectivity status change."""
-        if self.connectivity_banner:
+        if self.connectivity_banner and hasattr(self, 'router') and self.router:
             self.router.update_connectivity_banner(is_connected, self.connectivity_banner)
     
     def _check_license_on_startup(self):

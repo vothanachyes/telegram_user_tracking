@@ -40,33 +40,56 @@ class ToastNotification:
         self._page = page
         self._position = position
         
-        # Create toast container
-        self._toast_container = ft.Container(
-            content=ft.Column(
-                controls=[],
-                spacing=10,
-                tight=True,
-                scroll=ft.ScrollMode.AUTO,
-            ),
-            width=350,
-            padding=10,
-            alignment=self._get_alignment(),
+        # Create toast container with Column for toasts
+        self._toast_container = ft.Column(
+            controls=[],
+            spacing=10,
+            tight=True,
+            scroll=ft.ScrollMode.AUTO,
         )
         
-        # Create overlay stack if it doesn't exist
-        if not hasattr(page, '_toast_overlay'):
-            page._toast_overlay = ft.Stack(
-                controls=[self._toast_container],
-                expand=True,
-            )
+        # Get positioning based on position parameter
+        position_props = self._get_position_props()
+        
+        # Create positioned container for toasts
+        # Use absolute positioning (left/top/right/bottom) instead of alignment
+        # This prevents the container from expanding to fill the overlay
+        positioned_toast = ft.Container(
+            content=self._toast_container,
+            width=350,
+            padding=10,
+            **position_props  # left, top, right, or bottom properties
+        )
+        
+        # Remove old blocking overlay if it exists
+        needs_recreate = False
+        if hasattr(page, '_toast_overlay'):
+            # Check if existing overlay is a Stack or has expand=True
+            if isinstance(page._toast_overlay, ft.Stack):
+                needs_recreate = True
+            elif isinstance(page._toast_overlay, ft.Container):
+                # Check if it's the old wrapper (not our positioned_toast)
+                if page._toast_overlay is not positioned_toast:
+                    needs_recreate = True
+            
+            if needs_recreate:
+                # Remove old overlay from page.overlay if present
+                if hasattr(page, 'overlay') and page.overlay:
+                    if page._toast_overlay in page.overlay:
+                        page.overlay.remove(page._toast_overlay)
+        
+        # Add positioned toast container directly to overlay (no Stack, no expand!)
+        # This container only takes up 350px width space, doesn't block the page
+        if not hasattr(page, '_toast_overlay') or needs_recreate:
+            page._toast_overlay = positioned_toast
             
             # Initialize overlay list if needed
             if not hasattr(page, 'overlay') or page.overlay is None:
                 page.overlay = []
             
-            # Add overlay to page if not already added
-            if page._toast_overlay not in page.overlay:
-                page.overlay.append(page._toast_overlay)
+            # Add to overlay if not already added
+            if positioned_toast not in page.overlay:
+                page.overlay.append(positioned_toast)
     
     def _get_alignment(self) -> ft.Alignment:
         """Get alignment based on position."""
@@ -77,6 +100,21 @@ class ToastNotification:
             "bottom-left": ft.alignment.bottom_left,
         }
         return alignments.get(self._position, ft.alignment.top_right)
+    
+    def _get_position_props(self) -> dict:
+        """Get absolute positioning properties based on position."""
+        # Use absolute positioning (left/top/right/bottom) to prevent expansion
+        # This ensures the container only takes up space where toasts are
+        props = {}
+        if "top" in self._position:
+            props["top"] = 10
+        if "bottom" in self._position:
+            props["bottom"] = 10
+        if "right" in self._position:
+            props["right"] = 10
+        if "left" in self._position:
+            props["left"] = 10
+        return props
     
     def _get_toast_colors(self, toast_type: ToastType) -> dict:
         """Get colors for toast type."""
@@ -212,8 +250,8 @@ class ToastNotification:
             data=id(toast_content),  # Store ID for dismissal
         )
         
-        # Add to container
-        self._toast_container.content.controls.append(toast_card)
+        # Add to container (toast_container is now a Column directly)
+        self._toast_container.controls.append(toast_card)
         self._active_toasts.append(toast_card)
         
         # Update page
@@ -257,8 +295,8 @@ class ToastNotification:
             # Remove after animation
             async def remove_after_animation():
                 await asyncio.sleep(0.3)
-                if toast_card in self._toast_container.content.controls:
-                    self._toast_container.content.controls.remove(toast_card)
+                if toast_card in self._toast_container.controls:
+                    self._toast_container.controls.remove(toast_card)
                 if toast_card in self._active_toasts:
                     self._active_toasts.remove(toast_card)
                 if self._page:

@@ -50,9 +50,6 @@ class UserDashboardPage(ft.Container):
             on_refresh=self._on_refresh_messages
         )
         
-        # User detail section
-        self.user_detail_section = self._create_user_detail_section()
-        
         # Telegram button
         self.telegram_button = ft.IconButton(
             icon=ft.Icons.TELEGRAM,
@@ -60,6 +57,9 @@ class UserDashboardPage(ft.Container):
             disabled=True,
             on_click=self._open_telegram_user
         )
+        
+        # User detail section (created before handlers, will be updated after)
+        self.user_detail_section = self._create_user_detail_section()
         
         # Initialize handlers
         self.handlers = UserDashboardHandlers(
@@ -74,6 +74,9 @@ class UserDashboardPage(ft.Container):
             excel_picker=self.user_excel_picker,
             pdf_picker=self.user_pdf_picker
         )
+        
+        # Update user detail section button callback now that handlers exist
+        self._update_user_detail_button()
         
         # Setup groups for messages component
         groups = self.view_model.get_all_groups()
@@ -143,6 +146,14 @@ class UserDashboardPage(ft.Container):
     
     def _create_user_detail_section(self) -> ft.Container:
         """Create user detail section."""
+        # Create button with wrapper method that will call handlers when available
+        self._detail_button = ft.IconButton(
+            icon=ft.Icons.EDIT,
+            tooltip=theme_manager.t("view_user_details"),
+            disabled=True,
+            on_click=self._handle_user_detail_click
+        )
+        
         return theme_manager.create_card(
             content=ft.Row([
                 # Profile photo and info
@@ -167,17 +178,22 @@ class UserDashboardPage(ft.Container):
                 ], spacing=20, alignment=ft.MainAxisAlignment.START),
                 # Right: View details button
                 ft.Container(
-                    content=ft.IconButton(
-                        icon=ft.Icons.EDIT,
-                        tooltip=theme_manager.t("view_user_details"),
-                        disabled=True,
-                        on_click=self.handlers.handle_open_user_detail_dialog
-                    ),
+                    content=self._detail_button,
                     alignment=ft.alignment.center_right
                 ),
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             visible=False
         )
+    
+    def _handle_user_detail_click(self, e):
+        """Wrapper method to handle user detail button click."""
+        if hasattr(self, 'handlers') and self.handlers:
+            self.handlers.handle_open_user_detail_dialog(e)
+    
+    def _update_user_detail_button(self):
+        """Update user detail button callback after handlers are initialized."""
+        # No-op: button already uses wrapper method
+        pass
     
     def _create_tabs(self, groups, default_group_id) -> ft.Tabs:
         """Create tabs for General and Messages."""

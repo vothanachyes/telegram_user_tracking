@@ -12,6 +12,9 @@ from database.models.schema import CREATE_TABLES_SQL
 
 logger = logging.getLogger(__name__)
 
+# Track initialized database paths to avoid duplicate initialization logs
+_initialized_databases: set[str] = set()
+
 
 def _safe_get_row_value(row: sqlite3.Row, key: str, default: Any = None) -> Any:
     """
@@ -75,6 +78,12 @@ class BaseDatabaseManager:
     
     def _init_database(self):
         """Initialize database with schema."""
+        # Normalize database path for comparison
+        normalized_path = str(Path(self.db_path).resolve())
+        
+        # Check if this database has already been initialized
+        is_first_init = normalized_path not in _initialized_databases
+        
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.executescript(CREATE_TABLES_SQL)
@@ -89,7 +98,11 @@ class BaseDatabaseManager:
                         INSERT INTO app_settings (id) VALUES (1)
                     """)
                 conn.commit()
-                logger.info("Database initialized successfully")
+                
+                # Only log once per database path
+                if is_first_init:
+                    logger.info("Database initialized successfully")
+                    _initialized_databases.add(normalized_path)
         except Exception as e:
             logger.error(f"Error initializing database: {e}")
             raise

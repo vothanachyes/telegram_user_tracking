@@ -6,7 +6,7 @@ import flet as ft
 from typing import Callable, Optional, Tuple
 from datetime import datetime, timedelta
 from ui.theme import theme_manager
-from ui.dialogs import dialog_manager
+from .dialog import dialog_manager
 from database.db_manager import DatabaseManager
 from services.telegram import TelegramService
 from services.license_service import LicenseService

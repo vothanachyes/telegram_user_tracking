@@ -95,14 +95,14 @@ class DialogManager:
         
         def handle_cancel(cancel_e):
             """Handle cancellation."""
+            # Close confirmation dialog
             confirm_dialog.open = False
             page.update()
             
             # Restore main dialog if provided (for nested dialogs)
             if main_dialog:
-                page.dialog = main_dialog
-                main_dialog.open = True
-                page.update()
+                # Use page.open() to restore the main dialog
+                page.open(main_dialog)
             
             # Call custom cancel handler if provided
             if on_cancel:
@@ -127,14 +127,14 @@ class DialogManager:
         
         # Show dialog
         if main_dialog:
-            # For nested dialogs, temporarily replace main dialog
-            page.dialog = confirm_dialog
+            # For nested dialogs, use page.open() which will replace the current dialog
+            # Flet handles closing the previous dialog automatically
+            page.open(confirm_dialog)
         else:
             # For standalone dialogs, use page.dialog
             page.dialog = confirm_dialog
-        
-        confirm_dialog.open = True
-        page.update()
+            confirm_dialog.open = True
+            page.update()
         
         return True
     

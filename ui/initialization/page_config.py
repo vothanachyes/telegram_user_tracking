@@ -28,15 +28,15 @@ class PageConfig:
         page.theme_mode = theme_manager.theme_mode
         page.theme = theme_manager.get_theme()
         
-        # Window size settings only apply to desktop mode
-        # In web mode, these are ignored
+        # Window size settings for desktop mode
+        # These must be set on page.window, not as ft.app() parameters
         try:
-            page.window_width = DEFAULT_WINDOW_WIDTH
-            page.window_height = DEFAULT_WINDOW_HEIGHT
-            page.window_min_width = MIN_WINDOW_WIDTH
-            page.window_min_height = MIN_WINDOW_HEIGHT
+            page.window.width = DEFAULT_WINDOW_WIDTH
+            page.window.height = DEFAULT_WINDOW_HEIGHT
+            page.window.min_width = MIN_WINDOW_WIDTH
+            page.window.min_height = MIN_WINDOW_HEIGHT
         except AttributeError:
-            # Web mode doesn't support window size settings
+            # Web mode doesn't support window properties
             pass
         
         page.padding = 0

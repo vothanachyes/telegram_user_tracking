@@ -56,7 +56,7 @@ firebase-credentials.json
 
 # IDE
 .idea/
-.vscode/
+# .vscode/
 *.swp
 *.swo
 *~

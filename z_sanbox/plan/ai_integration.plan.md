@@ -1,0 +1,1 @@
+I want integrate ai for analyze user activities

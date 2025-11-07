@@ -11,7 +11,7 @@ from ui.theme import theme_manager
 from config.settings import settings as app_settings
 from database.models import AppSettings
 from database.db_manager import DatabaseManager
-from services.telegram_service import TelegramService
+from services.telegram import TelegramService
 from ui.dialogs.telegram_auth_dialog import TelegramAuthDialog
 from utils.validators import (
     validate_telegram_api_id,

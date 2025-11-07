@@ -9,7 +9,7 @@ from ui.theme import theme_manager
 from ui.components import DataTable
 from ui.dialogs import MessageDetailDialog, UserDetailDialog
 from database.db_manager import DatabaseManager
-from services.export_service import ExportService
+from services.export import ExportService
 from utils.helpers import format_datetime, get_telegram_user_link
 
 

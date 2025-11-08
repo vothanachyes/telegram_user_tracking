@@ -30,6 +30,11 @@ class AccountActivityManager(BaseDatabaseManager):
         Returns:
             ID of the logged action or None if failed
         """
+        # Handle edge case: user not logged in
+        if not user_email:
+            logger.warning("Cannot log account action: user email not provided")
+            return None
+        
         if action not in ('add', 'delete'):
             logger.error(f"Invalid action: {action}. Must be 'add' or 'delete'")
             return None
@@ -117,7 +122,7 @@ class AccountActivityManager(BaseDatabaseManager):
                     SELECT id, user_email, action, phone_number, action_timestamp
                     FROM account_activity_log
                     WHERE user_email = ?
-                    ORDER BY action_timestamp DESC
+                    ORDER BY action_timestamp DESC, id DESC
                     LIMIT ?
                 """, (user_email, limit))
                 

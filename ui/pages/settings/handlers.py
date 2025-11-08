@@ -6,7 +6,7 @@ import flet as ft
 import asyncio
 import logging
 import threading
-from typing import Optional, Callable
+from typing import Optional, Callable, Tuple
 from database.models import AppSettings
 from ui.theme import theme_manager
 from config.settings import settings as app_settings
@@ -297,6 +297,24 @@ class SettingsHandlers:
                 
                 return result
             
+            # Check activity limits before adding account
+            auth_service = self._get_auth_service()
+            user_email = None
+            if auth_service:
+                user_email = auth_service.get_user_email()
+                if user_email:
+                    can_perform, error_msg = self._check_account_activity_limit(user_email)
+                    if not can_perform:
+                        self._show_error(
+                            error_msg or theme_manager.t("account_addition_limit_reached"),
+                            error_text
+                        )
+                        connect_btn.disabled = False
+                        connect_btn.text = theme_manager.t("connect_to_telegram")
+                        if self.page:
+                            self.page.update()
+                        return
+            
             success, error = await self.telegram_service.start_session(
                 phone=phone,
                 api_id=api_id,
@@ -306,6 +324,18 @@ class SettingsHandlers:
             )
             
             if success:
+                # Log account addition in activity log
+                if user_email:
+                    try:
+                        self.db_manager.log_account_action(
+                            user_email=user_email,
+                            action='add',
+                            phone_number=phone
+                        )
+                    except Exception as e:
+                        logger.error(f"Error logging account addition: {e}")
+                        # Continue even if logging fails
+                
                 self.authenticate_tab.update_status()
                 self.authenticate_tab.phone_field.value = phone
                 self.authenticate_tab.update_connection_buttons()
@@ -474,6 +504,37 @@ class SettingsHandlers:
                 """Callback to check if cancelled."""
                 return self._qr_cancelled
             
+            # Check activity limits before adding account
+            auth_service = self._get_auth_service()
+            user_email = None
+            if auth_service:
+                user_email = auth_service.get_user_email()
+                if user_email:
+                    can_perform, error_msg = self._check_account_activity_limit(user_email)
+                    if not can_perform:
+                        # Close QR dialog
+                        if self._qr_dialog and self.page:
+                            try:
+                                if hasattr(self.page, 'close') and hasattr(self.page, 'overlay'):
+                                    if self._qr_dialog in getattr(self.page.overlay, 'controls', []):
+                                        self.page.close(self._qr_dialog)
+                                else:
+                                    self._qr_dialog.open = False
+                                    if self.page.dialog == self._qr_dialog:
+                                        self.page.dialog = None
+                                self.page.update()
+                            except:
+                                pass
+                        self._show_error(
+                            error_msg or theme_manager.t("account_addition_limit_reached"),
+                            error_text
+                        )
+                        connect_btn.disabled = False
+                        connect_btn.text = theme_manager.t("connect_to_telegram")
+                        if self.page:
+                            self.page.update()
+                        return
+            
             success, error, phone_number = await self.telegram_service.start_session_qr(
                 api_id=api_id,
                 api_hash=api_hash,
@@ -501,6 +562,18 @@ class SettingsHandlers:
                     self.page.update()
             
             if success:
+                # Log account addition in activity log
+                if user_email and phone_number:
+                    try:
+                        self.db_manager.log_account_action(
+                            user_email=user_email,
+                            action='add',
+                            phone_number=phone_number
+                        )
+                    except Exception as e:
+                        logger.error(f"Error logging account addition: {e}")
+                        # Continue even if logging fails
+                
                 self.authenticate_tab.update_status()
                 if phone_number:
                     self.authenticate_tab.phone_field.value = phone_number
@@ -806,6 +879,141 @@ class SettingsHandlers:
         """Show error message."""
         error_text_control.value = message
         error_text_control.visible = True
+        if self.page:
+            self.page.update()
+    
+    def _get_auth_service(self):
+        """Get auth service instance."""
+        try:
+            from services.auth_service import auth_service
+            return auth_service
+        except ImportError:
+            logger.error("Failed to import auth_service")
+            return None
+    
+    def _check_account_activity_limit(self, user_email: str) -> Tuple[bool, Optional[str]]:
+        """
+        Check if user can perform account action (add/delete).
+        
+        Args:
+            user_email: Email of the user
+            
+        Returns:
+            (can_perform, error_message)
+        """
+        if not user_email:
+            return False, "User email not available"
+        
+        try:
+            can_perform = self.db_manager.can_perform_account_action(user_email)
+            if not can_perform:
+                return False, theme_manager.t("account_deletion_limit_reached")
+            return True, None
+        except Exception as e:
+            logger.error(f"Error checking account activity limit: {e}")
+            return False, f"Error checking limit: {str(e)}"
+    
+    def handle_remove_account(self, credential_id: int):
+        """
+        Handle account removal with activity limits.
+        
+        Args:
+            credential_id: ID of the credential to remove
+        """
+        if not self.page:
+            logger.error("Page not available for account removal")
+            return
+        
+        # Get current user email
+        auth_service = self._get_auth_service()
+        if not auth_service:
+            theme_manager.show_snackbar(
+                self.page,
+                "Authentication service not available",
+                bgcolor=ft.Colors.RED
+            )
+            return
+        
+        user_email = auth_service.get_user_email()
+        if not user_email:
+            theme_manager.show_snackbar(
+                self.page,
+                "User not logged in",
+                bgcolor=ft.Colors.RED
+            )
+            return
+        
+        # Check activity limits
+        can_perform, error_msg = self._check_account_activity_limit(user_email)
+        if not can_perform:
+            theme_manager.show_snackbar(
+                self.page,
+                error_msg or theme_manager.t("account_deletion_limit_reached"),
+                bgcolor=ft.Colors.RED
+            )
+            return
+        
+        # Get credential to get phone number
+        credential = self.db_manager.get_credential_by_id(credential_id)
+        if not credential:
+            theme_manager.show_snackbar(
+                self.page,
+                "Account not found",
+                bgcolor=ft.Colors.RED
+            )
+            return
+        
+        phone_number = credential.phone_number
+        
+        # Delete session file from disk
+        try:
+            from pathlib import Path
+            if credential.session_string:
+                session_path = Path(credential.session_string)
+                if session_path.exists():
+                    session_path.unlink()
+                    # Also delete journal file if exists
+                    journal_path = session_path.with_suffix(session_path.suffix + '-journal')
+                    if journal_path.exists():
+                        journal_path.unlink()
+                    logger.info(f"Deleted session file: {session_path}")
+        except Exception as e:
+            logger.error(f"Error deleting session file: {e}")
+            # Continue with deletion even if file deletion fails
+        
+        # Delete credential from database
+        success = self.db_manager.delete_telegram_credential(credential_id)
+        if not success:
+            theme_manager.show_snackbar(
+                self.page,
+                "Failed to delete account",
+                bgcolor=ft.Colors.RED
+            )
+            return
+        
+        # Log deletion in activity log
+        try:
+            self.db_manager.log_account_action(
+                user_email=user_email,
+                action='delete',
+                phone_number=phone_number
+            )
+        except Exception as e:
+            logger.error(f"Error logging account deletion: {e}")
+            # Continue even if logging fails
+        
+        # Show success message
+        theme_manager.show_snackbar(
+            self.page,
+            f"Account {phone_number} removed successfully",
+            bgcolor=ft.Colors.GREEN
+        )
+        
+        # Update authenticate tab if available
+        if hasattr(self, 'authenticate_tab') and self.authenticate_tab:
+            self.authenticate_tab.update_accounts_list()
+        
+        # Update page
         if self.page:
             self.page.update()
 

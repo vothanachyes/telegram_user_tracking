@@ -8,8 +8,11 @@ from datetime import datetime, timedelta
 from ui.theme import theme_manager
 from .dialog import dialog_manager
 from database.db_manager import DatabaseManager
+from database.models import TelegramCredential
 from services.telegram import TelegramService
 from services.license_service import LicenseService
+from ui.components.account_selector import AccountSelector
+from ui.components.group_selector import GroupSelector
 import asyncio
 import logging
 
@@ -29,18 +32,35 @@ class FetchDataDialog(ft.AlertDialog):
         self.telegram_service = telegram_service
         self.on_fetch_complete_callback = on_fetch_complete
         self.license_service = LicenseService(db_manager)
+        self.selected_credential: Optional[TelegramCredential] = None
         
         # Default date range (last 30 days)
         today = datetime.now()
         last_month = today - timedelta(days=30)
         
-        # Group ID input
+        # Account selector
+        self.account_selector = AccountSelector(
+            on_account_selected=self._on_account_selected,
+            on_refresh=self._refresh_accounts
+        )
+        
+        # Group selector
+        self.group_selector = GroupSelector(
+            on_group_selected=self._on_group_selected,
+            on_manual_entry=self._on_group_manual_entry
+        )
+        
+        # Initialize groups
+        self._update_groups_list()
+        
+        # Group ID input (kept for backward compatibility, but will be replaced by group_selector)
         self.group_id_field = ft.TextField(
             label=theme_manager.t("group_id"),
             hint_text="e.g., -1001234567890",
             keyboard_type=ft.KeyboardType.NUMBER,
             border_radius=theme_manager.corner_radius,
-            expand=True
+            expand=True,
+            visible=False  # Hidden, using group_selector instead
         )
         
         # Date inputs
@@ -102,6 +122,36 @@ class FetchDataDialog(ft.AlertDialog):
             actions_alignment=ft.MainAxisAlignment.END,
         )
     
+    def set_page(self, page: ft.Page):
+        """Set page reference and initialize accounts."""
+        self.page = page
+        if self.account_selector:
+            self.account_selector.set_page(page)
+        if self.group_selector:
+            self.group_selector.set_page(page)
+            # Disable group selector until account is selected
+            self.group_selector.disable()
+        
+        # Initialize account list
+        if page and hasattr(page, 'run_task'):
+            page.run_task(self._initialize_accounts)
+        else:
+            asyncio.create_task(self._initialize_accounts())
+    
+    async def _initialize_accounts(self):
+        """Initialize account list on dialog open."""
+        try:
+            accounts_with_status = await self.telegram_service.get_all_accounts_with_status()
+            if accounts_with_status:
+                self.account_selector.update_accounts(accounts_with_status)
+            else:
+                # No accounts saved - show message
+                self.account_selector.update_accounts([])
+        except Exception as e:
+            logger.error(f"Error initializing accounts: {e}")
+            # Handle empty list gracefully
+            self.account_selector.update_accounts([])
+    
     def _build_content(self) -> ft.Container:
         """Build the dialog content."""
         
@@ -134,7 +184,8 @@ class FetchDataDialog(ft.AlertDialog):
                 weight=ft.FontWeight.BOLD
             ),
             ft.Container(height=5),
-            self.group_id_field,
+            self._build_account_selection(),
+            self._build_group_selection(),
             ft.Row([
                 self.start_date_field,
                 self.end_date_field,
@@ -166,14 +217,16 @@ class FetchDataDialog(ft.AlertDialog):
     
     def _validate_inputs(self) -> Tuple[bool, Optional[str]]:
         """Validate user inputs."""
-        # Validate group ID
-        if not self.group_id_field.value or not self.group_id_field.value.strip():
-            return False, theme_manager.t("group_id_required")
-        
-        try:
-            group_id = int(self.group_id_field.value.strip())
-        except ValueError:
-            return False, theme_manager.t("invalid_group_id")
+        # Validate group ID (from selector or manual entry)
+        group_id = self.group_selector.get_selected_group_id()
+        if not group_id:
+            if self.group_id_field.value and self.group_id_field.value.strip():
+                try:
+                    group_id = int(self.group_id_field.value.strip())
+                except ValueError:
+                    return False, theme_manager.t("invalid_group_id")
+            else:
+                return False, theme_manager.t("group_id_required")
         
         # Validate dates
         try:
@@ -193,6 +246,143 @@ class FetchDataDialog(ft.AlertDialog):
             return False, theme_manager.t("invalid_date_format")
         
         return True, None
+    
+    def _build_account_selection(self) -> ft.Column:
+        """Build account selection component."""
+        return self.account_selector.build()
+    
+    def _build_group_selection(self) -> ft.Column:
+        """Build group selection component."""
+        return self.group_selector.build()
+    
+    def _on_account_selected(self, credential: TelegramCredential):
+        """Handle account selection."""
+        self.selected_credential = credential
+        # Enable group selector when account is selected
+        self.group_selector.enable()
+        if self.page:
+            self.page.update()
+    
+    def _on_group_selected(self, group_id: int):
+        """Handle group selection from dropdown."""
+        self.group_id_field.value = str(group_id)
+        if self.page:
+            self.page.update()
+    
+    def _on_group_manual_entry(self, group_id: int):
+        """Handle manual group ID entry."""
+        self.group_id_field.value = str(group_id)
+        if self.page:
+            self.page.update()
+    
+    async def _refresh_accounts(self):
+        """Refresh account list and statuses."""
+        try:
+            accounts_with_status = await self.telegram_service.get_all_accounts_with_status()
+            self.account_selector.update_accounts(accounts_with_status)
+        except Exception as e:
+            logger.error(f"Error refreshing accounts: {e}")
+    
+    def _update_groups_list(self):
+        """Update groups list in group selector."""
+        try:
+            groups = self.db_manager.get_all_groups()
+            if groups:
+                self.group_selector.update_groups(groups)
+            else:
+                # No groups saved - empty list is fine
+                self.group_selector.update_groups([])
+        except Exception as e:
+            logger.error(f"Error updating groups list: {e}")
+            # Handle gracefully - empty list
+            self.group_selector.update_groups([])
+    
+    async def _validate_account_group_access(self) -> Tuple[bool, Optional[str]]:
+        """
+        Validate that selected account can access selected group.
+        
+        Returns:
+            (is_valid, error_message)
+        """
+        if not self.selected_credential:
+            return False, theme_manager.t("select_account_first")
+        
+        group_id = self.group_selector.get_selected_group_id()
+        if not group_id:
+            # Try to get from manual entry
+            if self.group_id_field.value:
+                try:
+                    group_id = int(self.group_id_field.value.strip())
+                    # Validate group ID format (Telegram group IDs are negative integers)
+                    if group_id > 0:
+                        return False, theme_manager.t("invalid_group_id") + " (Group IDs are typically negative numbers)"
+                except ValueError:
+                    return False, theme_manager.t("invalid_group_id")
+            else:
+                return False, theme_manager.t("group_id_required")
+        
+        try:
+            # Show loading state
+            self.status_text.visible = True
+            self.status_text.value = theme_manager.t("fetching_group_info")
+            self.status_text.color = theme_manager.text_secondary_color
+            if self.page:
+                self.page.update()
+            
+            # Validate access using temporary client
+            success, group, error, has_access = await self.telegram_service.fetch_and_validate_group(
+                self.selected_credential,
+                group_id
+            )
+            
+            if not success:
+                error_msg = error or theme_manager.t("group_not_found")
+                phone = self.selected_credential.phone_number
+                group_name = group.group_name if group else str(group_id) if group_id else "group"
+                
+                # Check for specific error types
+                if error == "permission_denied":
+                    return False, theme_manager.t("account_no_permission").format(
+                        phone=phone,
+                        group_name=group_name
+                    )
+                elif error == "not_member":
+                    return False, theme_manager.t("account_not_member").format(
+                        phone=phone,
+                        group_name=group_name
+                    )
+                elif "expired" in error_msg.lower() or "invalid" in error_msg.lower() or "unauthorized" in error_msg.lower():
+                    error_msg = theme_manager.t("account_status_expired") + ". " + theme_manager.t("select_account_first")
+                
+                return False, error_msg
+            
+            if not has_access:
+                phone = self.selected_credential.phone_number
+                group_name = group.group_name if group else str(group_id)
+                return False, theme_manager.t("account_not_member").format(
+                    phone=phone,
+                    group_name=group_name
+                )
+            
+            # Update group info in selector
+            if group:
+                self.group_selector.set_group_info(group.group_name, group.last_fetch_date)
+            
+            return True, None
+            
+        except ConnectionError as e:
+            logger.error(f"Network error during validation: {e}")
+            return False, theme_manager.t("connection_error")
+        except Exception as e:
+            logger.error(f"Error validating account group access: {e}")
+            # Handle network errors
+            error_msg = str(e)
+            if "network" in error_msg.lower() or "connection" in error_msg.lower():
+                return False, theme_manager.t("connection_error")
+            # Handle timeout errors
+            if "timeout" in error_msg.lower():
+                return False, theme_manager.t("connection_error") + " (Timeout)"
+            return False, error_msg
     
     def _close_dialog(self, e):
         """Close the dialog."""
@@ -270,6 +460,32 @@ class FetchDataDialog(ft.AlertDialog):
                 )
             return
         
+        # Validate account and group access
+        if self.page and hasattr(self.page, 'run_task'):
+            self.page.run_task(self._validate_and_fetch)
+        else:
+            asyncio.create_task(self._validate_and_fetch())
+    
+    async def _validate_and_fetch(self):
+        """Validate account/group access and start fetch."""
+        # Validate account-group access
+        is_valid, error_msg = await self._validate_account_group_access()
+        if not is_valid:
+            logger.warning(f"Account-group validation failed: {error_msg}")
+            if self.page:
+                theme_manager.show_snackbar(
+                    self.page,
+                    error_msg,
+                    bgcolor=ft.Colors.RED
+                )
+            return
+        
+        # Continue with fetch
+        await self._proceed_with_fetch()
+    
+    async def _proceed_with_fetch(self):
+        """Proceed with fetch after validation."""
+        
         # Check license - can user add more groups?
         can_add, license_error = self.license_service.can_add_group()
         if not can_add:
@@ -278,22 +494,11 @@ class FetchDataDialog(ft.AlertDialog):
                 self._show_upgrade_dialog(license_error)
             return
         
-        logger.info("Validation passed, checking Telegram connection...")
-        
-        # Check if Telegram is connected
-        if not self.telegram_service.is_connected():
-            logger.warning("Telegram not connected, attempting to load session...")
-            # Try to auto-load session first
-            if self.page and hasattr(self.page, 'run_task'):
-                self.page.run_task(self._try_connect_and_fetch)
-            else:
-                asyncio.create_task(self._try_connect_and_fetch())
-            return
-        
-        logger.info("Telegram connected, starting fetch...")
+        logger.info("Validation passed, starting fetch...")
         
         # Disable inputs during fetch
-        self.group_id_field.disabled = True
+        self.account_selector.disable()
+        self.group_selector.disable()
         self.start_date_field.disabled = True
         self.end_date_field.disabled = True
         
@@ -367,45 +572,23 @@ class FetchDataDialog(ft.AlertDialog):
     async def _fetch_messages_async(self):
         """Async method to fetch messages."""
         try:
-            # Double-check connection before fetching
-            if not self.telegram_service.is_connected():
-                error_msg = "Not connected to Telegram. Please connect first."
-                self.status_text.value = error_msg
-                self.status_text.color = ft.Colors.RED
-                
-                # Re-enable inputs
-                self.group_id_field.disabled = False
-                self.start_date_field.disabled = False
-                self.end_date_field.disabled = False
-                self.progress_bar.visible = False
-                
-                if self.page:
-                    theme_manager.show_snackbar(
-                        self.page,
-                        error_msg,
-                        bgcolor=ft.Colors.RED
-                    )
-                    self.page.update()
-                return
+            # Get group ID from selector or manual entry
+            group_id = self.group_selector.get_selected_group_id()
+            if not group_id:
+                if self.group_id_field.value:
+                    group_id = int(self.group_id_field.value.strip())
+                else:
+                    error_msg = theme_manager.t("group_id_required")
+                    self.status_text.value = error_msg
+                    self.status_text.color = ft.Colors.RED
+                    self._re_enable_inputs()
+                    if self.page:
+                        theme_manager.show_snackbar(self.page, error_msg, bgcolor=ft.Colors.RED)
+                        self.page.update()
+                    return
             
-            group_id = int(self.group_id_field.value.strip())
             start_date = datetime.strptime(self.start_date_field.value.strip(), "%Y-%m-%d")
             end_date = datetime.strptime(self.end_date_field.value.strip(), "%Y-%m-%d")
-            
-            # Disable inputs during fetch
-            self.group_id_field.disabled = True
-            self.start_date_field.disabled = True
-            self.end_date_field.disabled = True
-            
-            # Show progress
-            self.progress_bar.visible = True
-            self.progress_text.visible = True
-            self.status_text.visible = True
-            self.status_text.value = theme_manager.t("fetching_messages")
-            self.status_text.color = theme_manager.text_secondary_color
-            
-            if self.page:
-                self.page.update()
             
             # Progress callback
             def on_progress(current: int, total: int):
@@ -416,13 +599,24 @@ class FetchDataDialog(ft.AlertDialog):
                     except:
                         pass
             
-            # Fetch messages
-            success, message_count, error = await self.telegram_service.fetch_messages(
-                group_id=group_id,
-                start_date=start_date,
-                end_date=end_date,
-                progress_callback=on_progress
-            )
+            # Fetch messages using selected account or default
+            if self.selected_credential:
+                # Use selected account with temporary client
+                success, message_count, error = await self.telegram_service.fetch_messages_with_account(
+                    credential=self.selected_credential,
+                    group_id=group_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                    progress_callback=on_progress
+                )
+            else:
+                # Use default connected account
+                success, message_count, error = await self.telegram_service.fetch_messages(
+                    group_id=group_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                    progress_callback=on_progress
+                )
             
             if success:
                 self.status_text.value = f"{theme_manager.t('fetch_complete')}: {message_count} {theme_manager.t('messages')}"
@@ -454,10 +648,7 @@ class FetchDataDialog(ft.AlertDialog):
                     )
             
             # Re-enable inputs
-            self.group_id_field.disabled = False
-            self.start_date_field.disabled = False
-            self.end_date_field.disabled = False
-            self.progress_bar.visible = False
+            self._re_enable_inputs()
             
             if self.page:
                 self.page.update()
@@ -468,10 +659,7 @@ class FetchDataDialog(ft.AlertDialog):
             self.status_text.color = ft.Colors.RED
             
             # Re-enable inputs
-            self.group_id_field.disabled = False
-            self.start_date_field.disabled = False
-            self.end_date_field.disabled = False
-            self.progress_bar.visible = False
+            self._re_enable_inputs()
             
             if self.page:
                 theme_manager.show_snackbar(
@@ -480,4 +668,12 @@ class FetchDataDialog(ft.AlertDialog):
                     bgcolor=ft.Colors.RED
                 )
                 self.page.update()
+    
+    def _re_enable_inputs(self):
+        """Re-enable all input fields."""
+        self.account_selector.enable()
+        self.group_selector.enable()
+        self.start_date_field.disabled = False
+        self.end_date_field.disabled = False
+        self.progress_bar.visible = False
 

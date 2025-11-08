@@ -15,23 +15,23 @@ def create_test_db_manager(db_path: Optional[str] = None) -> DatabaseManager:
     Create a test database manager with in-memory or temporary file database.
     
     Args:
-        db_path: Path to database file. If None, uses in-memory database.
+        db_path: Path to database file. If None, uses temporary file database.
+                Note: Using in-memory (":memory:") causes issues because each
+                connection gets a separate database. Use temp file instead.
     
     Returns:
         DatabaseManager instance with test database.
     """
     if db_path is None:
-        # Use in-memory database for faster tests
-        db_path = ":memory:"
+        # Use temporary file database instead of :memory: to ensure all managers
+        # share the same database connection
+        import tempfile
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
+        temp_file.close()
+        db_path = temp_file.name
     
-    # Create database manager
+    # Create database manager (it will initialize schema automatically via BaseDatabaseManager)
     db_manager = DatabaseManager(db_path)
-    
-    # Initialize schema if using in-memory database
-    if db_path == ":memory:":
-        with db_manager.get_connection() as conn:
-            conn.executescript(CREATE_TABLES_SQL)
-            conn.commit()
     
     return db_manager
 

@@ -515,6 +515,12 @@ class TelegramService:
         """
         temp_client = None
         try:
+            # Import Pyrogram errors for specific error handling
+            try:
+                from pyrogram.errors import ChatNotFound, Forbidden, Unauthorized, UsernameNotOccupied
+            except ImportError:
+                ChatNotFound = Forbidden = Unauthorized = UsernameNotOccupied = None
+            
             # Create temporary client
             temp_client = await self._create_temporary_client(account_credential)
             if not temp_client:
@@ -527,12 +533,46 @@ class TelegramService:
             success, group, error = await temp_group_manager.fetch_group_info(group_id)
             
             if not success:
+                # Check for specific error types
+                error_lower = (error or "").lower()
+                
+                # Check if it's a session/authorization error
+                if "unauthorized" in error_lower or "expired" in error_lower or "invalid" in error_lower:
+                    return False, None, "Account session expired, please reconnect", False
+                
+                # Check if it's a permission error
+                if "forbidden" in error_lower or "permission" in error_lower:
+                    return False, None, "permission_denied", False  # Special marker for permission error
+                
+                # Check if it's a not found/not member error
+                if "not found" in error_lower or "chat not found" in error_lower or "not a member" in error_lower:
+                    return False, None, "not_member", False  # Special marker for not member error
+                
+                # Generic error
                 return False, None, error or "Group not found or invalid", False
             
             # If we got group info, account has access
             return True, group, None, True
             
         except Exception as e:
+            # Handle Pyrogram-specific exceptions
+            error_str = str(e).lower()
+            error_type = type(e).__name__
+            
+            # Check for specific Pyrogram error types
+            if ChatNotFound and isinstance(e, ChatNotFound):
+                return False, None, "not_member", False
+            elif Forbidden and isinstance(e, Forbidden):
+                return False, None, "permission_denied", False
+            elif Unauthorized and isinstance(e, Unauthorized):
+                return False, None, "Account session expired, please reconnect", False
+            elif "unauthorized" in error_str or "expired" in error_str:
+                return False, None, "Account session expired, please reconnect", False
+            elif "forbidden" in error_str or "permission" in error_str:
+                return False, None, "permission_denied", False
+            elif "not found" in error_str or "chat not found" in error_str:
+                return False, None, "not_member", False
+            
             logger.error(f"Error validating group access: {e}")
             return False, None, str(e), False
         finally:

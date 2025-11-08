@@ -159,6 +159,7 @@ class TelegramUserTrackingApp:
             )
             
             dialog.page = self.page
+            dialog.set_page(self.page)  # Initialize account list
             logger.info(f"Dialog created successfully. Type: {type(dialog)}")
             
             self.page.open(dialog)

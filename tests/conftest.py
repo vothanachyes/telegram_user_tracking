@@ -20,10 +20,12 @@ from utils.constants import (
 
 @pytest.fixture
 def test_db_manager():
-    """Create an in-memory test database manager."""
+    """Create a test database manager with temporary file database."""
     db_manager = create_test_db_manager()
+    db_path = db_manager.db_path
     yield db_manager
-    # Cleanup is automatic for in-memory database
+    # Cleanup temporary database file
+    cleanup_temp_db(db_path)
 
 
 @pytest.fixture

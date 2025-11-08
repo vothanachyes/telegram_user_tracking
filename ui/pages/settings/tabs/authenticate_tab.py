@@ -133,6 +133,16 @@ class AuthenticateTab:
         
         self.error_text = ft.Text("", color=ft.Colors.RED, visible=False)
         
+        # Account management section
+        self.accounts_list = ft.Column([], spacing=10)
+        self.refresh_status_btn = theme_manager.create_button(
+            text=theme_manager.t("refresh_account_status"),
+            icon=ft.Icons.REFRESH,
+            on_click=self._handle_refresh_accounts,
+            style="primary"
+        )
+        self.accounts_section = self._build_accounts_section()
+        
         self.update_connection_buttons()
     
     def build(self) -> ft.Container:
@@ -201,6 +211,8 @@ class AuthenticateTab:
                     ], spacing=15)
                 ),
                 
+                self.accounts_section,
+                
                 self.error_text,
                 
                 ft.Row([
@@ -221,6 +233,7 @@ class AuthenticateTab:
         """Update status texts."""
         self.api_status_text.value = self._get_api_status_text()
         self.account_status_text.value = self._get_account_status_text()
+        self.update_accounts_list()
     
     def update_connection_buttons(self):
         """Update connection button states."""
@@ -315,4 +328,134 @@ class AuthenticateTab:
         """Handle OTP submit button click."""
         if self.handlers:
             self.handlers.handle_otp_submit(e)
+    
+    def _build_accounts_section(self) -> ft.Container:
+        """Build the saved accounts management section."""
+        return theme_manager.create_card(
+            content=ft.Column([
+                ft.Row([
+                    ft.Text(
+                        theme_manager.t("saved_telegram_accounts"),
+                        size=20,
+                        weight=ft.FontWeight.BOLD,
+                        expand=True
+                    ),
+                    self.refresh_status_btn,
+                ], spacing=10),
+                ft.Divider(),
+                self.accounts_list,
+            ], spacing=15)
+        )
+    
+    def update_accounts_list(self):
+        """Update the accounts list display."""
+        import asyncio
+        
+        async def _update_async():
+            try:
+                accounts_with_status = await self.telegram_service.get_all_accounts_with_status()
+                self._render_accounts_list(accounts_with_status)
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error updating accounts list: {e}")
+        
+        if hasattr(self, 'page') and self.page and hasattr(self.page, 'run_task'):
+            self.page.run_task(_update_async)
+        else:
+            asyncio.create_task(_update_async())
+    
+    def _render_accounts_list(self, accounts_with_status):
+        """Render the list of accounts."""
+        self.accounts_list.controls = []
+        
+        if not accounts_with_status:
+            self.accounts_list.controls.append(
+                ft.Text(
+                    theme_manager.t("no_accounts_saved"),
+                    size=14,
+                    color=theme_manager.text_secondary_color,
+                    italic=True
+                )
+            )
+        else:
+            for item in accounts_with_status:
+                credential = item['credential']
+                status = item.get('status', 'not_connected')
+                
+                # Status badge
+                status_color = ft.Colors.GREEN if status == 'active' else (
+                    ft.Colors.RED if status == 'expired' else ft.Colors.GRAY
+                )
+                status_text = self._get_status_text(status)
+                
+                # Last used date
+                last_used_text = ""
+                if credential.last_used:
+                    last_used_text = credential.last_used.strftime("%Y-%m-%d %H:%M")
+                
+                # Account row
+                account_row = ft.Container(
+                    content=ft.Row([
+                        ft.Column([
+                            ft.Row([
+                                ft.Text(
+                                    credential.phone_number,
+                                    size=16,
+                                    weight=ft.FontWeight.BOLD
+                                ),
+                                ft.Container(
+                                    content=ft.Text(
+                                        status_text,
+                                        size=12,
+                                        color=ft.Colors.WHITE
+                                    ),
+                                    bgcolor=status_color,
+                                    padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                                    border_radius=theme_manager.corner_radius
+                                ),
+                            ], spacing=10),
+                            ft.Text(
+                                f"{theme_manager.t('account_last_used')}: {last_used_text}" if last_used_text else theme_manager.t("account_last_used") + ": Never",
+                                size=12,
+                                color=theme_manager.text_secondary_color
+                            ),
+                        ], spacing=5, expand=True),
+                        theme_manager.create_button(
+                            text=theme_manager.t("remove_account"),
+                            icon=ft.Icons.DELETE,
+                            on_click=lambda e, cred_id=credential.id: self._handle_remove_account(cred_id),
+                            style="error"
+                        ),
+                    ], spacing=10, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    padding=10,
+                    border=ft.border.all(1, theme_manager.border_color),
+                    border_radius=theme_manager.corner_radius,
+                    bgcolor=theme_manager.surface_color
+                )
+                self.accounts_list.controls.append(account_row)
+        
+        if hasattr(self, 'page') and self.page:
+            self.accounts_list.update()
+    
+    def _get_status_text(self, status: str) -> str:
+        """Get localized status text."""
+        status_map = {
+            'active': theme_manager.t("account_status_active"),
+            'expired': theme_manager.t("account_status_expired"),
+            'not_connected': theme_manager.t("account_status_not_available"),
+            'error': theme_manager.t("account_status_not_available")
+        }
+        return status_map.get(status, status)
+    
+    def _handle_refresh_accounts(self, e):
+        """Handle refresh accounts button click."""
+        self.update_accounts_list()
+    
+    def _handle_remove_account(self, credential_id: int):
+        """Handle remove account button click."""
+        if self.handlers and hasattr(self.handlers, 'handle_remove_account'):
+            self.handlers.handle_remove_account(credential_id)
+            # Refresh accounts list after removal
+            self.update_accounts_list()
 

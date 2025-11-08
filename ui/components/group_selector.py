@@ -224,14 +224,22 @@ class GroupSelector:
         self.group_dropdown.disabled = True
         self.manual_entry_field.disabled = True
         if self.page:
-            self.group_dropdown.update()
-            self.manual_entry_field.update()
+            try:
+                self.group_dropdown.update()
+                self.manual_entry_field.update()
+            except AssertionError:
+                # Control not added to page yet - disabled state will be applied when added
+                pass
     
     def enable(self):
         """Enable the group selector."""
         self.group_dropdown.disabled = False
         self.manual_entry_field.disabled = False
         if self.page:
-            self.group_dropdown.update()
-            self.manual_entry_field.update()
+            try:
+                self.group_dropdown.update()
+                self.manual_entry_field.update()
+            except AssertionError:
+                # Control not added to page yet - enabled state will be applied when added
+                pass
 

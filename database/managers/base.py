@@ -81,11 +81,19 @@ class BaseDatabaseManager:
         # Normalize database path for comparison
         normalized_path = str(Path(self.db_path).resolve())
         
-        # Check if this database has already been initialized
+        # Check if database file already exists (first time initialization)
+        db_file_exists = Path(self.db_path).exists()
+        
+        # Check if this database has already been initialized in this session
         is_first_init = normalized_path not in _initialized_databases
         
         try:
             with sqlite3.connect(self.db_path) as conn:
+                # Enable WAL (Write-Ahead Logging) mode for better concurrency
+                # WAL mode allows multiple readers while one writer is active
+                # This significantly reduces database lock conflicts
+                conn.execute("PRAGMA journal_mode=WAL")
+                
                 conn.executescript(CREATE_TABLES_SQL)
                 
                 # Run migrations
@@ -97,6 +105,12 @@ class BaseDatabaseManager:
                     conn.execute("""
                         INSERT INTO app_settings (id) VALUES (1)
                     """)
+                
+                # Clear user data tables ONLY on first initialization (when DB file didn't exist)
+                if not db_file_exists:
+                    logger.info("First time database initialization - clearing user data")
+                    self._clear_user_data(conn)
+                
                 conn.commit()
                 
                 # Only log once per database path
@@ -106,6 +120,42 @@ class BaseDatabaseManager:
         except Exception as e:
             logger.error(f"Error initializing database: {e}")
             raise
+    
+    def _clear_user_data(self, conn: sqlite3.Connection):
+        """
+        Clear user data tables on first database initialization only.
+        Keeps essential app data: settings, credentials, license cache, login credentials, account activity.
+        Removes: groups, users, messages, reactions, media files, deleted records.
+        
+        Note: This only runs when the database file is created for the first time.
+        """
+        try:
+            # Clear user data tables (in order to respect foreign key constraints)
+            user_data_tables = [
+                'reactions',           # Must be deleted before messages
+                'media_files',         # Must be deleted before messages
+                'messages',            # Must be deleted before groups/users
+                'deleted_messages',    # Tracking table
+                'deleted_users',       # Tracking table
+                'telegram_groups',     # Groups data
+                'telegram_users',      # Users data
+            ]
+            
+            for table in user_data_tables:
+                try:
+                    cursor = conn.execute(f"DELETE FROM {table}")
+                    deleted_count = cursor.rowcount
+                    if deleted_count > 0:
+                        logger.info(f"Cleared {deleted_count} rows from {table}")
+                except sqlite3.OperationalError as e:
+                    # Table might not exist yet (first run)
+                    if "no such table" not in str(e).lower():
+                        logger.warning(f"Error clearing {table}: {e}")
+            
+            logger.info("User data cleared successfully")
+        except Exception as e:
+            logger.error(f"Error clearing user data: {e}")
+            # Don't raise - allow app to continue even if cleanup fails
     
     def _run_migrations(self, conn: sqlite3.Connection):
         """Run database migrations to update schema."""
@@ -191,7 +241,18 @@ class BaseDatabaseManager:
     
     def get_connection(self) -> sqlite3.Connection:
         """Get database connection."""
-        conn = sqlite3.connect(self.db_path)
+        # Increase timeout to 10 seconds to handle concurrent operations better
+        conn = sqlite3.connect(self.db_path, timeout=10.0)
         conn.row_factory = sqlite3.Row
+        
+        # Ensure WAL mode is enabled for this connection
+        # WAL mode allows multiple readers while one writer is active
+        # This significantly reduces database lock conflicts
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+        except Exception:
+            # If WAL mode fails (e.g., on some file systems), continue with default mode
+            pass
+        
         return conn
 

@@ -89,26 +89,47 @@ class DialogManager:
         
         def handle_confirm(confirm_e):
             """Handle confirmation."""
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("DialogManager.handle_confirm called")
+            
+            try:
+                # Call the user's on_confirm callback first (before closing dialog)
+                logger.info("Calling user's on_confirm callback")
+                on_confirm(confirm_e)
+                logger.info("User's on_confirm callback completed")
+            except Exception as e:
+                logger.error(f"Error in user's on_confirm callback: {e}", exc_info=True)
+            
+            # Close dialog - page.open() handles cleanup automatically
             confirm_dialog.open = False
-            # Clear page.dialog to ensure proper cleanup
-            if page.dialog == confirm_dialog:
+            # Only try to clear page.dialog if it exists (for fallback compatibility)
+            if hasattr(page, 'dialog') and page.dialog == confirm_dialog:
                 page.dialog = None
             page.update()
-            on_confirm(confirm_e)
+            logger.info("Dialog closed and page updated")
         
         def handle_cancel(cancel_e):
             """Handle cancellation."""
-            # Close confirmation dialog
+            # Close confirmation dialog - page.open() handles cleanup automatically
             confirm_dialog.open = False
-            # Clear page.dialog if this is the current dialog
-            if page.dialog == confirm_dialog:
+            # Only try to clear page.dialog if it exists (for fallback compatibility)
+            if hasattr(page, 'dialog') and page.dialog == confirm_dialog:
                 page.dialog = None
             page.update()
             
             # Restore main dialog if provided (for nested dialogs)
             if main_dialog:
                 # Use page.open() to restore the main dialog
-                page.open(main_dialog)
+                try:
+                    main_dialog.page = page
+                    page.open(main_dialog)
+                except Exception:
+                    # Fallback if page.open() fails
+                    if hasattr(page, 'dialog'):
+                        page.dialog = main_dialog
+                        main_dialog.open = True
+                        page.update()
             
             # Call custom cancel handler if provided
             if on_cancel:
@@ -131,13 +152,15 @@ class DialogManager:
             elevation=24 if main_dialog else None,  # Higher elevation for nested dialogs
         )
         
-        # Show dialog
-        if main_dialog:
-            # For nested dialogs, use page.open() which will replace the current dialog
-            # Flet handles closing the previous dialog automatically
+        # Show dialog using page.open() method (preferred Flet method)
+        # This works for both standalone and nested dialogs
+        try:
+            # Set page reference on dialog
+            confirm_dialog.page = page
+            # Use page.open() - this is the correct method for all dialogs
             page.open(confirm_dialog)
-        else:
-            # For standalone dialogs, use page.dialog
+        except Exception as e:
+            # Fallback to page.dialog if page.open() fails
             page.dialog = confirm_dialog
             confirm_dialog.open = True
             page.update()
@@ -191,10 +214,15 @@ class DialogManager:
             actions_alignment=ft.MainAxisAlignment.END
         )
         
-        # Show dialog
-        page.dialog = dialog
-        dialog.open = True
-        page.update()
+        # Show dialog using page.open() method (preferred Flet method)
+        try:
+            dialog.page = page
+            page.open(dialog)
+        except Exception as e:
+            # Fallback to page.dialog if page.open() fails
+            page.dialog = dialog
+            dialog.open = True
+            page.update()
         
         return True
     
@@ -253,10 +281,16 @@ class DialogManager:
         if main_dialog:
             def restore_main_dialog():
                 """Helper to restore main dialog."""
-                dialog.open = False
-                page.dialog = main_dialog
-                main_dialog.open = True
-                page.update()
+                try:
+                    # Use page.open() to restore main dialog
+                    main_dialog.page = page
+                    page.open(main_dialog)
+                except Exception:
+                    # Fallback to page.dialog if page.open() fails
+                    dialog.open = False
+                    page.dialog = main_dialog
+                    main_dialog.open = True
+                    page.update()
             
             # Wrap each action's on_click to restore main dialog
             if actions:
@@ -279,10 +313,15 @@ class DialogManager:
                             return handler
                         action.on_click = make_restore_handler()
         
-        # Show dialog
-        page.dialog = dialog
-        dialog.open = True
-        page.update()
+        # Show dialog using page.open() method (preferred Flet method)
+        try:
+            dialog.page = page
+            page.open(dialog)
+        except Exception as e:
+            # Fallback to page.dialog if page.open() fails
+            page.dialog = dialog
+            dialog.open = True
+            page.update()
         
         return dialog
     

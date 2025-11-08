@@ -40,6 +40,7 @@ class PageConfig:
         page.bgcolor = theme_manager.background_color
         
         from ui.components.toast import toast
+        toast.initialize(page, position="top-right")
         
         page.update()
     

@@ -217,14 +217,22 @@ class AccountSelector:
         self.account_dropdown.disabled = True
         self.refresh_btn.disabled = True
         if self.page:
-            self.account_dropdown.update()
-            self.refresh_btn.update()
+            try:
+                self.account_dropdown.update()
+                self.refresh_btn.update()
+            except AssertionError:
+                # Control not added to page yet - disabled state will be applied when added
+                pass
     
     def enable(self):
         """Enable the account selector."""
         self.account_dropdown.disabled = False
         self.refresh_btn.disabled = False
         if self.page:
-            self.account_dropdown.update()
-            self.refresh_btn.update()
+            try:
+                self.account_dropdown.update()
+                self.refresh_btn.update()
+            except AssertionError:
+                # Control not added to page yet - enabled state will be applied when added
+                pass
 

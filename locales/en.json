@@ -245,6 +245,20 @@
   "pin_required": "PIN Required",
   "pin_incorrect": "Incorrect PIN. Please try again.",
   "pin_warning_local_only": "Warning: Your PIN is stored locally on this device only. We do not store your PIN on our servers. If you forget your PIN, you will need to re-login to reset it.",
-  "pin_warning_dialog": "Your PIN is stored locally on this device only. We do not store your PIN on our servers."
+  "pin_warning_dialog": "Your PIN is stored locally on this device only. We do not store your PIN on our servers.",
+  "accounts_section": "Accounts",
+  "configuration_section": "Configuration",
+  "account_count_display": "{current}/{max} acc",
+  "account_limit_reached": "Account limit reached. You have {current}/{max} accounts. Upgrade your license to add more.",
+  "account_already_exists": "This account already exists. Phone number: {phone}",
+  "add_account": "Add Account",
+  "account_count_tooltip": "You have {current} out of {max} accounts allowed by your {tier} license",
+  "no_accounts_limit": "No account limit",
+  "enter_phone_number_to_add_account": "Enter phone number to add a new Telegram account",
+  "phone_number_required": "Phone number is required",
+  "authenticating": "Authenticating...",
+  "sending_otp": "Sending OTP code...",
+  "account_added_successfully": "Account added successfully",
+  "authentication_failed": "Authentication failed. Please try again."
 }
 

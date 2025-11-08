@@ -19,13 +19,14 @@ class LicenseManager(BaseDatabaseManager):
             with self.get_connection() as conn:
                 cursor = conn.execute("""
                     INSERT INTO user_license_cache 
-                    (user_email, license_tier, expiration_date, max_devices, max_groups, last_synced, is_active)
-                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                    (user_email, license_tier, expiration_date, max_devices, max_groups, max_accounts, last_synced, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
                     ON CONFLICT(user_email) DO UPDATE SET
                         license_tier = excluded.license_tier,
                         expiration_date = excluded.expiration_date,
                         max_devices = excluded.max_devices,
                         max_groups = excluded.max_groups,
+                        max_accounts = excluded.max_accounts,
                         last_synced = CURRENT_TIMESTAMP,
                         is_active = excluded.is_active,
                         updated_at = CURRENT_TIMESTAMP
@@ -35,6 +36,7 @@ class LicenseManager(BaseDatabaseManager):
                     license_cache.expiration_date,
                     license_cache.max_devices,
                     license_cache.max_groups,
+                    license_cache.max_accounts,
                     license_cache.is_active
                 ))
                 conn.commit()
@@ -52,6 +54,12 @@ class LicenseManager(BaseDatabaseManager):
             )
             row = cursor.fetchone()
             if row:
+                # Handle max_accounts column - may not exist in older databases
+                try:
+                    max_accounts = row['max_accounts']
+                except (KeyError, IndexError):
+                    max_accounts = 1  # Default to 1 for backward compatibility
+                
                 return UserLicenseCache(
                     id=row['id'],
                     user_email=row['user_email'],
@@ -59,6 +67,7 @@ class LicenseManager(BaseDatabaseManager):
                     expiration_date=_parse_datetime(row['expiration_date']),
                     max_devices=row['max_devices'],
                     max_groups=row['max_groups'],
+                    max_accounts=max_accounts,
                     last_synced=_parse_datetime(row['last_synced']),
                     is_active=bool(row['is_active']),
                     created_at=_parse_datetime(row['created_at']),

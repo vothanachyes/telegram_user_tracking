@@ -28,9 +28,6 @@ class ProfilePage:
         if db_manager:
             self.license_service = LicenseService(db_manager)
         
-        # Get current user
-        current_user = auth_service.get_current_user()
-        
         # Create logout button
         self.logout_button = theme_manager.create_button(
             text=theme_manager.t("logout"),
@@ -38,9 +35,50 @@ class ProfilePage:
             on_click=self._handle_logout,
             style="error"
         )
+    
+    def _build_profile_card(self) -> ft.Container:
+        """Build profile card with current user info."""
+        # Get current user info fresh
+        current_user = auth_service.get_current_user()
         
-        # Build the container
-        self.container = ft.Container(
+        if current_user:
+            display_name = current_user.get("display_name") or current_user.get("email", "User")
+            email = current_user.get("email", "")
+        else:
+            display_name = "Guest"
+            email = ""
+        
+        return theme_manager.create_card(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(
+                        ft.Icons.ACCOUNT_CIRCLE,
+                        size=80,
+                        color=theme_manager.primary_color
+                    ),
+                    ft.Column([
+                        ft.Text(
+                            display_name,
+                            size=24,
+                            weight=ft.FontWeight.BOLD
+                        ),
+                        ft.Text(
+                            email,
+                            size=14,
+                            color=theme_manager.text_secondary_color
+                        ),
+                    ], spacing=5)
+                ], spacing=20),
+                ft.Divider(),
+                self.logout_button,
+            ], spacing=15),
+            width=500
+        )
+    
+    def build(self) -> ft.Container:
+        """Build and return the profile page container, refreshing user info."""
+        # Build the container with fresh user info
+        container = ft.Container(
             content=ft.Column([
                 ft.Text(
                     theme_manager.t("profile"),
@@ -49,33 +87,8 @@ class ProfilePage:
                 ),
                 ft.Container(height=20),
                 
-                # Profile card
-                theme_manager.create_card(
-                    content=ft.Column([
-                        ft.Row([
-                            ft.Icon(
-                                ft.Icons.ACCOUNT_CIRCLE,
-                                size=80,
-                                color=theme_manager.primary_color
-                            ),
-                            ft.Column([
-                                ft.Text(
-                                    current_user.get("display_name", "User") if current_user else "Guest",
-                                    size=24,
-                                    weight=ft.FontWeight.BOLD
-                                ),
-                                ft.Text(
-                                    current_user.get("email", "") if current_user else "",
-                                    size=14,
-                                    color=theme_manager.text_secondary_color
-                                ),
-                            ], spacing=5)
-                        ], spacing=20),
-                        ft.Divider(),
-                        self.logout_button,
-                    ], spacing=15),
-                    width=500
-                ),
+                # Profile card - built fresh each time
+                self._build_profile_card(),
                 
                 ft.Container(height=20),
                 
@@ -129,10 +142,8 @@ class ProfilePage:
             padding=20,
             expand=True
         )
-    
-    def build(self) -> ft.Container:
-        """Build and return the profile page container."""
-        return self.container
+        
+        return container
     
     def _handle_logout(self, e):
         """Handle logout button click."""

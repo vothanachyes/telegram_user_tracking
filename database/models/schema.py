@@ -153,6 +153,7 @@ CREATE TABLE IF NOT EXISTS user_license_cache (
     expiration_date TIMESTAMP,
     max_devices INTEGER NOT NULL DEFAULT 1,
     max_groups INTEGER NOT NULL DEFAULT 3,
+    max_accounts INTEGER NOT NULL DEFAULT 1,
     last_synced TIMESTAMP,
     is_active BOOLEAN NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

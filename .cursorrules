@@ -164,6 +164,59 @@ Before committing, verify:
 - Use `ft.Container` with `expand=True` for responsive layouts
 - Leverage `ft.Column` and `ft.Row` with proper spacing and alignment
 
+### Flet Dialogs (CRITICAL)
+**ALWAYS use `page.open(dialog)` as the primary method for opening dialogs.**
+
+#### ✅ CORRECT - Use page.open():
+```python
+# Create dialog
+dialog = MyDialog(on_submit=handle_submit)
+dialog.page = page  # Set page reference
+
+# Open dialog using page.open() - THIS IS THE CORRECT METHOD
+page.open(dialog)
+```
+
+**Reference implementations:**
+- `ui/pages/telegram_page.py` (lines 561, 586)
+- `ui/pages/user_dashboard_page.py` (lines 668, 684)
+- `ui/pages/settings/handlers.py` (line 1154)
+
+#### ❌ WRONG - Do NOT use page.dialog pattern:
+```python
+# DON'T DO THIS - May cause dialogs to not appear or be blocked
+page.dialog = dialog
+dialog.open = True
+page.update()
+```
+
+#### Fallback Pattern (if page.open() fails):
+```python
+try:
+    page.open(dialog)
+except Exception as e:
+    logger.error(f"page.open() failed: {e}")
+    # Fallback only if page.open() fails
+    page.dialog = dialog
+    dialog.open = True
+    page.update()
+```
+
+#### Dialog Best Practices:
+1. **Always set page reference**: `dialog.page = page` before opening
+2. **Check for existing dialogs**: Prevent opening multiple dialogs simultaneously
+3. **Use modal dialogs**: Set `modal=True` for AlertDialogs to block background interaction
+4. **Handle errors gracefully**: Wrap dialog opening in try-except with fallback
+5. **Use DialogManager**: For simple dialogs, use `DialogManager.show_simple_dialog()` or `DialogManager.show_custom_dialog()`
+6. **For nested dialogs**: Use `page.open()` which automatically handles dialog replacement
+
+#### Common Mistakes to Avoid:
+- ❌ Using `page.dialog = dialog; dialog.open = True; page.update()` as primary method
+- ❌ Not setting `dialog.page` before opening
+- ❌ Opening multiple dialogs without checking if one is already open
+- ❌ Forgetting to handle exceptions when opening dialogs
+- ❌ Using `page.dialog` pattern when `page.open()` is available
+
 ### Pyrogram (Telegram)
 - Always handle Pyrogram client lifecycle properly (connect/disconnect)
 - Store sessions in `data/sessions/` directory

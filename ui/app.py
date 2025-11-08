@@ -5,6 +5,7 @@ Main Flet application with navigation.
 import flet as ft
 import logging
 import asyncio
+import threading
 from typing import Optional
 from ui.theme import theme_manager
 from ui.dialogs import dialog_manager
@@ -112,7 +113,27 @@ class TelegramUserTrackingApp:
             splash._login_page = login_page
             
             # Trigger auto-login which will hide splash on success
-            login_page._trigger_auto_login()
+            # Use a small delay to ensure page is fully ready for async operations
+            async def trigger_auto_login_delayed():
+                await asyncio.sleep(0.2)  # Small delay to ensure page is ready
+                login_page._trigger_auto_login()
+            
+            if hasattr(self.page, 'run_task'):
+                try:
+                    self.page.run_task(trigger_auto_login_delayed)
+                except Exception as e:
+                    logger.error(f"Error calling page.run_task(): {e}", exc_info=True)
+            else:
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.create_task(trigger_auto_login_delayed())
+                    else:
+                        def run_in_thread():
+                            asyncio.run(trigger_auto_login_delayed())
+                        threading.Thread(target=run_in_thread, daemon=True).start()
+                except Exception as e:
+                    logger.error(f"Error creating async task: {e}", exc_info=True)
         else:
             # No saved credentials, show login page directly
             login_page = LoginPage(on_login_success=self._on_login_success, page=self.page)
@@ -191,12 +212,7 @@ class TelegramUserTrackingApp:
     
     def _show_main_app(self):
         """Show main application."""
-        # Try to auto-load Telegram session in background
-        if hasattr(self.page, 'run_task'):
-            self.page.run_task(self._auto_load_telegram_session)
-        else:
-            asyncio.create_task(self._auto_load_telegram_session())
-        
+        # No auto-connect on startup - connect on demand only
         # Create main layout using router
         main_layout, self.connectivity_banner = self.router.create_main_layout(
             on_fetch_data=self._show_fetch_dialog

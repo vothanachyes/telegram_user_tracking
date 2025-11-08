@@ -153,7 +153,7 @@ class LoginPage(ft.Container):
                         asyncio.run(self._delayed_auto_login())
                     threading.Thread(target=run_auto_login, daemon=True).start()
             except RuntimeError as e:
-                logger.warning(f"Could not create async task for auto-login: {e}")
+                logger.error(f"Could not create async task for auto-login: {e}", exc_info=True)
     
     async def _delayed_auto_login(self):
         """Delay auto-login to allow UI to render smoothly."""
@@ -191,6 +191,7 @@ class LoginPage(ft.Container):
         
         if success:
             logger.info("Auto-login successful!")
+            
             # Hide splash screen if shown (it will ensure minimum duration from config)
             if self.splash_screen and self.page:
                 await self.splash_screen.hide(self.page)

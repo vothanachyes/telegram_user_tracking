@@ -29,7 +29,7 @@ class SplashScreen(ft.Container):
         # Create animated container for breathing effect
         self.animated_container = ft.Container(
             content=self.logo_icon,
-            animate_scale=ft.animation.Animation(
+            animate_scale=ft.Animation(
                 duration=1500,
                 curve=ft.AnimationCurve.EASE_IN_OUT
             ),
@@ -99,7 +99,7 @@ class SplashScreen(ft.Container):
         
         self._is_visible = False
         self.opacity = 0
-        self.animate_opacity = ft.animation.Animation(
+        self.animate_opacity = ft.Animation(
             duration=300,
             curve=ft.AnimationCurve.EASE_OUT
         )

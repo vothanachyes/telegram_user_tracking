@@ -2,7 +2,7 @@
 Telegram credentials manager.
 """
 
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
 from database.managers.base import BaseDatabaseManager, _parse_datetime
 from database.models.telegram import TelegramCredential
 import logging
@@ -146,4 +146,51 @@ class TelegramCredentialManager(BaseDatabaseManager):
             }
             for cred in credentials
         ]
+    
+    def account_exists(self, phone_number: str) -> Tuple[bool, Optional[str]]:
+        """
+        Check if account exists (in database or as session file).
+        
+        Args:
+            phone_number: Phone number to check
+            
+        Returns:
+            Tuple of (exists, reason) where reason is None if doesn't exist
+        """
+        # Check if phone number exists in database
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT id FROM telegram_credentials WHERE phone_number = ?",
+                (phone_number,)
+            )
+            if cursor.fetchone():
+                return True, f"Account with phone number {phone_number} already exists in database"
+        
+        # Check if session file exists on disk
+        try:
+            from pathlib import Path
+            from utils.constants import BASE_DIR
+            
+            session_path = BASE_DIR / "data" / "sessions"
+            # Session name format: session_{phone.replace('+', '')}
+            session_name = f"session_{phone_number.replace('+', '')}"
+            session_file = session_path / f"{session_name}.session"
+            
+            if session_file.exists():
+                return True, f"Session file already exists for phone number {phone_number}"
+        except Exception as e:
+            logger.error(f"Error checking session file: {e}")
+            # Don't fail on file check errors, just log
+        
+        return False, None
+    
+    def get_account_count(self) -> int:
+        """
+        Get total count of saved accounts.
+        
+        Returns:
+            Number of saved accounts
+        """
+        credentials = self.get_telegram_credentials()
+        return len(credentials)
 

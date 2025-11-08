@@ -519,56 +519,6 @@ class FetchDataDialog(ft.AlertDialog):
             # Fallback to creating task directly
             asyncio.create_task(self._fetch_messages_async())
     
-    async def _try_connect_and_fetch(self):
-        """Try to connect to Telegram and then fetch."""
-        try:
-            # Show status
-            self.status_text.visible = True
-            self.status_text.value = "Connecting to Telegram..."
-            self.status_text.color = theme_manager.text_secondary_color
-            if self.page:
-                self.page.update()
-            
-            # Try to auto-load session
-            success, error = await self.telegram_service.auto_load_session()
-            
-            if success:
-                logger.info("Session loaded successfully, proceeding with fetch")
-                # Now start the fetch
-                await self._fetch_messages_async()
-            else:
-                # Show helpful error message
-                error_msg = (
-                    f"Not connected to Telegram. {error}\n\n"
-                    "Please ensure:\n"
-                    "• Telegram API credentials are configured in Settings\n"
-                    "• You have authorized the app with Telegram\n"
-                    "• Your session is still valid"
-                )
-                self.status_text.value = error_msg
-                self.status_text.color = ft.Colors.RED
-                
-                if self.page:
-                    theme_manager.show_snackbar(
-                        self.page,
-                        f"Not connected to Telegram: {error}",
-                        bgcolor=ft.Colors.RED
-                    )
-                    self.page.update()
-        except Exception as ex:
-            logger.error(f"Error trying to connect: {ex}")
-            error_msg = f"Error connecting to Telegram: {str(ex)}"
-            self.status_text.value = error_msg
-            self.status_text.color = ft.Colors.RED
-            
-            if self.page:
-                theme_manager.show_snackbar(
-                    self.page,
-                    error_msg,
-                    bgcolor=ft.Colors.RED
-                )
-                self.page.update()
-    
     async def _fetch_messages_async(self):
         """Async method to fetch messages."""
         try:

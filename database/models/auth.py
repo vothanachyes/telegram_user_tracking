@@ -26,6 +26,7 @@ class UserLicenseCache:
     expiration_date: Optional[datetime] = None
     max_devices: int = 1
     max_groups: int = 3
+    max_accounts: int = 1
     last_synced: Optional[datetime] = None
     is_active: bool = True
     created_at: Optional[datetime] = None

@@ -4,6 +4,7 @@ Logging configuration for the application.
 
 import logging
 import sys
+import os
 import re
 import json
 from pathlib import Path
@@ -66,6 +67,39 @@ class CategoryFilter(logging.Filter):
                 return True
         
         return False
+
+
+class FletDebugFilter(logging.Filter):
+    """Filter to exclude Flet DEBUG logs from console output."""
+    
+    def __init__(self, enabled: bool = False):
+        """
+        Initialize Flet debug filter.
+        
+        Args:
+            enabled: If True, allow Flet DEBUG logs. If False, filter them out.
+                    Defaults to False (filter out by default).
+        """
+        super().__init__()
+        self.enabled = enabled
+    
+    def filter(self, record):
+        """
+        Filter logs based on logger name and level.
+        
+        Returns:
+            False to filter out Flet DEBUG logs when enabled=False
+            True to allow all other logs
+        """
+        # If Flet debug logs are enabled, allow all logs
+        if self.enabled:
+            return True
+        
+        # Filter out if it's a Flet logger AND level is DEBUG
+        if 'flet' in record.name.lower() and record.levelno == logging.DEBUG:
+            return False  # Filter out
+        
+        return True  # Allow all other logs
 
 
 class DateFolderRotatingFileHandler(TimedRotatingFileHandler):
@@ -356,6 +390,13 @@ class ColoredConsoleHandler(logging.StreamHandler):
         if allowed_levels:
             level_filter = LevelFilter(allowed_levels)
             self.addFilter(level_filter)
+        
+        # Add Flet debug filter based on environment variable
+        # Default: filter out Flet DEBUG logs (enabled=False)
+        # Set FLET_DEBUG_LOGS_ENABLED=true in .env to show them
+        flet_debug_enabled = os.getenv("FLET_DEBUG_LOGS_ENABLED", "").lower() in ("true", "1", "yes")
+        flet_debug_filter = FletDebugFilter(enabled=flet_debug_enabled)
+        self.addFilter(flet_debug_filter)
         
         # Create custom colored formatter
         formatter = ColoredFormatter(

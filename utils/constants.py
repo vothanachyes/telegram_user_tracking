@@ -152,6 +152,7 @@ LICENSE_PRICING = {
         "price_khr": 0,
         "max_groups": 1,
         "max_devices": 1,
+        "max_accounts": 1,
         "period": 3,  # 7 days trial period
         "features": ["max_groups", "max_devices"]
     },
@@ -161,6 +162,7 @@ LICENSE_PRICING = {
         "price_khr": 20000,
         "max_groups": 3,
         "max_devices": 1,
+        "max_accounts": 1,
         "period": 30,  # 30 days subscription period
         "features": ["max_groups", "max_devices"]
     },
@@ -170,6 +172,7 @@ LICENSE_PRICING = {
         "price_khr": 48000,
         "max_groups": 10,
         "max_devices": 2,
+        "max_accounts": 3,
         "period": 30,  # 30 days subscription period
         "features": ["max_groups", "max_devices"]
     },
@@ -179,11 +182,12 @@ LICENSE_PRICING = {
         "price_khr": 100000,
         "max_groups": -1,  # -1 means unlimited
         "max_devices": 5,
+        "max_accounts": 5,
         "period": 30,  # 30 days subscription period
         "features": ["unlimited_groups", "max_devices", "priority_support"]
     }
 }
 
 # Default license tier
-DEFAULT_LICENSE_TIER = LICENSE_TIER_BRONZE
+DEFAULT_LICENSE_TIER = LICENSE_TIER_PREMIUM
 

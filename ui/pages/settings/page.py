@@ -68,19 +68,16 @@ class SettingsPage(ft.Container):
     
     def _build_tabs(self) -> ft.Column:
         """Build the tabbed interface."""
-        return ft.Column([
-            ft.Row([
-                ft.Text(
-                    theme_manager.t("settings"),
-                    size=32,
-                    weight=ft.FontWeight.BOLD,
-                    expand=True
-                ),
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            ft.Container(height=20),
-            ft.Tabs(
+        def on_tab_change(e):
+            """Handle tab change - auto-refresh accounts when Authenticate tab is selected."""
+            if e.control.selected_index == 1:  # Authenticate tab (index 1)
+                # Auto-refresh accounts list when user enters Authenticate tab
+                self.authenticate_tab.update_accounts_list()
+        
+        self.tabs_widget = ft.Tabs(
                 selected_index=0,
                 animation_duration=300,
+            on_change=on_tab_change,
                 tabs=[
                     ft.Tab(
                         text=theme_manager.t("general"),
@@ -98,8 +95,20 @@ class SettingsPage(ft.Container):
                         content=self.configure_tab.build()
                     ),
                 ],
+            expand=True
+        )
+        
+        return ft.Column([
+            ft.Row([
+                ft.Text(
+                    theme_manager.t("settings"),
+                    size=32,
+                    weight=ft.FontWeight.BOLD,
                 expand=True
             ),
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ft.Container(height=20),
+            self.tabs_widget,
         ], spacing=15, expand=True)
     
     def update_settings(self):

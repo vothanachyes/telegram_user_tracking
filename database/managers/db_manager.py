@@ -70,6 +70,12 @@ class DatabaseManager(BaseDatabaseManager):
     def get_all_credentials_with_status(self):
         return self._telegram_credential.get_all_credentials_with_status()
     
+    def account_exists(self, phone_number):
+        return self._telegram_credential.account_exists(phone_number)
+    
+    def get_account_count(self):
+        return self._telegram_credential.get_account_count()
+    
     # Groups
     def save_group(self, group):
         return self._group.save_group(group)

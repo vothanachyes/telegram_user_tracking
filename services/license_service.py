@@ -79,7 +79,8 @@ class LicenseService:
                     'expiration_date': None,
                     'days_until_expiration': None,
                     'max_devices': default_tier_info.get('max_devices', 1),
-                    'max_groups': default_tier_info.get('max_groups', 3)
+                    'max_groups': default_tier_info.get('max_groups', 3),
+                    'max_accounts': default_tier_info.get('max_accounts', 1)
                 }
             if not user_email:
                 user_email = current_user.get('email')
@@ -113,7 +114,8 @@ class LicenseService:
                 'expiration_date': None,
                 'days_until_expiration': None,
                 'max_devices': default_tier_info.get('max_devices', 1),
-                'max_groups': default_tier_info.get('max_groups', 3)
+                'max_groups': default_tier_info.get('max_groups', 3),
+                'max_accounts': default_tier_info.get('max_accounts', 1)
             }
         
         # Check expiration
@@ -138,7 +140,8 @@ class LicenseService:
             'expiration_date': cache.expiration_date,
             'days_until_expiration': days_until_expiration,
             'max_devices': cache.max_devices,
-            'max_groups': cache.max_groups
+            'max_groups': cache.max_groups,
+            'max_accounts': cache.max_accounts
         }
     
     def sync_from_firebase(self, user_email: Optional[str] = None, uid: Optional[str] = None) -> bool:
@@ -173,6 +176,7 @@ class LicenseService:
                     'license_tier': default_tier,
                     'max_devices': tier_info.get('max_devices', 1),
                     'max_groups': tier_info.get('max_groups', 1),
+                    'max_accounts': tier_info.get('max_accounts', 1),
                     'active_device_ids': [],
                     # Set expiration based on tier's period
                     # Admin can extend this later
@@ -238,7 +242,8 @@ class LicenseService:
                             'expiration_date': new_expiration.isoformat(),
                             'license_tier': LICENSE_TIER_BRONZE,
                             'max_devices': tier_info.get('max_devices', 1),
-                            'max_groups': tier_info.get('max_groups', 1)
+                            'max_groups': tier_info.get('max_groups', 1),
+                            'max_accounts': tier_info.get('max_accounts', 1)
                         }
                         firebase_config.set_user_license(uid, updated_license)
                         
@@ -263,7 +268,8 @@ class LicenseService:
                             'expiration_date': new_expiration.isoformat(),
                             'license_tier': LICENSE_TIER_BRONZE,
                             'max_devices': tier_info.get('max_devices', 1),
-                            'max_groups': tier_info.get('max_groups', 1)
+                            'max_groups': tier_info.get('max_groups', 1),
+                            'max_accounts': tier_info.get('max_accounts', 1)
                         }
                         firebase_config.set_user_license(uid, updated_license)
                         
@@ -273,6 +279,7 @@ class LicenseService:
                         logger.info(f"Converted expired {original_tier} license to Bronze and renewed for user {uid}, new expiration: {new_expiration.isoformat()}")
             max_devices = license_data.get('max_devices', LICENSE_PRICING.get(tier, {}).get('max_devices', 1))
             max_groups = license_data.get('max_groups', LICENSE_PRICING.get(tier, {}).get('max_groups', 3))
+            max_accounts = license_data.get('max_accounts', LICENSE_PRICING.get(tier, {}).get('max_accounts', 1))
             
             # Create cache entry
             cache = UserLicenseCache(
@@ -281,6 +288,7 @@ class LicenseService:
                 expiration_date=expiration_date,
                 max_devices=max_devices,
                 max_groups=max_groups,
+                max_accounts=max_accounts,
                 is_active=True
             )
             
@@ -378,6 +386,49 @@ class LicenseService:
             uid = current_user.get('uid')
         
         return firebase_config.get_active_devices(uid)
+    
+    def can_add_account(self, user_email: Optional[str] = None, uid: Optional[str] = None) -> Tuple[bool, Optional[str], int, int]:
+        """
+        Check if user can add another Telegram account.
+        
+        Args:
+            user_email: User email (optional, will get from auth service if not provided)
+            uid: User UID (optional, will get from auth service if not provided)
+            
+        Returns:
+            Tuple of (can_add, error_message, current_count, max_count)
+        """
+        if not user_email or not uid:
+            auth_service = self._get_auth_service()
+            current_user = auth_service.get_current_user()
+            if not current_user:
+                return False, "User not authenticated", 0, 0
+            if not user_email:
+                user_email = current_user.get('email')
+            if not uid:
+                uid = current_user.get('uid')
+        
+        # Check license status
+        status = self.check_license_status(user_email, uid)
+        
+        if not status['is_active']:
+            return False, "Your license has expired. Please contact admin to renew.", 0, 0
+        
+        if status['expired']:
+            return False, "Your license has expired. Please contact admin to renew.", 0, 0
+        
+        max_accounts = status['max_accounts']
+        
+        # Get current account count from database
+        credentials = self.db_manager.get_telegram_credentials()
+        current_count = len(credentials)
+        
+        if current_count >= max_accounts:
+            tier = status['tier']
+            tier_name = LICENSE_PRICING.get(tier, {}).get('name', tier.capitalize())
+            return False, f"You have reached the account limit ({max_accounts}) for {tier_name} tier. Please contact admin to upgrade.", current_count, max_accounts
+        
+        return True, None, current_count, max_accounts
     
     def enforce_group_limit(self, user_email: Optional[str] = None) -> bool:
         """

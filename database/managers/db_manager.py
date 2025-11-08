@@ -13,6 +13,7 @@ from database.managers.reaction_manager import ReactionManager
 from database.managers.stats_manager import StatsManager
 from database.managers.auth_manager import AuthManager
 from database.managers.license_manager import LicenseManager
+from database.managers.account_activity_manager import AccountActivityManager
 
 
 class DatabaseManager(BaseDatabaseManager):
@@ -37,6 +38,7 @@ class DatabaseManager(BaseDatabaseManager):
         self._stats = StatsManager(db_path)
         self._auth = AuthManager(db_path)
         self._license = LicenseManager(db_path)
+        self._account_activity = AccountActivityManager(db_path)
     
     # Delegate all methods to composed managers
     # App Settings
@@ -55,6 +57,18 @@ class DatabaseManager(BaseDatabaseManager):
     
     def get_default_credential(self):
         return self._telegram_credential.get_default_credential()
+    
+    def get_credential_by_id(self, credential_id):
+        return self._telegram_credential.get_credential_by_id(credential_id)
+    
+    def delete_telegram_credential(self, credential_id):
+        return self._telegram_credential.delete_telegram_credential(credential_id)
+    
+    def get_credential_with_status(self, credential_id):
+        return self._telegram_credential.get_credential_with_status(credential_id)
+    
+    def get_all_credentials_with_status(self):
+        return self._telegram_credential.get_all_credentials_with_status()
     
     # Groups
     def save_group(self, group):
@@ -155,4 +169,17 @@ class DatabaseManager(BaseDatabaseManager):
     
     def delete_license_cache(self, user_email):
         return self._license.delete_license_cache(user_email)
+    
+    # Account Activity
+    def log_account_action(self, user_email, action, phone_number=None):
+        return self._account_activity.log_account_action(user_email, action, phone_number)
+    
+    def get_recent_activity_count(self, user_email, hours=48):
+        return self._account_activity.get_recent_activity_count(user_email, hours)
+    
+    def can_perform_account_action(self, user_email):
+        return self._account_activity.can_perform_account_action(user_email)
+    
+    def get_activity_log(self, user_email, limit=10):
+        return self._account_activity.get_activity_log(user_email, limit)
 

@@ -157,6 +157,15 @@ CREATE TABLE IF NOT EXISTS user_license_cache (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Account Activity Log Table
+CREATE TABLE IF NOT EXISTS account_activity_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_email TEXT NOT NULL,
+    action TEXT NOT NULL,  -- 'add' or 'delete'
+    phone_number TEXT,
+    action_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_messages_group_id ON messages(group_id);
 CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);
@@ -172,5 +181,7 @@ CREATE INDEX IF NOT EXISTS idx_reactions_user_id_group_id ON reactions(user_id, 
 CREATE INDEX IF NOT EXISTS idx_reactions_message_link ON reactions(message_link);
 CREATE INDEX IF NOT EXISTS idx_user_license_cache_email ON user_license_cache(user_email);
 CREATE INDEX IF NOT EXISTS idx_user_license_cache_active ON user_license_cache(is_active);
+CREATE INDEX IF NOT EXISTS idx_account_activity_user_email ON account_activity_log(user_email);
+CREATE INDEX IF NOT EXISTS idx_account_activity_timestamp ON account_activity_log(action_timestamp);
 """
 

@@ -1,0 +1,137 @@
+"""
+Account activity manager for tracking add/delete operations.
+"""
+
+from typing import List, Dict, Optional
+from datetime import datetime, timedelta
+from database.managers.base import BaseDatabaseManager, _parse_datetime
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class AccountActivityManager(BaseDatabaseManager):
+    """Manages account activity tracking operations."""
+    
+    def log_account_action(
+        self,
+        user_email: str,
+        action: str,
+        phone_number: Optional[str] = None
+    ) -> Optional[int]:
+        """
+        Log an account action (add or delete).
+        
+        Args:
+            user_email: Email of the user performing the action
+            action: 'add' or 'delete'
+            phone_number: Phone number of the account (optional)
+            
+        Returns:
+            ID of the logged action or None if failed
+        """
+        if action not in ('add', 'delete'):
+            logger.error(f"Invalid action: {action}. Must be 'add' or 'delete'")
+            return None
+        
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("""
+                    INSERT INTO account_activity_log 
+                    (user_email, action, phone_number, action_timestamp)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                """, (user_email, action, phone_number))
+                conn.commit()
+                logger.info(f"Logged account action: {action} for user {user_email}")
+                return cursor.lastrowid
+        except Exception as e:
+            logger.error(f"Error logging account action: {e}")
+            return None
+    
+    def get_recent_activity_count(
+        self,
+        user_email: str,
+        hours: int = 48
+    ) -> int:
+        """
+        Get count of account actions in the last N hours.
+        
+        Args:
+            user_email: Email of the user
+            hours: Number of hours to look back (default: 48)
+            
+        Returns:
+            Count of actions in the time window
+        """
+        try:
+            with self.get_connection() as conn:
+                cutoff_time = datetime.now() - timedelta(hours=hours)
+                # SQLite timestamp comparison - use ISO format string
+                cutoff_str = cutoff_time.strftime("%Y-%m-%d %H:%M:%S")
+                cursor = conn.execute("""
+                    SELECT COUNT(*) 
+                    FROM account_activity_log
+                    WHERE user_email = ? 
+                    AND datetime(action_timestamp) >= datetime(?)
+                """, (user_email, cutoff_str))
+                count = cursor.fetchone()[0]
+                return count
+        except Exception as e:
+            logger.error(f"Error getting recent activity count: {e}")
+            return 0
+    
+    def can_perform_account_action(self, user_email: str) -> bool:
+        """
+        Check if user can perform account action (add/delete).
+        Maximum 2 operations per 48 hours.
+        
+        Args:
+            user_email: Email of the user
+            
+        Returns:
+            True if user can perform action, False otherwise
+        """
+        count = self.get_recent_activity_count(user_email, hours=48)
+        can_perform = count < 2
+        logger.debug(f"User {user_email} can perform action: {can_perform} (count: {count}/2)")
+        return can_perform
+    
+    def get_activity_log(
+        self,
+        user_email: str,
+        limit: int = 10
+    ) -> List[Dict]:
+        """
+        Get recent activity log for a user.
+        
+        Args:
+            user_email: Email of the user
+            limit: Maximum number of records to return
+            
+        Returns:
+            List of activity records with keys: id, user_email, action, phone_number, action_timestamp
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT id, user_email, action, phone_number, action_timestamp
+                    FROM account_activity_log
+                    WHERE user_email = ?
+                    ORDER BY action_timestamp DESC
+                    LIMIT ?
+                """, (user_email, limit))
+                
+                results = []
+                for row in cursor.fetchall():
+                    results.append({
+                        'id': row['id'],
+                        'user_email': row['user_email'],
+                        'action': row['action'],
+                        'phone_number': row['phone_number'],
+                        'action_timestamp': _parse_datetime(row['action_timestamp'])
+                    })
+                return results
+        except Exception as e:
+            logger.error(f"Error getting activity log: {e}")
+            return []
+

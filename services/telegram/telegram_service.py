@@ -4,7 +4,7 @@ Telegram service orchestrator for Telegram API operations.
 
 import logging
 import asyncio
-from typing import Optional, Callable, List, Tuple
+from typing import Optional, Callable, List, Tuple, Dict
 from datetime import datetime
 
 try:
@@ -259,4 +259,287 @@ class TelegramService:
         except Exception as e:
             logger.error(f"Error fetching messages: {e}")
             return False, 0, str(e)
+    
+    async def check_account_status(
+        self,
+        credential: TelegramCredential
+    ) -> str:
+        """
+        Check if account session is valid (on-demand).
+        Returns: 'active', 'expired', 'not_connected', 'error'
+        
+        Args:
+            credential: TelegramCredential to check
+            
+        Returns:
+            Status string: 'active', 'expired', 'not_connected', or 'error'
+        """
+        if not settings.has_telegram_credentials:
+            return 'error'
+        
+        try:
+            # Create temporary client to check status
+            temp_client = self.client_manager.create_client(
+                credential.phone_number,
+                settings.telegram_api_id,
+                settings.telegram_api_hash
+            )
+            
+            if not temp_client:
+                return 'error'
+            
+            try:
+                await temp_client.connect()
+                me = await temp_client.get_me()
+                if me:
+                    await temp_client.disconnect()
+                    return 'active'
+                else:
+                    await temp_client.disconnect()
+                    return 'expired'
+            except Exception:
+                try:
+                    await temp_client.disconnect()
+                except:
+                    pass
+                return 'expired'
+        except Exception as e:
+            logger.error(f"Error checking account status: {e}")
+            return 'error'
+    
+    async def get_account_status(self, credential_id: int) -> Optional[Dict]:
+        """
+        Get status of specific account.
+        
+        Args:
+            credential_id: ID of the credential
+            
+        Returns:
+            Dict with credential and status, or None if not found
+        """
+        credential = self.db_manager.get_credential_by_id(credential_id)
+        if not credential:
+            return None
+        
+        status = await self.check_account_status(credential)
+        return {
+            'credential': credential,
+            'status': status,
+            'status_checked_at': datetime.now()
+        }
+    
+    async def get_all_accounts_with_status(self) -> List[Dict]:
+        """
+        Get all accounts with status info.
+        
+        Returns:
+            List of dicts with credential and status info
+        """
+        credentials_with_status = self.db_manager.get_all_credentials_with_status()
+        
+        # Check status for each credential
+        for item in credentials_with_status:
+            credential = item['credential']
+            status = await self.check_account_status(credential)
+            item['status'] = status
+            item['status_checked_at'] = datetime.now()
+        
+        return credentials_with_status
+    
+    async def _create_temporary_client(
+        self,
+        credential: TelegramCredential
+    ) -> Optional[Client]:
+        """
+        Create a temporary client for a specific credential.
+        Does not affect the current connected client.
+        
+        Args:
+            credential: TelegramCredential to create client for
+            
+        Returns:
+            Temporary Client instance or None if failed
+        """
+        if not settings.has_telegram_credentials:
+            return None
+        
+        try:
+            client = self.client_manager.create_client(
+                credential.phone_number,
+                settings.telegram_api_id,
+                settings.telegram_api_hash
+            )
+            
+            if client:
+                await client.connect()
+                # Verify it's authorized
+                me = await client.get_me()
+                if not me:
+                    await client.disconnect()
+                    return None
+                return client
+            return None
+        except Exception as e:
+            logger.error(f"Error creating temporary client: {e}")
+            return None
+    
+    async def fetch_messages_with_account(
+        self,
+        credential: TelegramCredential,
+        group_id: int,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        message_callback: Optional[Callable[[Message], None]] = None
+    ) -> Tuple[bool, int, Optional[str]]:
+        """
+        Fetch messages using a specific account (temporary client).
+        Keeps current session connected.
+        
+        Args:
+            credential: TelegramCredential to use for fetching
+            group_id: Group ID to fetch from
+            start_date: Optional start date
+            end_date: Optional end date
+            progress_callback: Optional progress callback
+            message_callback: Optional message callback
+            
+        Returns:
+            (success, message_count, error_message)
+        """
+        temp_client = None
+        try:
+            # Create temporary client
+            temp_client = await self._create_temporary_client(credential)
+            if not temp_client:
+                return False, 0, "Failed to create temporary client or session expired"
+            
+            # Create processors with temporary client
+            temp_group_manager = GroupManager(self.db_manager, temp_client)
+            temp_reaction_processor = ReactionProcessor(
+                self.db_manager,
+                temp_client,
+                self.user_processor
+            )
+            
+            # Fetch group info
+            success, group, error = await temp_group_manager.fetch_group_info(group_id)
+            if not success:
+                return False, 0, error
+            
+            temp_group_manager.save_group(group)
+            
+            message_count = 0
+            fetch_delay = settings.settings.fetch_delay_seconds
+            
+            async for telegram_msg in temp_client.get_chat_history(group_id):
+                try:
+                    if start_date and telegram_msg.date < start_date:
+                        break
+                    
+                    if end_date and telegram_msg.date > end_date:
+                        continue
+                    
+                    if self.db_manager.is_message_deleted(telegram_msg.id, group_id):
+                        continue
+                    
+                    if telegram_msg.from_user:
+                        await self.user_processor.process_user(telegram_msg.from_user)
+                    
+                    message = await self.message_processor.process_message(
+                        telegram_msg,
+                        group_id,
+                        group.group_username
+                    )
+                    
+                    if message:
+                        self.db_manager.save_message(message)
+                        message_count += 1
+                        
+                        if settings.settings.track_reactions:
+                            await temp_reaction_processor.process_reactions(
+                                telegram_msg,
+                                group_id,
+                                group.group_username,
+                                message.message_link
+                            )
+                        
+                        if message_callback:
+                            message_callback(message)
+                        
+                        if progress_callback:
+                            progress_callback(message_count, -1)
+                    
+                    if fetch_delay > 0:
+                        await asyncio.sleep(fetch_delay)
+                    
+                except FloodWait as e:
+                    logger.warning(f"FloodWait: waiting {e.value} seconds")
+                    await asyncio.sleep(e.value)
+                except Exception as e:
+                    logger.error(f"Error processing message {telegram_msg.id}: {e}")
+                    continue
+            
+            total_messages = self.db_manager.get_message_count(group_id)
+            temp_group_manager.update_group_stats(group, total_messages)
+            
+            logger.info(f"Fetched {message_count} messages from group {group_id} using account {credential.phone_number}")
+            return True, message_count, None
+            
+        except Exception as e:
+            logger.error(f"Error fetching messages with account: {e}")
+            return False, 0, str(e)
+        finally:
+            # Clean up temporary client
+            if temp_client:
+                try:
+                    await temp_client.disconnect()
+                except Exception as e:
+                    logger.error(f"Error disconnecting temporary client: {e}")
+    
+    async def fetch_and_validate_group(
+        self,
+        account_credential: TelegramCredential,
+        group_id: int
+    ) -> Tuple[bool, Optional[TelegramGroup], Optional[str], bool]:
+        """
+        Fetch group info using specific account and validate access.
+        Uses temporary client for validation.
+        
+        Args:
+            account_credential: TelegramCredential to use
+            group_id: Group ID to validate
+            
+        Returns:
+            (success, group_info, error_message, has_access)
+        """
+        temp_client = None
+        try:
+            # Create temporary client
+            temp_client = await self._create_temporary_client(account_credential)
+            if not temp_client:
+                return False, None, "Account session expired or invalid", False
+            
+            # Create group manager with temporary client
+            temp_group_manager = GroupManager(self.db_manager, temp_client)
+            
+            # Fetch group info
+            success, group, error = await temp_group_manager.fetch_group_info(group_id)
+            
+            if not success:
+                return False, None, error or "Group not found or invalid", False
+            
+            # If we got group info, account has access
+            return True, group, None, True
+            
+        except Exception as e:
+            logger.error(f"Error validating group access: {e}")
+            return False, None, str(e), False
+        finally:
+            # Clean up temporary client
+            if temp_client:
+                try:
+                    await temp_client.disconnect()
+                except Exception as e:
+                    logger.error(f"Error disconnecting temporary client: {e}")
 

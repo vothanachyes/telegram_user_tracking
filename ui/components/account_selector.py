@@ -44,6 +44,7 @@ class AccountSelector:
             border_radius=theme_manager.corner_radius,
             border_color=theme_manager.border_color,
             focused_border_color=theme_manager.primary_color,
+            expand=True if width is None else False,
             width=width
         )
         
@@ -67,7 +68,7 @@ class AccountSelector:
             ft.Row([
                 self.account_dropdown,
                 self.refresh_btn,
-            ], spacing=10),
+            ], spacing=10, expand=True),
             self.account_count_text,
         ], spacing=5, tight=True)
     

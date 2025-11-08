@@ -44,6 +44,7 @@ class GroupSelector:
             border_radius=theme_manager.corner_radius,
             border_color=theme_manager.border_color,
             focused_border_color=theme_manager.primary_color,
+            expand=True if width is None else False,
             width=width
         )
         
@@ -54,6 +55,7 @@ class GroupSelector:
             keyboard_type=ft.KeyboardType.NUMBER,
             on_submit=self._on_manual_entry_submit,
             on_change=self._on_manual_entry_change,
+            expand=True if width is None else False,
             width=width
         )
         

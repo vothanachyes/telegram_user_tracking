@@ -60,15 +60,48 @@ class ReactionProcessor:
             reaction_count = 0
             reaction_delay = settings.settings.reaction_fetch_delay
             
+            # Get the actual list of reactions from MessageReactions object
+            # MessageReactions has a 'reactions' attribute (or 'results' in some versions)
+            reactions_list = None
+            if hasattr(telegram_msg.reactions, 'reactions'):
+                reactions_list = telegram_msg.reactions.reactions
+            elif hasattr(telegram_msg.reactions, 'results'):
+                reactions_list = telegram_msg.reactions.results
+            elif isinstance(telegram_msg.reactions, list):
+                # Already a list (shouldn't happen, but handle it)
+                reactions_list = telegram_msg.reactions
+            else:
+                logger.warning(f"Could not extract reactions list from MessageReactions object for message {telegram_msg.id}")
+                return 0
+            
+            if not reactions_list:
+                return 0
+            
             # Process each reaction type
-            for reaction_obj in telegram_msg.reactions:
+            for reaction_obj in reactions_list:
                 try:
-                    # Get emoji
+                    # Get emoji from reaction object
+                    # ReactionCount objects have a 'reaction' attribute with the actual reaction
                     emoji = "👍"  # Default
-                    if hasattr(reaction_obj, 'emoji'):
+                    
+                    # Try to get the actual reaction object (might be nested in ReactionCount)
+                    actual_reaction = reaction_obj
+                    if hasattr(reaction_obj, 'reaction'):
+                        actual_reaction = reaction_obj.reaction
+                    
+                    # Extract emoji from the reaction
+                    if hasattr(actual_reaction, 'emoticon'):
+                        emoji = actual_reaction.emoticon
+                    elif hasattr(actual_reaction, 'emoji'):
+                        emoji = actual_reaction.emoji
+                    elif hasattr(actual_reaction, 'custom_emoji_id'):
+                        # Custom emoji - store the ID as string
+                        emoji = f"custom_{actual_reaction.custom_emoji_id}"
+                    elif hasattr(reaction_obj, 'emoji'):
+                        # Fallback: try direct attribute
                         emoji = reaction_obj.emoji
                     elif hasattr(reaction_obj, 'custom_emoji_id'):
-                        # Custom emoji - store the ID as string
+                        # Fallback: try direct attribute
                         emoji = f"custom_{reaction_obj.custom_emoji_id}"
                     
                     # Try to get users who reacted with this emoji

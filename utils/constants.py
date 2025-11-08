@@ -91,6 +91,7 @@ TIME_FORMAT = "%H:%M:%S"
 
 # Telegram Settings
 TELEGRAM_SESSION_NAME = "telegram_session"
+TELEGRAM_DEVICE_MODEL = os.getenv("TELEGRAM_DEVICE_MODEL", "ESC_APP")  # None = use Pyrogram default
 MAX_FETCH_RETRIES = 3
 DEFAULT_FETCH_DELAY = 1.0  # seconds
 DEFAULT_MAX_FILE_SIZE_MB = 50

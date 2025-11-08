@@ -16,7 +16,7 @@ except ImportError:
 
 from database.models import TelegramCredential
 from config.settings import settings
-from utils.constants import BASE_DIR
+from utils.constants import BASE_DIR, TELEGRAM_DEVICE_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -54,13 +54,20 @@ class ClientManager:
         try:
             session_name = f"session_{phone.replace('+', '')}"
             
-            client = Client(
-                name=session_name,
-                api_id=int(api_id),
-                api_hash=api_hash,
-                phone_number=phone,
-                workdir=str(self._session_path)
-            )
+            # Build client parameters
+            client_params = {
+                "name": session_name,
+                "api_id": int(api_id),
+                "api_hash": api_hash,
+                "phone_number": phone,
+                "workdir": str(self._session_path)
+            }
+            
+            # Add device_model if configured in .env
+            if TELEGRAM_DEVICE_MODEL:
+                client_params["device_model"] = TELEGRAM_DEVICE_MODEL
+            
+            client = Client(**client_params)
             
             return client
         except Exception as e:

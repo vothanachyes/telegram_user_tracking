@@ -232,6 +232,19 @@
   "group_info_loaded": "Group: {name} (Last fetched: {date})",
   "select_account_first": "Please select an account first",
   "enter_otp_code_instructions": "Enter the code sent to your Telegram app",
-  "enter_2fa_password_instructions": "Enter your 2FA password"
+  "enter_2fa_password_instructions": "Enter your 2FA password",
+  "pin_code": "PIN Code",
+  "enable_pin_code": "Enable PIN Code",
+  "set_pin": "Set PIN",
+  "change_pin": "Change PIN",
+  "remove_pin": "Remove PIN",
+  "enter_pin": "Enter PIN",
+  "confirm_pin": "Confirm PIN",
+  "pin_mismatch": "PINs do not match",
+  "pin_invalid": "Invalid PIN. Must be exactly 6 digits.",
+  "pin_required": "PIN Required",
+  "pin_incorrect": "Incorrect PIN. Please try again.",
+  "pin_warning_local_only": "Warning: Your PIN is stored locally on this device only. We do not store your PIN on our servers. If you forget your PIN, you will need to re-login to reset it.",
+  "pin_warning_dialog": "Your PIN is stored locally on this device only. We do not store your PIN on our servers."
 }
 

@@ -35,6 +35,8 @@ class SettingsManager(BaseDatabaseManager):
                     download_audio=bool(row['download_audio']),
                     track_reactions=bool(_safe_get_row_value(row, 'track_reactions', True)),
                     reaction_fetch_delay=_safe_get_row_value(row, 'reaction_fetch_delay', 0.5),
+                    pin_enabled=bool(_safe_get_row_value(row, 'pin_enabled', False)),
+                    encrypted_pin=_safe_get_row_value(row, 'encrypted_pin', None),
                     created_at=_parse_datetime(row['created_at']),
                     updated_at=_parse_datetime(row['updated_at'])
                 )
@@ -61,6 +63,8 @@ class SettingsManager(BaseDatabaseManager):
                         download_audio = ?,
                         track_reactions = ?,
                         reaction_fetch_delay = ?,
+                        pin_enabled = ?,
+                        encrypted_pin = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = 1
                 """, (
@@ -78,7 +82,9 @@ class SettingsManager(BaseDatabaseManager):
                     settings.download_documents,
                     settings.download_audio,
                     settings.track_reactions,
-                    settings.reaction_fetch_delay
+                    settings.reaction_fetch_delay,
+                    settings.pin_enabled,
+                    settings.encrypted_pin
                 ))
                 conn.commit()
                 return True

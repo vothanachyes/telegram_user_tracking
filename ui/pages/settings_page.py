@@ -21,6 +21,8 @@ from utils.validators import (
     validate_path,
     validate_phone
 )
+from ui.dialogs.pin_dialog import PinSetupDialog
+from utils.pin_validator import encrypt_pin, decrypt_pin, verify_pin
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +111,47 @@ class SettingsPage(ft.Container):
             divisions=30
         )
         
+        # PIN Code settings
+        self.pin_enabled_switch = ft.Switch(
+            label=theme_manager.t("enable_pin_code"),
+            value=self.current_settings.pin_enabled,
+            on_change=self._on_pin_enabled_change
+        )
+        
+        # PIN warning text
+        self.pin_warning_text = ft.Text(
+            theme_manager.t("pin_warning_local_only"),
+            size=12,
+            color=ft.Colors.ORANGE_700,
+            weight=ft.FontWeight.BOLD,
+            visible=self.current_settings.pin_enabled
+        )
+        
+        # PIN action buttons
+        self.set_pin_btn = theme_manager.create_button(
+            text=theme_manager.t("set_pin"),
+            icon=ft.Icons.LOCK,
+            on_click=self._handle_set_pin,
+            style="primary",
+            visible=self.current_settings.pin_enabled and not self.current_settings.encrypted_pin
+        )
+        
+        self.change_pin_btn = theme_manager.create_button(
+            text=theme_manager.t("change_pin"),
+            icon=ft.Icons.EDIT,
+            on_click=self._handle_change_pin,
+            style="primary",
+            visible=self.current_settings.pin_enabled and bool(self.current_settings.encrypted_pin)
+        )
+        
+        self.remove_pin_btn = theme_manager.create_button(
+            text=theme_manager.t("remove_pin"),
+            icon=ft.Icons.DELETE,
+            on_click=self._handle_remove_pin,
+            style="error",
+            visible=self.current_settings.pin_enabled and bool(self.current_settings.encrypted_pin)
+        )
+        
         # Error text
         self.general_error_text = ft.Text("", color=ft.Colors.RED, visible=False)
         
@@ -140,6 +183,23 @@ class SettingsPage(ft.Container):
                         self.language_dropdown,
                         ft.Text(theme_manager.t("corner_radius"), size=14),
                         self.corner_radius_slider,
+                    ], spacing=15)
+                ),
+                theme_manager.create_card(
+                    content=ft.Column([
+                        ft.Text(
+                            theme_manager.t("pin_code"),
+                            size=20,
+                            weight=ft.FontWeight.BOLD
+                        ),
+                        ft.Divider(),
+                        self.pin_enabled_switch,
+                        self.pin_warning_text,
+                        ft.Row([
+                            self.set_pin_btn,
+                            self.change_pin_btn,
+                            self.remove_pin_btn,
+                        ], spacing=10, wrap=True) if self.current_settings.pin_enabled else ft.Container(),
                     ], spacing=15)
                 ),
                 self.general_error_text,
@@ -382,6 +442,182 @@ class SettingsPage(ft.Container):
         theme_manager.set_theme("dark" if e.control.value else "light")
         self.on_settings_changed()
     
+    def _on_pin_enabled_change(self, e):
+        """Handle PIN enabled toggle change."""
+        pin_enabled = e.control.value
+        
+        # Update warning visibility
+        self.pin_warning_text.visible = pin_enabled
+        
+        # Update button visibility
+        has_pin = bool(self.current_settings.encrypted_pin)
+        self.set_pin_btn.visible = pin_enabled and not has_pin
+        self.change_pin_btn.visible = pin_enabled and has_pin
+        self.remove_pin_btn.visible = pin_enabled and has_pin
+        
+        # If disabling PIN, clear encrypted PIN
+        if not pin_enabled:
+            self.current_settings.encrypted_pin = None
+        
+        if self.page:
+            self.page.update()
+    
+    def _handle_set_pin(self, e):
+        """Handle set PIN button click."""
+        if not self.page:
+            return
+        
+        def on_pin_submit(pin: str):
+            """Handle PIN submission from dialog."""
+            try:
+                # Encrypt PIN
+                encrypted_pin = encrypt_pin(pin)
+                
+                # Update settings
+                self.current_settings.pin_enabled = True
+                self.current_settings.encrypted_pin = encrypted_pin
+                
+                # Save to database
+                if app_settings.save_settings(self.current_settings):
+                    # Update UI
+                    self.pin_enabled_switch.value = True
+                    self.pin_warning_text.visible = True
+                    self.set_pin_btn.visible = False
+                    self.change_pin_btn.visible = True
+                    self.remove_pin_btn.visible = True
+                    
+                    if self.page:
+                        self.page.update()
+                    
+                    theme_manager.show_snackbar(
+                        self.page,
+                        theme_manager.t("settings_saved"),
+                        bgcolor=ft.Colors.GREEN
+                    )
+                else:
+                    theme_manager.show_snackbar(
+                        self.page,
+                        "Failed to save PIN",
+                        bgcolor=ft.Colors.RED
+                    )
+            except Exception as ex:
+                logger.error(f"Error setting PIN: {ex}")
+                theme_manager.show_snackbar(
+                    self.page,
+                    f"Error setting PIN: {str(ex)}",
+                    bgcolor=ft.Colors.RED
+                )
+        
+        # Show PIN setup dialog
+        dialog = PinSetupDialog(
+            title=theme_manager.t("set_pin"),
+            on_submit=on_pin_submit
+        )
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+    
+    def _handle_change_pin(self, e):
+        """Handle change PIN button click."""
+        if not self.page:
+            return
+        
+        def on_pin_submit(pin: str):
+            """Handle PIN submission from dialog."""
+            try:
+                # Encrypt new PIN
+                encrypted_pin = encrypt_pin(pin)
+                
+                # Update settings
+                self.current_settings.encrypted_pin = encrypted_pin
+                
+                # Save to database
+                if app_settings.save_settings(self.current_settings):
+                    if self.page:
+                        self.page.update()
+                    
+                    theme_manager.show_snackbar(
+                        self.page,
+                        theme_manager.t("settings_saved"),
+                        bgcolor=ft.Colors.GREEN
+                    )
+                else:
+                    theme_manager.show_snackbar(
+                        self.page,
+                        "Failed to save PIN",
+                        bgcolor=ft.Colors.RED
+                    )
+            except Exception as ex:
+                logger.error(f"Error changing PIN: {ex}")
+                theme_manager.show_snackbar(
+                    self.page,
+                    f"Error changing PIN: {str(ex)}",
+                    bgcolor=ft.Colors.RED
+                )
+        
+        # Show PIN setup dialog
+        dialog = PinSetupDialog(
+            title=theme_manager.t("change_pin"),
+            on_submit=on_pin_submit
+        )
+        self.page.dialog = dialog
+        dialog.open = True
+        self.page.update()
+    
+    def _handle_remove_pin(self, e):
+        """Handle remove PIN button click."""
+        if not self.page:
+            return
+        
+        def on_confirm(e):
+            """Handle confirmation."""
+            try:
+                # Clear PIN
+                self.current_settings.pin_enabled = False
+                self.current_settings.encrypted_pin = None
+                
+                # Save to database
+                if app_settings.save_settings(self.current_settings):
+                    # Update UI
+                    self.pin_enabled_switch.value = False
+                    self.pin_warning_text.visible = False
+                    self.set_pin_btn.visible = False
+                    self.change_pin_btn.visible = False
+                    self.remove_pin_btn.visible = False
+                    
+                    if self.page:
+                        self.page.update()
+                    
+                    theme_manager.show_snackbar(
+                        self.page,
+                        theme_manager.t("settings_saved"),
+                        bgcolor=ft.Colors.GREEN
+                    )
+                else:
+                    theme_manager.show_snackbar(
+                        self.page,
+                        "Failed to remove PIN",
+                        bgcolor=ft.Colors.RED
+                    )
+            except Exception as ex:
+                logger.error(f"Error removing PIN: {ex}")
+                theme_manager.show_snackbar(
+                    self.page,
+                    f"Error removing PIN: {str(ex)}",
+                    bgcolor=ft.Colors.RED
+                )
+        
+        # Show confirmation dialog
+        from ui.dialogs import dialog_manager
+        dialog_manager.show_confirmation_dialog(
+            page=self.page,
+            title=theme_manager.t("remove_pin"),
+            message=theme_manager.t("confirm_delete") + " " + theme_manager.t("pin_code") + "?",
+            on_confirm=on_confirm,
+            confirm_text=theme_manager.t("delete"),
+            cancel_text=theme_manager.t("cancel")
+        )
+    
     def _save_general(self, e):
         """Save general settings."""
         self.general_error_text.visible = False
@@ -391,6 +627,9 @@ class SettingsPage(ft.Container):
             theme="dark" if self.theme_switch.value else "light",
             language="en" if self.language_dropdown.value == "English" else "km",
             corner_radius=int(self.corner_radius_slider.value),
+            # Keep PIN settings unchanged (managed separately)
+            pin_enabled=self.current_settings.pin_enabled,
+            encrypted_pin=self.current_settings.encrypted_pin,
             # Keep other settings unchanged
             telegram_api_id=self.current_settings.telegram_api_id,
             telegram_api_hash=self.current_settings.telegram_api_hash,
@@ -433,6 +672,14 @@ class SettingsPage(ft.Container):
         self.theme_switch.value = self.current_settings.theme == "dark"
         self.language_dropdown.value = "English" if self.current_settings.language == "en" else "ភាសាខ្មែរ"
         self.corner_radius_slider.value = self.current_settings.corner_radius
+        
+        # Reset PIN settings
+        self.pin_enabled_switch.value = self.current_settings.pin_enabled
+        self.pin_warning_text.visible = self.current_settings.pin_enabled
+        has_pin = bool(self.current_settings.encrypted_pin)
+        self.set_pin_btn.visible = self.current_settings.pin_enabled and not has_pin
+        self.change_pin_btn.visible = self.current_settings.pin_enabled and has_pin
+        self.remove_pin_btn.visible = self.current_settings.pin_enabled and has_pin
         
         self.general_error_text.visible = False
         self.update()

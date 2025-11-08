@@ -137,8 +137,57 @@ class TelegramUserTrackingApp:
     def _on_login_success(self):
         """Handle successful login."""
         self.is_logged_in = True
-        self._show_main_app()
-        self._check_license_on_startup()
+        
+        # Check if PIN is enabled
+        settings = self.db_manager.get_settings()
+        if settings.pin_enabled and settings.encrypted_pin:
+            # Show PIN entry dialog
+            self._show_pin_entry_dialog()
+        else:
+            # No PIN required, proceed to main app
+            self._show_main_app()
+            self._check_license_on_startup()
+    
+    def _show_pin_entry_dialog(self):
+        """Show PIN entry dialog after login."""
+        from ui.dialogs.pin_dialog import PinEntryDialog
+        from utils.pin_validator import verify_pin
+        from config.settings import settings as app_settings
+        
+        settings = app_settings.load_settings()
+        
+        def on_pin_submit(pin: str):
+            """Handle PIN submission."""
+            try:
+                # Verify PIN
+                if verify_pin(pin, settings.encrypted_pin):
+                    # Correct PIN, proceed to main app
+                    self._show_main_app()
+                    self._check_license_on_startup()
+                else:
+                    # Incorrect PIN, show error and retry
+                    pin_dialog.show_error(theme_manager.t("pin_incorrect"))
+            except Exception as e:
+                logger.error(f"Error verifying PIN: {e}")
+                pin_dialog.show_error(theme_manager.t("pin_incorrect"))
+        
+        def on_pin_cancel():
+            """Handle PIN cancellation - logout user."""
+            logger.info("PIN entry cancelled, logging out")
+            self._on_logout()
+        
+        # Create and show PIN dialog
+        pin_dialog = PinEntryDialog(
+            title=theme_manager.t("pin_required"),
+            message=theme_manager.t("pin_warning_dialog"),
+            on_submit=on_pin_submit,
+            on_cancel=on_pin_cancel,
+            allow_cancel=True
+        )
+        
+        self.page.dialog = pin_dialog
+        pin_dialog.open = True
+        self.page.update()
     
     def _show_main_app(self):
         """Show main application."""

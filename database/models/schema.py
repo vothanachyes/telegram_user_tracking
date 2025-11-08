@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
     download_audio BOOLEAN NOT NULL DEFAULT 1,
     track_reactions BOOLEAN NOT NULL DEFAULT 1,
     reaction_fetch_delay REAL NOT NULL DEFAULT 0.5,
+    pin_enabled BOOLEAN NOT NULL DEFAULT 0,
+    encrypted_pin TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CHECK (id = 1)

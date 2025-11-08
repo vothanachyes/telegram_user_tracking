@@ -26,6 +26,8 @@ class AppSettings:
     download_audio: bool = True
     track_reactions: bool = True
     reaction_fetch_delay: float = 0.5
+    pin_enabled: bool = False
+    encrypted_pin: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

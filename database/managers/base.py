@@ -148,6 +148,16 @@ class BaseDatabaseManager:
                 conn.execute("ALTER TABLE app_settings ADD COLUMN reaction_fetch_delay REAL NOT NULL DEFAULT 0.5")
                 logger.info("Added reaction_fetch_delay column to app_settings table")
             
+            # Add pin_enabled column if missing
+            if 'pin_enabled' not in settings_columns:
+                conn.execute("ALTER TABLE app_settings ADD COLUMN pin_enabled BOOLEAN NOT NULL DEFAULT 0")
+                logger.info("Added pin_enabled column to app_settings table")
+            
+            # Add encrypted_pin column if missing
+            if 'encrypted_pin' not in settings_columns:
+                conn.execute("ALTER TABLE app_settings ADD COLUMN encrypted_pin TEXT")
+                logger.info("Added encrypted_pin column to app_settings table")
+            
             # Check if user_license_cache table exists
             cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_license_cache'")
             if not cursor.fetchone():

@@ -232,6 +232,19 @@
   "group_info_loaded": "ក្រុម: {name} (ទាញយកចុងក្រោយ: {date})",
   "select_account_first": "សូមជ្រើសរើសគណនីមុន",
   "enter_otp_code_instructions": "បញ្ចូលលេខកូដដែលបានផ្ញើទៅកម្មវិធី Telegram របស់អ្នក",
-  "enter_2fa_password_instructions": "បញ្ចូលពាក្យសម្ងាត់ 2FA របស់អ្នក"
+  "enter_2fa_password_instructions": "បញ្ចូលពាក្យសម្ងាត់ 2FA របស់អ្នក",
+  "pin_code": "លេខកូដ PIN",
+  "enable_pin_code": "បើកដំណើរការលេខកូដ PIN",
+  "set_pin": "កំណត់ PIN",
+  "change_pin": "ផ្លាស់ប្តូរ PIN",
+  "remove_pin": "លុប PIN",
+  "enter_pin": "បញ្ចូល PIN",
+  "confirm_pin": "បញ្ជាក់ PIN",
+  "pin_mismatch": "PIN មិនត្រូវគ្នា",
+  "pin_invalid": "PIN មិនត្រឹមត្រូវ។ ត្រូវតែមាន 6 ខ្ទង់។",
+  "pin_required": "ត្រូវការ PIN",
+  "pin_incorrect": "PIN មិនត្រឹមត្រូវ។ សូមព្យាយាមម្តងទៀត។",
+  "pin_warning_local_only": "ការព្រមាន: PIN របស់អ្នកត្រូវបានរក្សាទុកក្នុងប្រដាប់កុំព្យូទ័រនេះតែប៉ុណ្ណោះ។ យើងមិនរក្សាទុក PIN របស់អ្នកនៅលើម៉ាស៊ីនមេរបស់យើងទេ។ ប្រសិនបើអ្នកភ្លេច PIN របស់អ្នក អ្នកនឹងត្រូវចូលឡើងវិញដើម្បីកំណត់ឡើងវិញ។",
+  "pin_warning_dialog": "PIN របស់អ្នកត្រូវបានរក្សាទុកក្នុងប្រដាប់កុំព្យូទ័រនេះតែប៉ុណ្ណោះ។ យើងមិនរក្សាទុក PIN របស់អ្នកនៅលើម៉ាស៊ីនមេរបស់យើងទេ។"
 }
 

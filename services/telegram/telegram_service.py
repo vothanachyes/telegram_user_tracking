@@ -70,7 +70,6 @@ class TelegramService:
         )
         
         if success and client:
-            # Save credential
             from pathlib import Path
             session_file_path = Path(client.workdir) / client.name
             credential = TelegramCredential(
@@ -81,6 +80,35 @@ class TelegramService:
             self.db_manager.save_telegram_credential(credential)
         
         return success, error
+    
+    async def start_session_qr(
+        self,
+        api_id: str,
+        api_hash: str,
+        qr_callback: Optional[Callable[[str], None]] = None,
+        status_callback: Optional[Callable[[str], None]] = None,
+        password_callback: Optional[Callable[[], str]] = None,
+        cancelled_callback: Optional[Callable[[], bool]] = None
+    ) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        Start Telegram session with QR code flow.
+        Returns (success, error_message, phone_number)
+        """
+        success, error, client, phone_number = await self.client_manager.start_session_qr(
+            api_id, api_hash, qr_callback, status_callback, password_callback, cancelled_callback
+        )
+        
+        if success and client and phone_number:
+            from pathlib import Path
+            session_file_path = Path(client.workdir) / client.name
+            credential = TelegramCredential(
+                phone_number=phone_number,
+                session_string=str(session_file_path),
+                is_default=True
+            )
+            self.db_manager.save_telegram_credential(credential)
+        
+        return success, error, phone_number
     
     async def load_session(
         self,
@@ -156,7 +184,6 @@ class TelegramService:
             if not self.client:
                 return False, 0, "Not connected to Telegram"
             
-            # Initialize managers
             if not self._group_manager:
                 self._group_manager = GroupManager(self.db_manager, self.client)
             if not self._reaction_processor:
@@ -166,36 +193,29 @@ class TelegramService:
                     self.user_processor
                 )
             
-            # Get group info
             success, group, error = await self._group_manager.fetch_group_info(group_id)
             if not success:
                 return False, 0, error
             
-            # Save group
             self._group_manager.save_group(group)
             
             message_count = 0
             fetch_delay = settings.settings.fetch_delay_seconds
             
-            # Fetch messages
             async for telegram_msg in self.client.get_chat_history(group_id):
                 try:
-                    # Check date range
                     if start_date and telegram_msg.date < start_date:
-                        break  # Messages are in reverse chronological order
+                        break
                     
                     if end_date and telegram_msg.date > end_date:
                         continue
                     
-                    # Check if message is deleted
                     if self.db_manager.is_message_deleted(telegram_msg.id, group_id):
                         continue
                     
-                    # Process user
                     if telegram_msg.from_user:
                         await self.user_processor.process_user(telegram_msg.from_user)
                     
-                    # Process message
                     message = await self.message_processor.process_message(
                         telegram_msg,
                         group_id,
@@ -206,7 +226,6 @@ class TelegramService:
                         self.db_manager.save_message(message)
                         message_count += 1
                         
-                        # Process reactions if enabled
                         if settings.settings.track_reactions:
                             await self._reaction_processor.process_reactions(
                                 telegram_msg,
@@ -219,9 +238,8 @@ class TelegramService:
                             message_callback(message)
                         
                         if progress_callback:
-                            progress_callback(message_count, -1)  # -1 for unknown total
+                            progress_callback(message_count, -1)
                     
-                    # Rate limiting
                     if fetch_delay > 0:
                         await asyncio.sleep(fetch_delay)
                     
@@ -232,7 +250,6 @@ class TelegramService:
                     logger.error(f"Error processing message {telegram_msg.id}: {e}")
                     continue
             
-            # Update group stats
             total_messages = self.db_manager.get_message_count(group_id)
             self._group_manager.update_group_stats(group, total_messages)
             

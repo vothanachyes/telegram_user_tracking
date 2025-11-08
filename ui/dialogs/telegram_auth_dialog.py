@@ -70,6 +70,7 @@ class TelegramAuthDialog(ft.AlertDialog):
                 ),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
+            elevation=24,  # Higher elevation for nested dialogs (same as confirmation dialogs)
         )
     
     def _handle_submit(self, e):

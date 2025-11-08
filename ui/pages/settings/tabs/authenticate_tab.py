@@ -42,11 +42,71 @@ class AuthenticateTab:
             color=theme_manager.text_secondary_color
         )
         
-        # Telegram Account Connection section
+        ENABLE_QR_LOGIN = False
+        
+        qr_radio = ft.Radio(
+            value="qr",
+            label=theme_manager.t("qr_code_login") + " 🚧",
+            disabled=not ENABLE_QR_LOGIN,
+            tooltip="QR Code login coming soon! Currently in development. Use phone login for now." if not ENABLE_QR_LOGIN else None
+        )
+        
+        self.login_method = ft.RadioGroup(
+            content=ft.Row([
+                ft.Radio(value="phone", label=theme_manager.t("phone_login")),
+                qr_radio,
+            ], spacing=20),
+            value="phone"
+        )
+        
         self.phone_field = theme_manager.create_text_field(
             label=theme_manager.t("phone_number"),
             hint_text="+1234567890",
             value=""
+        )
+        
+        self.otp_field = theme_manager.create_text_field(
+            label=theme_manager.t("enter_otp_code"),
+            hint_text="12345",
+            value="",
+            visible=True
+        )
+        
+        self.otp_helper = ft.Text(
+            theme_manager.t("enter_otp_code_instructions") or "Enter the code sent to your Telegram app",
+            size=12,
+            color=theme_manager.text_secondary_color,
+            visible=True
+        )
+        
+        self.otp_submit_btn = theme_manager.create_button(
+            text=theme_manager.t("confirm") or "Confirm",
+            icon=ft.Icons.CHECK,
+            on_click=lambda e: self._handle_otp_submit(e),
+            style="success",
+            visible=True
+        )
+        
+        self.password_field = theme_manager.create_text_field(
+            label=theme_manager.t("enter_2fa_password"),
+            password=True,
+            value="",
+            visible=False
+        )
+        
+        self.password_helper = ft.Text(
+            theme_manager.t("enter_2fa_password_instructions") or "Enter your 2FA password",
+            size=12,
+            color=theme_manager.text_secondary_color,
+            visible=False
+        )
+        
+        self.password_submit_btn = theme_manager.create_button(
+            text=theme_manager.t("confirm") or "Confirm",
+            icon=ft.Icons.CHECK,
+            on_click=None,
+            style="success",
+            visible=False
         )
         
         self.account_status_text = ft.Text(
@@ -62,6 +122,8 @@ class AuthenticateTab:
             style="primary"
         )
         
+        self.login_method.on_change = self._on_login_method_change
+        
         self.disconnect_btn = theme_manager.create_button(
             text=theme_manager.t("disconnect"),
             icon=ft.Icons.LINK_OFF,
@@ -69,10 +131,8 @@ class AuthenticateTab:
             style="error"
         )
         
-        # Error text
         self.error_text = ft.Text("", color=ft.Colors.RED, visible=False)
         
-        # Update button states
         self.update_connection_buttons()
     
     def build(self) -> ft.Container:
@@ -92,7 +152,6 @@ class AuthenticateTab:
         
         return ft.Container(
             content=ft.Column([
-                # API App Configuration section
                 theme_manager.create_card(
                     content=ft.Column([
                         ft.Text(
@@ -113,7 +172,6 @@ class AuthenticateTab:
                     ], spacing=15)
                 ),
                 
-                # Telegram Account Connection section
                 theme_manager.create_card(
                     content=ft.Column([
                         ft.Text(
@@ -122,7 +180,19 @@ class AuthenticateTab:
                             weight=ft.FontWeight.BOLD
                         ),
                         ft.Divider(),
+                        ft.Text(
+                            theme_manager.t("choose_login_method"),
+                            size=14,
+                            color=theme_manager.text_secondary_color
+                        ),
+                        self.login_method,
                         self.phone_field,
+                        self.otp_field,
+                        self.otp_helper,
+                        self.otp_submit_btn,
+                        self.password_field,
+                        self.password_helper,
+                        self.password_submit_btn,
                         self.account_status_text,
                         ft.Row([
                             self.connect_btn,
@@ -133,7 +203,6 @@ class AuthenticateTab:
                 
                 self.error_text,
                 
-                # Save/Cancel buttons for API credentials
                 ft.Row([
                     cancel_api_btn,
                     save_api_btn,
@@ -205,11 +274,45 @@ class AuthenticateTab:
         if hasattr(self, 'page') and self.page:
             self.page.update()
     
+    def _on_login_method_change(self, e):
+        """Handle login method change."""
+        self.phone_field.visible = True
+        if hasattr(self, 'page') and self.page:
+            self.page.update()
+    
     def _handle_telegram_connect(self, e):
         """Handle Telegram connection."""
-        self.handlers.handle_telegram_connect(self.phone_field, self.error_text)
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            if not hasattr(self, 'page') or not self.page:
+                if e and hasattr(e, 'control') and e.control.page:
+                    self.page = e.control.page
+                elif self.connect_btn.page:
+                    self.page = self.connect_btn.page
+            
+            if self.page and not self.handlers.page:
+                self.handlers.page = self.page
+            
+            logger.debug(f"Connect button clicked. Login method: phone (QR disabled)")
+            
+            self.handlers.handle_telegram_connect(self.phone_field, self.error_text)
+        except Exception as ex:
+            logger.error(f"Error in _handle_telegram_connect: {ex}", exc_info=True)
+            self.error_text.value = f"Error: {str(ex)}"
+            self.error_text.visible = True
+            if hasattr(self, 'page') and self.page:
+                self.page.update()
+            elif self.connect_btn.page:
+                self.connect_btn.page.update()
     
     def _handle_telegram_disconnect(self, e):
         """Handle Telegram disconnection."""
         self.handlers.handle_telegram_disconnect()
+    
+    def _handle_otp_submit(self, e):
+        """Handle OTP submit button click."""
+        if self.handlers:
+            self.handlers.handle_otp_submit(e)
 

@@ -2,6 +2,7 @@
 Client manager for Telegram Pyrogram client operations.
 """
 
+import asyncio
 import logging
 from typing import Optional, Callable, Tuple
 from pathlib import Path
@@ -94,7 +95,6 @@ class ClientManager:
             
             await client.connect()
             
-            # Check if already authorized
             try:
                 me = await client.get_me()
                 if me:
@@ -102,15 +102,15 @@ class ClientManager:
                     logger.info(f"Already authorized for {phone} as {me.first_name or me.phone_number}")
                     return True, None, client
             except Exception:
-                # Not authorized, continue with authentication flow
                 pass
             
-            # Send code
             sent_code = await client.send_code(phone)
             
-            # Get code from user
             if code_callback:
-                code = code_callback()
+                if asyncio.iscoroutinefunction(code_callback):
+                    code = await code_callback()
+                else:
+                    code = code_callback()
                 if not code:
                     await client.disconnect()
                     return False, "Code not provided", None
@@ -118,14 +118,15 @@ class ClientManager:
                 await client.disconnect()
                 return False, "Code callback not provided", None
             
-            # Sign in with code
             try:
                 await client.sign_in(phone, sent_code.phone_code_hash, code)
             except Exception as e:
-                # Check if 2FA is required
                 if "password" in str(e).lower():
                     if password_callback:
-                        password = password_callback()
+                        if asyncio.iscoroutinefunction(password_callback):
+                            password = await password_callback()
+                        else:
+                            password = password_callback()
                         if not password:
                             await client.disconnect()
                             return False, "Password not provided", None
@@ -179,7 +180,6 @@ class ClientManager:
             
             await client.connect()
             
-            # Check if authorized
             try:
                 me = await client.get_me()
                 if not me:

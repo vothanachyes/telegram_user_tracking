@@ -19,6 +19,7 @@ from utils.validators import (
     validate_phone
 )
 from ui.dialogs.telegram_auth_dialog import TelegramAuthDialog
+from ui.dialogs.qr_code_dialog import QRCodeDialog
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,16 @@ class SettingsHandlers:
         # Track authentication state
         self._auth_event = threading.Event()
         self._auth_result: Optional[str] = None
+        
+        # Track QR code dialog state
+        self._qr_dialog: Optional[QRCodeDialog] = None
+        self._qr_cancelled = False
+        self._qr_token: Optional[str] = None
+        
+        # Track OTP input state
+        self._otp_event: Optional[threading.Event] = None
+        self._otp_value_container: Optional[dict] = None
+        self._waiting_for_otp = False
     
     def handle_save_authenticate(
         self,
@@ -105,6 +116,10 @@ class SettingsHandlers:
         error_text: ft.Text
     ):
         """Handle Telegram connection."""
+        # Get page from control if not set
+        if not self.page and error_text.page:
+            self.page = error_text.page
+        
         if not self.telegram_service:
             self._show_error("Telegram service not available", error_text)
             return
@@ -123,23 +138,27 @@ class SettingsHandlers:
             self._show_error(error, error_text)
             return
         
-        if self.page and hasattr(self.page, 'run_task'):
-            self.page.run_task(
-                self._connect_telegram_async,
-                phone,
-                self.current_settings.telegram_api_id,
-                self.current_settings.telegram_api_hash,
-                error_text
-            )
-        else:
-            asyncio.create_task(
-                self._connect_telegram_async(
+        try:
+            if self.page and hasattr(self.page, 'run_task'):
+                self.page.run_task(
+                    self._connect_telegram_async,
                     phone,
                     self.current_settings.telegram_api_id,
                     self.current_settings.telegram_api_hash,
                     error_text
                 )
-            )
+            else:
+                asyncio.create_task(
+                    self._connect_telegram_async(
+                        phone,
+                        self.current_settings.telegram_api_id,
+                        self.current_settings.telegram_api_hash,
+                        error_text
+                    )
+                )
+        except Exception as e:
+            logger.error(f"Error starting phone login: {e}", exc_info=True)
+            self._show_error(f"Error: {str(e)}", error_text)
     
     async def _connect_telegram_async(
         self,
@@ -157,11 +176,126 @@ class SettingsHandlers:
             if self.page:
                 self.page.update()
             
-            def get_otp_code() -> str:
-                return self._show_auth_dialog(is_2fa=False)
+            otp_event = threading.Event()
+            otp_value_container = {"value": None}
             
-            def get_2fa_password() -> str:
-                return self._show_auth_dialog(is_2fa=True)
+            def _wait_for_otp_blocking() -> str:
+                """Blocking function to wait for OTP - runs in thread executor."""
+                import time
+                timeout = 300
+                start_time = time.time()
+                event_set = False
+                
+                while time.time() - start_time < timeout:
+                    if otp_event.is_set():
+                        event_set = True
+                        break
+                    time.sleep(0.1)
+                
+                if event_set:
+                    value = otp_value_container["value"]
+                    logger.info(f"✓ OTP received from user: {value}")
+                    return value or ""
+                
+                logger.warning("OTP input timeout - no response from user")
+                return ""
+            
+            async def get_otp_code() -> str:
+                """Get OTP code from text field."""
+                otp_event.clear()
+                otp_value_container["value"] = None
+                self.authenticate_tab.otp_field.value = ""
+                
+                self._otp_event = otp_event
+                self._otp_value_container = otp_value_container
+                self._waiting_for_otp = True
+                self.authenticate_tab.otp_submit_btn.disabled = False
+                
+                if self.page:
+                    self.page.update()
+                
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, _wait_for_otp_blocking)
+                
+                self._waiting_for_otp = False
+                return result
+            
+            password_event = threading.Event()
+            password_value_container = {"value": None}
+            
+            def on_password_submit(e):
+                """Handle password submit (button click or Enter key)."""
+                value = self.authenticate_tab.password_field.value
+                if value and len(value.strip()) > 0:
+                    password_value_container["value"] = value.strip()
+                    password_event.set()
+                    logger.info("2FA password submitted via button/Enter")
+            
+            self.authenticate_tab.password_field.on_submit = on_password_submit
+            self.authenticate_tab.password_submit_btn.on_click = on_password_submit
+            
+            def _wait_for_password_blocking() -> str:
+                """Blocking function to wait for 2FA password - runs in thread executor."""
+                import time
+                timeout = 300
+                start_time = time.time()
+                event_set = False
+                
+                while time.time() - start_time < timeout:
+                    if password_event.is_set():
+                        event_set = True
+                        break
+                    time.sleep(0.1)
+                
+                if event_set:
+                    value = password_value_container["value"]
+                    logger.info("2FA password received from user")
+                    return value or ""
+                
+                logger.warning("2FA password input timeout")
+                return ""
+            
+            async def get_2fa_password() -> str:
+                """Get 2FA password from text field."""
+                password_event.clear()
+                password_value_container["value"] = None
+                
+                page_ref = self.page
+                if not page_ref:
+                    if hasattr(self.authenticate_tab, 'page') and self.authenticate_tab.page:
+                        page_ref = self.authenticate_tab.page
+                        self.page = page_ref
+                    elif hasattr(self.authenticate_tab.password_field, 'page') and self.authenticate_tab.password_field.page:
+                        page_ref = self.authenticate_tab.password_field.page
+                        self.page = page_ref
+                
+                self.authenticate_tab.password_field.visible = True
+                self.authenticate_tab.password_helper.visible = True
+                self.authenticate_tab.password_submit_btn.visible = True
+                self.authenticate_tab.password_field.value = ""
+                
+                if page_ref:
+                    try:
+                        page_ref.update()
+                    except Exception as update_error:
+                        logger.error(f"Error updating page: {update_error}", exc_info=True)
+                        if hasattr(page_ref, 'run_task'):
+                            async def update_ui():
+                                page_ref.update()
+                            page_ref.run_task(update_ui)
+                else:
+                    logger.error("No page available to show password field!")
+                
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, _wait_for_password_blocking)
+                
+                self.authenticate_tab.password_field.visible = False
+                self.authenticate_tab.password_helper.visible = False
+                self.authenticate_tab.password_submit_btn.visible = False
+                if self.page:
+                    self.page.update()
+                
+                return result
             
             success, error = await self.telegram_service.start_session(
                 phone=phone,
@@ -197,6 +331,223 @@ class SettingsHandlers:
             self.authenticate_tab.connect_btn.text = theme_manager.t("connect_to_telegram")
             if self.page:
                 self.page.update()
+    
+    def handle_telegram_connect_qr(self, error_text: ft.Text):
+        """Handle Telegram connection via QR code."""
+        if not self.page and error_text.page:
+            self.page = error_text.page
+        
+        if not self.telegram_service:
+            self._show_error("Telegram service not available", error_text)
+            return
+        
+        if not self.current_settings.telegram_api_id or not self.current_settings.telegram_api_hash:
+            self._show_error("Please save API credentials first", error_text)
+            return
+        
+        try:
+            if self.page and hasattr(self.page, 'run_task'):
+                self.page.run_task(
+                    self._connect_telegram_qr_async,
+                    self.current_settings.telegram_api_id,
+                    self.current_settings.telegram_api_hash,
+                    error_text
+                )
+            else:
+                asyncio.create_task(
+                    self._connect_telegram_qr_async(
+                        self.current_settings.telegram_api_id,
+                        self.current_settings.telegram_api_hash,
+                        error_text
+                    )
+                )
+        except Exception as e:
+            logger.error(f"Error starting QR login: {e}", exc_info=True)
+            self._show_error(f"Error: {str(e)}", error_text)
+    
+    async def _connect_telegram_qr_async(
+        self,
+        api_id: str,
+        api_hash: str,
+        error_text: ft.Text
+    ):
+        """Async method to connect to Telegram via QR code."""
+        try:
+            connect_btn = self.authenticate_tab.connect_btn
+            connect_btn.disabled = True
+            connect_btn.text = theme_manager.t("connecting")
+            error_text.visible = False
+            self._qr_cancelled = False
+            self._qr_token = None
+            
+            if not self.page:
+                if hasattr(error_text, 'page') and error_text.page:
+                    self.page = error_text.page
+                    logger.debug("Got page from error_text")
+                else:
+                    logger.error("No page reference available for QR dialog")
+                    self._show_error("Page not available", error_text)
+                    connect_btn.disabled = False
+                    connect_btn.text = theme_manager.t("connect_to_telegram")
+                    return
+            
+            logger.debug(f"Opening QR code dialog. Page: {self.page}, Page type: {type(self.page)}")
+            
+            if self.page:
+                self.page.update()
+            
+            self._qr_dialog = QRCodeDialog(
+                qr_token="",
+                on_cancel=self._on_qr_dialog_cancel,
+                on_refresh=self._on_qr_dialog_refresh
+            )
+            
+            self._qr_dialog.page = self.page
+            
+            try:
+                logger.debug("Calling page.open() for QR dialog")
+                self.page.open(self._qr_dialog)
+                logger.info("QR code dialog opened successfully using page.open()")
+            except AttributeError:
+                logger.debug("page.open() not available, using page.dialog method")
+                self.page.dialog = self._qr_dialog
+                self._qr_dialog.open = True
+                self.page.update()
+                logger.info("QR code dialog opened using page.dialog method")
+            except Exception as dialog_error:
+                logger.error(f"Error opening QR dialog: {dialog_error}", exc_info=True)
+                self.page.dialog = self._qr_dialog
+                self._qr_dialog.open = True
+                self.page.update()
+                logger.info("QR code dialog opened using fallback method")
+            
+            await asyncio.sleep(0.1)
+            
+            def qr_callback(token: str):
+                """Callback to update QR code in dialog."""
+                logger.info(f"qr_callback invoked with token (len={len(token) if token else 0})")
+                if self._qr_dialog and not self._qr_cancelled:
+                    logger.info("Calling refresh_qr_code on dialog")
+                    self._qr_dialog.refresh_qr_code(token)
+                    self._qr_token = token
+                else:
+                    logger.warning(f"qr_callback skipped - dialog={self._qr_dialog is not None}, cancelled={self._qr_cancelled}")
+            
+            def status_callback(status: str):
+                """Callback to update status in dialog."""
+                logger.info(f"Status callback called with: {status}")
+                if self._qr_dialog and not self._qr_cancelled:
+                    is_success = "success" in status.lower() or "successful" in status.lower()
+                    
+                    if not self._qr_dialog.page and self.page:
+                        self._qr_dialog.page = self.page
+                        logger.debug("Set page reference on dialog from status callback")
+                    
+                    try:
+                        self._qr_dialog.update_status(status, is_success=is_success)
+                        logger.info(f"Dialog status updated to: {status} (success={is_success})")
+                    except Exception as e:
+                        logger.error(f"Error updating dialog status: {e}", exc_info=True)
+                        try:
+                            if self.page:
+                                self._qr_dialog.status_text.value = status
+                                if is_success:
+                                    self._qr_dialog.status_text.color = ft.Colors.GREEN
+                                self.page.update()
+                                logger.info(f"Dialog status updated via page.update() to: {status}")
+                        except Exception as e2:
+                            logger.error(f"Error in alternative UI update: {e2}", exc_info=True)
+                else:
+                    logger.debug(f"Dialog not available or cancelled, ignoring status: {status}")
+            
+            def password_callback() -> str:
+                """Callback to get 2FA password."""
+                logger.info("2FA password required, showing password dialog")
+                if self._qr_dialog:
+                    self._qr_dialog.update_status("Two-factor authentication required. Please enter your password.", is_error=False)
+                
+                password = self._show_auth_dialog_nested(is_2fa=True, main_dialog=self._qr_dialog)
+                
+                return password
+            
+            def cancelled_callback() -> bool:
+                """Callback to check if cancelled."""
+                return self._qr_cancelled
+            
+            success, error, phone_number = await self.telegram_service.start_session_qr(
+                api_id=api_id,
+                api_hash=api_hash,
+                qr_callback=qr_callback,
+                status_callback=status_callback,
+                password_callback=password_callback,
+                cancelled_callback=cancelled_callback
+            )
+            
+            if self._qr_dialog and self.page:
+                try:
+                    if hasattr(self.page, 'close') and hasattr(self.page, 'overlay'):
+                        if self._qr_dialog in getattr(self.page.overlay, 'controls', []):
+                            self.page.close(self._qr_dialog)
+                    else:
+                        self._qr_dialog.open = False
+                        if self.page.dialog == self._qr_dialog:
+                            self.page.dialog = None
+                    self.page.update()
+                except Exception as close_error:
+                    logger.debug(f"Error closing dialog: {close_error}")
+                    self._qr_dialog.open = False
+                    if self.page.dialog == self._qr_dialog:
+                        self.page.dialog = None
+                    self.page.update()
+            
+            if success:
+                self.authenticate_tab.update_status()
+                if phone_number:
+                    self.authenticate_tab.phone_field.value = phone_number
+                self.authenticate_tab.update_connection_buttons()
+                
+                if self.page:
+                    theme_manager.show_snackbar(
+                        self.page,
+                        theme_manager.t("connection_success"),
+                        bgcolor=ft.Colors.GREEN
+                    )
+            else:
+                if not self._qr_cancelled:
+                    self._show_error(f"{theme_manager.t('connection_failed')}: {error}", error_text)
+            
+            connect_btn.disabled = False
+            connect_btn.text = theme_manager.t("connect_to_telegram")
+            if self.page:
+                self.page.update()
+                
+        except Exception as ex:
+            logger.error(f"Error connecting to Telegram via QR: {ex}", exc_info=True)
+            if self._qr_dialog and self.page:
+                try:
+                    if hasattr(self.page, 'close') and hasattr(self.page, 'overlay'):
+                        if self._qr_dialog in getattr(self.page.overlay, 'controls', []):
+                            self.page.close(self._qr_dialog)
+                    else:
+                        self._qr_dialog.open = False
+                        if self.page.dialog == self._qr_dialog:
+                            self.page.dialog = None
+                    self.page.update()
+                except:
+                    pass
+            self._show_error(f"{theme_manager.t('connection_failed')}: {str(ex)}", error_text)
+            self.authenticate_tab.connect_btn.disabled = False
+            self.authenticate_tab.connect_btn.text = theme_manager.t("connect_to_telegram")
+            if self.page:
+                self.page.update()
+    
+    def _on_qr_dialog_cancel(self):
+        """Handle QR dialog cancellation."""
+        self._qr_cancelled = True
+    
+    def _on_qr_dialog_refresh(self) -> str:
+        """Handle QR dialog refresh request."""
+        return self._qr_token or ""
     
     def handle_telegram_disconnect(self):
         """Handle Telegram disconnection."""
@@ -296,8 +647,16 @@ class SettingsHandlers:
     
     def _show_auth_dialog(self, is_2fa: bool = False) -> str:
         """Show authentication dialog and wait for user input."""
+        return self._show_auth_dialog_nested(is_2fa=is_2fa, main_dialog=None)
+    
+    def _show_auth_dialog_nested(self, is_2fa: bool = False, main_dialog: Optional[ft.AlertDialog] = None) -> str:
+        """Show authentication dialog and wait for user input, optionally as nested dialog."""
         if not self.page:
+            logger.error("No page available for auth dialog")
             return ""
+        
+        logger.debug(f"Showing auth dialog (2FA: {is_2fa}, nested: {main_dialog is not None})")
+        logger.debug(f"Page ID: {getattr(self.page, 'id', 'unknown')}, Page type: {type(self.page)}")
         
         self._auth_event.clear()
         self._auth_result = None
@@ -307,22 +666,141 @@ class SettingsHandlers:
             on_submit=self._on_auth_dialog_submit
         )
         
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        dialog.page = self.page
+        logger.debug(f"Dialog created, page reference set: {dialog.page is not None}")
         
-        if self._auth_event.wait(timeout=300):
-            return self._auth_result or ""
-        
-        dialog.open = False
-        if self.page:
+        try:
+            self.page.open(dialog)
+            logger.info(f"Auth dialog opened using page.open() (2FA: {is_2fa}, nested: {main_dialog is not None})")
+        except (AttributeError, Exception) as e:
+            logger.warning(f"page.open() failed ({e}), using page.dialog method")
+            self.page.dialog = dialog
+            dialog.open = True
             self.page.update()
+            logger.info(f"Auth dialog opened using page.dialog (2FA: {is_2fa})")
+        
+        import time
+        time.sleep(0.05)
+        
+        logger.debug("Waiting for user input in auth dialog...")
+        timeout = 300
+        start_time = time.time()
+        event_set = False
+        
+        while time.time() - start_time < timeout:
+            if self._auth_event.is_set():
+                event_set = True
+                break
+            time.sleep(0.1)
+        
+        if event_set:
+            result = self._auth_result or ""
+            logger.debug(f"Auth dialog returned: {'***' if result else '(empty/cancelled)'}")
+            
+            try:
+                if hasattr(self.page, 'close'):
+                    self.page.close(dialog)
+                    logger.debug("Dialog closed using page.close()")
+                else:
+                    dialog.open = False
+                    if self.page.dialog == dialog:
+                        self.page.dialog = None
+                    self.page.update()
+                    logger.debug("Dialog closed using page.dialog method")
+            except Exception as close_error:
+                logger.debug(f"Error closing dialog: {close_error}")
+                try:
+                    dialog.open = False
+                    if self.page.dialog == dialog:
+                        self.page.dialog = None
+                    self.page.update()
+                except:
+                    pass
+            
+            if not result and main_dialog:
+                try:
+                    self.page.open(main_dialog)
+                    logger.debug("Restored main dialog after auth dialog cancellation")
+                except:
+                    self.page.dialog = main_dialog
+                    main_dialog.open = True
+                    self.page.update()
+            
+            return result
+        
+        logger.warning("Auth dialog timed out")
+        try:
+            if hasattr(self.page, 'close'):
+                self.page.close(dialog)
+            else:
+                dialog.open = False
+                if self.page.dialog == dialog:
+                    self.page.dialog = None
+                self.page.update()
+            
+            if main_dialog:
+                try:
+                    self.page.open(main_dialog)
+                except:
+                    self.page.dialog = main_dialog
+                    main_dialog.open = True
+                    self.page.update()
+        except:
+            pass
         return ""
     
     def _on_auth_dialog_submit(self, value: str):
         """Handle authentication dialog submission."""
         self._auth_result = value
         self._auth_event.set()
+    
+    def handle_otp_submit(self, e):
+        """Handle OTP submit button click."""
+        logger.info("OTP Confirm button clicked!")
+        logger.info(f"Waiting for OTP: {self._waiting_for_otp}")
+        logger.info(f"OTP event exists: {self._otp_event is not None}")
+        logger.info(f"OTP container exists: {self._otp_value_container is not None}")
+        
+        if not hasattr(self, 'authenticate_tab') or not self.authenticate_tab:
+            logger.error("Authenticate tab not available!")
+            return
+        
+        value = self.authenticate_tab.otp_field.value
+        logger.info(f"OTP field value: '{value}'")
+        logger.info(f"OTP field value length: {len(value.strip()) if value else 0}")
+        
+        if not self._waiting_for_otp:
+            logger.warning("OTP button clicked but not waiting for OTP - showing message to user")
+            if self.page:
+                theme_manager.show_snackbar(
+                    self.page,
+                    "Please click 'Connect to Telegram' first",
+                    bgcolor=ft.Colors.ORANGE
+                )
+            return
+        
+        if not self._otp_event or not self._otp_value_container:
+            logger.error("OTP event or container not set - cannot process OTP")
+            if self.page:
+                theme_manager.show_snackbar(
+                    self.page,
+                    "Error: OTP handler not ready. Please try connecting again.",
+                    bgcolor=ft.Colors.RED
+                )
+            return
+        
+        if value and len(value.strip()) >= 4:
+            self._otp_value_container["value"] = value.strip()
+            self._otp_event.set()
+            logger.info(f"✓ OTP submitted successfully: {self._otp_value_container['value']}")
+        else:
+            logger.warning(f"OTP too short: {len(value.strip()) if value else 0} characters (minimum 4)")
+            if self.page:
+                theme_manager.show_snackbar(
+                    self.page,
+                    "OTP code must be at least 4 characters",
+                    bgcolor=ft.Colors.RED
+                )
     
     def _show_error(self, message: str, error_text_control: ft.Text):
         """Show error message."""

@@ -199,6 +199,16 @@
   "feature_reaction_tracking": "តាមដានប្រតិកម្មអ្នកប្រើនិងការចូលរួម",
   "contact_for_upgrade": "ទាក់ទងអ្នកគ្រប់គ្រងសម្រាប់ការដំឡើងកំណែ",
   "upgrade_email_subject": "សំណើដំឡើងកំណែអាជ្ញាប័ណ្ណ",
-  "upgrade_email_body": "សួស្តី,\n\nខ្ញុំចង់ដំឡើងកំណែការជាវរបស់ខ្ញុំទៅកម្រិត {tier}។\n\nកម្រិតបច្ចុប្បន្ន: {current_tier}\nកម្រិតដែលចង់បាន: {tier}\nមូលហេតុ: {reason}\n\nសូមអរគុណ!"
+  "upgrade_email_body": "សួស្តី,\n\nខ្ញុំចង់ដំឡើងកំណែការជាវរបស់ខ្ញុំទៅកម្រិត {tier}។\n\nកម្រិតបច្ចុប្បន្ន: {current_tier}\nកម្រិតដែលចង់បាន: {tier}\nមូលហេតុ: {reason}\n\nសូមអរគុណ!",
+  "login_with_qr_code": "ចូលដោយប្រើ QR Code",
+  "scan_qr_code": "ស្កេន QR Code",
+  "qr_code_instructions": "បើក Telegram នៅលើទូរស័ព្ទរបស់អ្នក, ទៅកាន់ Settings > Devices > Link Desktop Device, ហើយស្កេន QR code នេះ។",
+  "qr_code_expired": "QR code ផុតកំណត់",
+  "qr_code_scanning": "កំពុងរង់ចាំការស្កេន QR code...",
+  "qr_code_success": "បានស្កេន QR code ដោយជោគជ័យ",
+  "choose_login_method": "ជ្រើសរើសវិធីចូល",
+  "phone_login": "ចូលដោយប្រើទូរស័ព្ទ",
+  "qr_code_login": "ចូលដោយប្រើ QR Code",
+  "refresh": "ផ្ទុកឡើងវិញ"
 }
 

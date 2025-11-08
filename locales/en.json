@@ -199,6 +199,16 @@
   "feature_reaction_tracking": "Track user reactions and engagement",
   "contact_for_upgrade": "Contact Admin for Upgrade",
   "upgrade_email_subject": "License Upgrade Request",
-  "upgrade_email_body": "Hello,\n\nI would like to upgrade my subscription to the {tier} tier.\n\nCurrent tier: {current_tier}\nDesired tier: {tier}\nReason: {reason}\n\nThank you!"
+  "upgrade_email_body": "Hello,\n\nI would like to upgrade my subscription to the {tier} tier.\n\nCurrent tier: {current_tier}\nDesired tier: {tier}\nReason: {reason}\n\nThank you!",
+  "login_with_qr_code": "Login with QR Code",
+  "scan_qr_code": "Scan QR Code",
+  "qr_code_instructions": "Open Telegram on your phone, go to Settings > Devices > Link Desktop Device, and scan this QR code.",
+  "qr_code_expired": "QR code expired",
+  "qr_code_scanning": "Waiting for QR code scan...",
+  "qr_code_success": "QR code scanned successfully",
+  "choose_login_method": "Choose Login Method",
+  "phone_login": "Phone Login",
+  "qr_code_login": "QR Code Login",
+  "refresh": "Refresh"
 }
 

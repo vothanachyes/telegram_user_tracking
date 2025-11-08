@@ -28,25 +28,19 @@ class PageConfig:
         page.theme_mode = theme_manager.theme_mode
         page.theme = theme_manager.get_theme()
         
-        # Window size settings for desktop mode
-        # These must be set on page.window, not as ft.app() parameters
         try:
             page.window.width = DEFAULT_WINDOW_WIDTH
             page.window.height = DEFAULT_WINDOW_HEIGHT
             page.window.min_width = MIN_WINDOW_WIDTH
             page.window.min_height = MIN_WINDOW_HEIGHT
         except AttributeError:
-            # Web mode doesn't support window properties
             pass
         
         page.padding = 0
         page.bgcolor = theme_manager.background_color
         
-        # Initialize toast notification system
         from ui.components.toast import toast
-        toast.initialize(page, position="top-right")
         
-        # Update page to apply window settings
         page.update()
     
     @staticmethod

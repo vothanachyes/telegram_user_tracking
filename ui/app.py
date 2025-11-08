@@ -91,7 +91,16 @@ class TelegramUserTrackingApp:
             splash = SplashScreen()
             self.page.controls = [splash]
             self.page.update()
-            splash.start_animation(self.page)
+            
+            # Start animation after a brief delay to ensure page is rendered
+            async def start_animation_delayed():
+                await asyncio.sleep(0.1)
+                splash.start_animation(self.page)
+            
+            if hasattr(self.page, 'run_task'):
+                self.page.run_task(start_animation_delayed)
+            else:
+                asyncio.create_task(start_animation_delayed())
             
             # Create login page but don't show it yet
             login_page = LoginPage(
@@ -99,6 +108,9 @@ class TelegramUserTrackingApp:
                 page=self.page,
                 splash_screen=splash
             )
+            # Store login page reference for later use
+            splash._login_page = login_page
+            
             # Trigger auto-login which will hide splash on success
             login_page._trigger_auto_login()
         else:

@@ -6,11 +6,13 @@ import flet as ft
 import asyncio
 import logging
 import threading
+import time
 from typing import Callable, Optional, Tuple
 from ui.theme import theme_manager
 from services.auth_service import auth_service
 from config.settings import settings
 from utils.credential_storage import credential_storage
+from utils.constants import SPLASH_SCREEN_DURATION
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +20,15 @@ logger = logging.getLogger(__name__)
 class LoginPage(ft.Container):
     """Login page for Firebase authentication."""
     
-    def __init__(self, on_login_success: Callable[[], None], page: Optional[ft.Page] = None):
+    def __init__(
+        self,
+        on_login_success: Callable[[], None],
+        page: Optional[ft.Page] = None,
+        splash_screen: Optional[ft.Container] = None
+    ):
         self.on_login_success = on_login_success
         self.page = page
+        self.splash_screen = splash_screen
         
         # Load saved credentials
         saved_email, saved_password = self._load_saved_credentials()
@@ -124,6 +132,7 @@ class LoginPage(ft.Container):
         
         # Store flag for auto-login attempt
         self._should_auto_login = bool(saved_email and saved_password)
+        self._pending_error = None
     
     def _trigger_auto_login(self):
         """Trigger auto-login after page is set up."""
@@ -149,38 +158,79 @@ class LoginPage(ft.Container):
     async def _delayed_auto_login(self):
         """Delay auto-login to allow UI to render smoothly."""
         await asyncio.sleep(0.5)  # 500ms delay
-        self._attempt_auto_login()
+        await self._attempt_auto_login()
     
-    def _attempt_auto_login(self):
-        """Attempt to auto-login with saved credentials."""
+    async def _attempt_auto_login(self):
+        """Attempt to auto-login with saved credentials.
+        
+        Note: This always authenticates fresh with Firebase (not cached credentials).
+        Firebase will verify:
+        - Account exists and is not disabled
+        - Password is correct
+        - Device limits
+        - License status
+        """
         saved_email, saved_password = self._load_saved_credentials()
         
         if not saved_email or not saved_password:
             logger.warning("Auto-login: No saved credentials found")
             return  # No credentials to use
         
-        # Show loading
-        self._set_loading(True)
-        
         # Initialize auth service
         if not auth_service.initialize():
             logger.warning("Auto-login: Failed to initialize auth service")
-            self._set_loading(False)
+            if self.splash_screen and self.page:
+                # Hide splash screen (it will ensure minimum duration from config)
+                await self.splash_screen.hide(self.page)
+                await self._show_login_after_splash()
             return  # Silent failure - user can manually login
         
-        # Attempt login
+        # Attempt login - this authenticates fresh with Firebase REST API
+        # Firebase will verify account status, password, device limits, etc.
         success, error = auth_service.login(saved_email, saved_password)
         
         if success:
             logger.info("Auto-login successful!")
-            self.on_login_success()
+            # Hide splash screen if shown (it will ensure minimum duration from config)
+            if self.splash_screen and self.page:
+                await self.splash_screen.hide(self.page)
+                # Wait a bit for fade out, then show main app
+                await self._hide_splash_and_login()
+            else:
+                self.on_login_success()
         else:
             # Silent failure - user can manually login
             logger.warning(f"Auto-login failed: {error}")
-            self._set_loading(False)
+            # Hide splash and show login form (it will ensure minimum duration from config)
+            if self.splash_screen and self.page:
+                await self.splash_screen.hide(self.page)
+                # Show login page after splash fades out
+                await self._show_login_after_splash()
+            else:
+                self._set_loading(False)
             # Show error for specific cases (device enforcement, device limit, etc.)
             if error and ("device" in error.lower() or "limit" in error.lower() or "disabled" in error.lower()):
-                self._show_error(error)
+                # Error will be shown after login page appears
+                self._pending_error = error
+    
+    async def _hide_splash_and_login(self):
+        """Hide splash screen and proceed to main app."""
+        await asyncio.sleep(0.3)  # Wait for fade out animation
+        if self.page:
+            self.on_login_success()
+    
+    async def _show_login_after_splash(self):
+        """Show login page after splash screen fades out."""
+        await asyncio.sleep(0.3)  # Wait for fade out animation
+        if self.page:
+            # Replace splash with login page
+            self.page.controls = [self]
+            self.page.update()
+            self._set_loading(False)
+            # Show pending error if any
+            if hasattr(self, '_pending_error') and self._pending_error:
+                self._show_error(self._pending_error)
+                delattr(self, '_pending_error')
     
     def _handle_login(self, e):
         """Handle login button click."""

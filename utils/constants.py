@@ -105,6 +105,9 @@ DEFAULT_WINDOW_HEIGHT = 650
 MIN_WINDOW_WIDTH = 600
 MIN_WINDOW_HEIGHT = 650
 
+# Splash Screen Settings
+SPLASH_SCREEN_DURATION = float(os.getenv("SPLASH_SCREEN_DURATION", "2.0"))  # Minimum duration in seconds
+
 # Table Settings
 DEFAULT_PAGE_SIZE = 50
 PAGE_SIZE_OPTIONS = [25, 50, 100, 200]

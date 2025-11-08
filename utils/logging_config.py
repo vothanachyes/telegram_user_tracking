@@ -267,6 +267,9 @@ class ColoredFormatter(logging.Formatter):
         """Colorize different elements in the message."""
         result = message
         
+        # Check if this is a ping/pong message (check full message context)
+        is_ping_pong = 'PingDelayDisconnect' in message or 'types.Pong' in message
+        
         # Colorize URLs (do this first to avoid conflicts)
         def colorize_url(match):
             url = match.group(1)
@@ -277,8 +280,16 @@ class ColoredFormatter(logging.Formatter):
         def colorize_json(match):
             json_str = match.group(1)
             try:
-                # Try to parse and pretty-print JSON
+                # Try to parse JSON
                 parsed = json.loads(json_str)
+                
+                # If this is a ping/pong message, format as single line
+                if is_ping_pong:
+                    # Format as single-line JSON for ping/pong messages
+                    formatted = json.dumps(parsed, separators=(',', ':'))
+                    return f"{self.JSON_COLOR}{formatted}{ANSIColors.RESET}"
+                
+                # For other JSON, pretty-print with indentation
                 formatted = json.dumps(parsed, indent=2)
                 # Colorize the formatted JSON
                 lines = formatted.split('\n')

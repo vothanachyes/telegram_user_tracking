@@ -3,18 +3,24 @@ Login page with Firebase authentication.
 """
 
 import flet as ft
+import asyncio
+import logging
+import threading
 from typing import Callable, Optional, Tuple
 from ui.theme import theme_manager
 from services.auth_service import auth_service
 from config.settings import settings
 from utils.credential_storage import credential_storage
 
+logger = logging.getLogger(__name__)
+
 
 class LoginPage(ft.Container):
     """Login page for Firebase authentication."""
     
-    def __init__(self, on_login_success: Callable[[], None]):
+    def __init__(self, on_login_success: Callable[[], None], page: Optional[ft.Page] = None):
         self.on_login_success = on_login_success
+        self.page = page
         
         # Load saved credentials
         saved_email, saved_password = self._load_saved_credentials()
@@ -115,6 +121,66 @@ class LoginPage(ft.Container):
             expand=True,
             bgcolor=theme_manager.background_color
         )
+        
+        # Store flag for auto-login attempt
+        self._should_auto_login = bool(saved_email and saved_password)
+    
+    def _trigger_auto_login(self):
+        """Trigger auto-login after page is set up."""
+        if not self._should_auto_login:
+            return
+        
+        # Use page.run_task if available, otherwise use asyncio
+        if self.page and hasattr(self.page, 'run_task'):
+            self.page.run_task(self._delayed_auto_login)
+        else:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self._delayed_auto_login())
+                else:
+                    # Create new event loop in thread
+                    def run_auto_login():
+                        asyncio.run(self._delayed_auto_login())
+                    threading.Thread(target=run_auto_login, daemon=True).start()
+            except RuntimeError as e:
+                logger.warning(f"Could not create async task for auto-login: {e}")
+    
+    async def _delayed_auto_login(self):
+        """Delay auto-login to allow UI to render smoothly."""
+        await asyncio.sleep(0.5)  # 500ms delay
+        self._attempt_auto_login()
+    
+    def _attempt_auto_login(self):
+        """Attempt to auto-login with saved credentials."""
+        saved_email, saved_password = self._load_saved_credentials()
+        
+        if not saved_email or not saved_password:
+            logger.warning("Auto-login: No saved credentials found")
+            return  # No credentials to use
+        
+        # Show loading
+        self._set_loading(True)
+        
+        # Initialize auth service
+        if not auth_service.initialize():
+            logger.warning("Auto-login: Failed to initialize auth service")
+            self._set_loading(False)
+            return  # Silent failure - user can manually login
+        
+        # Attempt login
+        success, error = auth_service.login(saved_email, saved_password)
+        
+        if success:
+            logger.info("Auto-login successful!")
+            self.on_login_success()
+        else:
+            # Silent failure - user can manually login
+            logger.warning(f"Auto-login failed: {error}")
+            self._set_loading(False)
+            # Show error for specific cases (device enforcement, device limit, etc.)
+            if error and ("device" in error.lower() or "limit" in error.lower() or "disabled" in error.lower()):
+                self._show_error(error)
     
     def _handle_login(self, e):
         """Handle login button click."""
@@ -178,11 +244,13 @@ class LoginPage(ft.Container):
                     return credential.email, password
                 except Exception as e:
                     # If decryption fails, delete the corrupted credential
+                    logger.warning(f"Failed to decrypt saved password: {e}, deleting corrupted credential")
                     db_manager.delete_login_credential(credential.email)
                     return None, None
             return None, None
         except Exception as e:
             # Silently fail - user can still login manually
+            logger.error(f"Error loading saved credentials: {e}", exc_info=True)
             return None, None
     
     def _save_credentials(self, email: str, password: str):

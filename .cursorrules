@@ -198,6 +198,8 @@ Before committing, verify:
 - Log levels: DEBUG for development, INFO for important events, WARNING for issues, ERROR for failures
 - Include context in log messages (user actions, API calls, file operations)
 - Log to both file (app.log) and console
+- **Remove unimportant debug logs before committing** - Remove verbose step-by-step logs, debug markers (===), and redundant informational logs that don't add value
+- Keep important logs: errors, warnings, successful operations, and critical state changes
 
 ### Async/Await
 - Use async/await for all I/O operations (Telegram API, file downloads, database queries)
@@ -245,6 +247,8 @@ Before committing, verify:
 - Don't commit data/ directory contents (database, sessions)
 - Don't commit app.log or build artifacts
 - Follow conventional commit messages
+- **Always use descriptive commit messages** - Write clear, meaningful commit messages that explain what was changed and why
+- **Remove unimportant logs before committing** - Clean up debug logs, verbose informational logs, and development markers before committing
 
 ## Performance
 - Implement pagination for large datasets

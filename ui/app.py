@@ -79,9 +79,48 @@ class TelegramUserTrackingApp:
     
     def _show_login(self):
         """Show login page."""
-        login_page = LoginPage(on_login_success=self._on_login_success)
-        self.page.controls = [login_page]
-        self.page.update()
+        # Check if we should show splash screen (auto-login scenario)
+        from ui.components.splash_screen import SplashScreen
+        from ui.pages.login_page import LoginPage
+        
+        saved_email, saved_password = self._check_saved_credentials()
+        show_splash = bool(saved_email and saved_password)
+        
+        if show_splash:
+            # Show splash screen first
+            splash = SplashScreen()
+            self.page.controls = [splash]
+            self.page.update()
+            splash.start_animation(self.page)
+            
+            # Create login page but don't show it yet
+            login_page = LoginPage(
+                on_login_success=self._on_login_success,
+                page=self.page,
+                splash_screen=splash
+            )
+            # Trigger auto-login which will hide splash on success
+            login_page._trigger_auto_login()
+        else:
+            # No saved credentials, show login page directly
+            login_page = LoginPage(on_login_success=self._on_login_success, page=self.page)
+            self.page.controls = [login_page]
+            self.page.update()
+    
+    def _check_saved_credentials(self):
+        """Check if saved credentials exist."""
+        try:
+            from utils.credential_storage import credential_storage
+            credential = self.db_manager.get_login_credential()
+            if credential:
+                try:
+                    password = credential_storage.decrypt(credential.encrypted_password)
+                    return credential.email, password
+                except:
+                    return None, None
+        except:
+            pass
+        return None, None
     
     def _on_login_success(self):
         """Handle successful login."""
@@ -144,14 +183,11 @@ class TelegramUserTrackingApp:
     
     def _show_fetch_dialog(self):
         """Show fetch data dialog."""
-        logger.info("=== FETCH DIALOG BUTTON CLICKED ===")
-        
         if not self.page:
             logger.error("No page reference available!")
             return
         
         try:
-            logger.info("Creating FetchDataDialog...")
             dialog = FetchDataDialog(
                 db_manager=self.db_manager,
                 telegram_service=self.telegram_service,
@@ -160,10 +196,8 @@ class TelegramUserTrackingApp:
             
             dialog.page = self.page
             dialog.set_page(self.page)  # Initialize account list
-            logger.info(f"Dialog created successfully. Type: {type(dialog)}")
             
             self.page.open(dialog)
-            logger.info("Dialog opened using page.open()")
         except Exception as e:
             logger.error(f"Error showing dialog: {e}", exc_info=True)
             theme_manager.show_snackbar(

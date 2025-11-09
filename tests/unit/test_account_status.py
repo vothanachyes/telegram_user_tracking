@@ -42,11 +42,12 @@ class TestAccountStatus:
     @pytest.mark.asyncio
     async def test_check_account_status_active(self, telegram_service, sample_credential):
         """Test checking status for active account."""
-        # Mock successful connection
+        # Mock successful connection (Telethon)
         mock_client = Mock()
         mock_client.get_me = AsyncMock(return_value=Mock())
         mock_client.connect = AsyncMock()
         mock_client.disconnect = AsyncMock()
+        mock_client.is_user_authorized = AsyncMock(return_value=True)
         
         telegram_service.client_manager.create_client = Mock(return_value=mock_client)
         
@@ -56,11 +57,12 @@ class TestAccountStatus:
     @pytest.mark.asyncio
     async def test_check_account_status_expired(self, telegram_service, sample_credential):
         """Test checking status for expired account."""
-        # Mock failed connection (expired session)
+        # Mock failed connection (expired session) - Telethon
         mock_client = Mock()
-        mock_client.get_me = AsyncMock(side_effect=Exception("Session expired"))
+        mock_client.get_me = AsyncMock(return_value=None)
         mock_client.connect = AsyncMock()
         mock_client.disconnect = AsyncMock()
+        mock_client.is_user_authorized = AsyncMock(return_value=False)
         
         telegram_service.client_manager.create_client = Mock(return_value=mock_client)
         

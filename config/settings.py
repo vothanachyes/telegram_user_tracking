@@ -50,6 +50,35 @@ class Settings:
     def load_settings(self) -> AppSettings:
         """Load settings from database."""
         self._app_settings = self.db_manager.get_settings()
+        
+        # In dev mode, check .env for default Telegram API credentials if not set
+        # Auto-save to database so subsequent operations can fetch from DB
+        settings_updated = False
+        
+        if not self._app_settings.telegram_api_id:
+            dev_api_id = os.getenv("DEV_APP_ID") or os.getenv("APP_ID")
+            if dev_api_id:
+                self._app_settings.telegram_api_id = dev_api_id
+                settings_updated = True
+                logger.debug("Loaded DEV_APP_ID from .env and will save to database")
+        
+        if not self._app_settings.telegram_api_hash:
+            dev_api_hash = os.getenv("DEV_APP_HASH") or os.getenv("API_HASH")
+            if dev_api_hash:
+                self._app_settings.telegram_api_hash = dev_api_hash
+                settings_updated = True
+                logger.debug("Loaded DEV_APP_HASH from .env and will save to database")
+        
+        # Auto-save to database if we loaded dev credentials
+        if settings_updated:
+            try:
+                if self.save_settings(self._app_settings):
+                    logger.info("Auto-saved dev credentials from .env to database")
+                else:
+                    logger.warning("Failed to auto-save dev credentials to database")
+            except Exception as e:
+                logger.error(f"Error auto-saving dev credentials to database: {e}")
+        
         return self._app_settings
     
     def save_settings(self, settings: AppSettings) -> bool:

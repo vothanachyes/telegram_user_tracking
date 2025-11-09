@@ -51,7 +51,7 @@ def build_executable():
     # Hidden imports
     hidden_imports = [
         'flet',
-        'pyrogram',
+        'telethon',
         'firebase_admin',
         'pandas',
         'xlsxwriter',

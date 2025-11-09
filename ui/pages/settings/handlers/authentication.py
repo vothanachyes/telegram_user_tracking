@@ -136,6 +136,14 @@ class AuthenticationHandlerMixin(DialogHandlerMixin):
                 otp_value_container["value"] = None
                 self.authenticate_tab.otp_field.value = ""
                 
+                # Update helper text to inform user where to find code
+                # (will be updated after code request if sent via app)
+                if hasattr(self.authenticate_tab, 'otp_helper'):
+                    self.authenticate_tab.otp_helper.value = (
+                        theme_manager.t("enter_otp_code_instructions") or 
+                        "Enter the code sent to your phone or Telegram app"
+                    )
+                
                 self._otp_event = otp_event
                 self._otp_value_container = otp_value_container
                 self._waiting_for_otp = True

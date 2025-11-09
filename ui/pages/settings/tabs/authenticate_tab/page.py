@@ -53,13 +53,12 @@ class AuthenticateTab:
             color=theme_manager.text_secondary_color
         )
         
-        ENABLE_QR_LOGIN = False
+        ENABLE_QR_LOGIN = True
         
         qr_radio = ft.Radio(
             value="qr",
-            label=theme_manager.t("qr_code_login") + " 🚧",
-            disabled=not ENABLE_QR_LOGIN,
-            tooltip="QR Code login coming soon! Currently in development. Use phone login for now." if not ENABLE_QR_LOGIN else None
+            label=theme_manager.t("qr_code_login") or "QR Code Login",
+            disabled=not ENABLE_QR_LOGIN
         )
         
         self.login_method = ft.RadioGroup(
@@ -308,7 +307,9 @@ class AuthenticateTab:
     
     def _on_login_method_change(self, e):
         """Handle login method change."""
-        self.phone_field.visible = True
+        selected_method = self.login_method.value
+        # Show phone field only for phone login
+        self.phone_field.visible = (selected_method == "phone")
         if hasattr(self, 'page') and self.page:
             self.page.update()
     
@@ -324,9 +325,16 @@ class AuthenticateTab:
             if self.page and not self.handlers.page:
                 self.handlers.page = self.page
             
-            logger.debug(f"Connect button clicked. Login method: phone (QR disabled)")
+            # Check which login method is selected
+            selected_method = self.login_method.value if hasattr(self, 'login_method') else "phone"
+            logger.debug(f"Connect button clicked. Login method: {selected_method}")
             
-            self.handlers.handle_telegram_connect(self.phone_field, self.error_text)
+            if selected_method == "qr":
+                # Use QR code login
+                self.handlers.handle_telegram_connect_qr(self.error_text)
+            else:
+                # Use phone login
+                self.handlers.handle_telegram_connect(self.phone_field, self.error_text)
         except Exception as ex:
             logger.error(f"Error in _handle_telegram_connect: {ex}", exc_info=True)
             self.error_text.value = f"Error: {str(ex)}"

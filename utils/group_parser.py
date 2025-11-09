@@ -37,7 +37,7 @@ def parse_group_input(input_str: str) -> Tuple[Optional[int], Optional[str], Opt
     invite_link_pattern = r'https?://t\.me/(?:joinchat/|\+)([A-Za-z0-9_-]+)'
     match = re.search(invite_link_pattern, input_str)
     if match:
-        # Return the full invite link URL - Pyrogram can resolve it
+        # Return the full invite link URL - Telethon can resolve it
         invite_link = input_str.strip()
         return None, None, invite_link, None
     

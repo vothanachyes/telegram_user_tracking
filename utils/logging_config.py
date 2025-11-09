@@ -41,7 +41,7 @@ class CategoryFilter(logging.Filter):
         self.patterns = {
             'database': ['database.'],
             'firebase': ['config.firebase_config', 'services.auth_service'],
-            'telegram': ['services.telegram.', 'pyrogram'],
+            'telegram': ['services.telegram.', 'telethon'],
             'flet': ['flet'],
             'general': []  # Will match everything not matched by other categories
         }
@@ -256,7 +256,7 @@ class ColoredFormatter(logging.Formatter):
             return 'database'
         elif 'config.firebase_config' in logger_name or 'services.auth_service' in logger_name:
             return 'firebase'
-        elif 'services.telegram.' in logger_name or 'pyrogram' in logger_name:
+        elif 'services.telegram.' in logger_name or 'telethon' in logger_name:
             return 'telegram'
         elif logger_name == 'flet':
             return 'flet'

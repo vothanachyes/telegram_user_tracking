@@ -101,7 +101,7 @@ class AccountSelector:
             
             # Build option text
             if last_used:
-                option_text = f"{phone} ({status_text}) - {theme_manager.t('account_last_used')}: {last_used}"
+                option_text = f"{phone} ({status_text}) - {theme_manager.t('account_last_used').format(date=last_used)}"
             else:
                 option_text = f"{phone} ({status_text})"
             

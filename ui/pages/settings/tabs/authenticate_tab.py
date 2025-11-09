@@ -730,7 +730,7 @@ class AuthenticateTab:
                                 ),
                             ], spacing=10),
                             ft.Text(
-                                f"{theme_manager.t('account_last_used')}: {last_used_text}" if last_used_text else theme_manager.t("account_last_used") + ": Never",
+                                theme_manager.t('account_last_used').format(date=last_used_text) if last_used_text else theme_manager.t("account_last_used").format(date="Never"),
                                 size=12,
                                 color=theme_manager.text_secondary_color
                             ),

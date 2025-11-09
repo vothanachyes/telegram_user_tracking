@@ -59,19 +59,19 @@ class ProfilePage:
                     ft.Column([
                         ft.Text(
                             display_name,
-                            size=24,
+                            size=theme_manager.font_size_page_title,
                             weight=ft.FontWeight.BOLD
                         ),
                         ft.Text(
                             email,
-                            size=14,
+                            size=theme_manager.font_size_body,
                             color=theme_manager.text_secondary_color
                         ),
-                    ], spacing=5)
-                ], spacing=20),
+                    ], spacing=theme_manager.spacing_xs)
+                ], spacing=theme_manager.spacing_lg),
                 ft.Divider(),
                 self.logout_button,
-            ], spacing=15),
+            ], spacing=theme_manager.spacing_md),
             width=500
         )
     
@@ -82,64 +82,63 @@ class ProfilePage:
             content=ft.Column([
                 ft.Text(
                     theme_manager.t("profile"),
-                    size=32,
+                    size=theme_manager.font_size_page_title,
                     weight=ft.FontWeight.BOLD
                 ),
-                ft.Container(height=20),
                 
                 # Profile card - built fresh each time
                 self._build_profile_card(),
                 
-                ft.Container(height=20),
+                theme_manager.spacing_container("lg"),
                 
                 # License status card
                 self._build_license_status_card(),
                 
-                ft.Container(height=20),
+                theme_manager.spacing_container("lg"),
                 
                 # App info card
                 theme_manager.create_card(
                     content=ft.Column([
                         ft.Text(
                             theme_manager.t("developer_info"),
-                            size=20,
+                            size=theme_manager.font_size_section_title,
                             weight=ft.FontWeight.BOLD
                         ),
                         ft.Divider(),
                         ft.Row([
                             ft.Icon(ft.Icons.INFO, color=theme_manager.primary_color),
                             ft.Column([
-                                ft.Text(theme_manager.t("version"), size=12, color=theme_manager.text_secondary_color),
-                                ft.Text(settings.app_version, size=16),
-                            ], spacing=2)
-                        ], spacing=10),
+                                ft.Text(theme_manager.t("version"), size=theme_manager.font_size_small, color=theme_manager.text_secondary_color),
+                                ft.Text(settings.app_version, size=theme_manager.font_size_body),
+                            ], spacing=theme_manager.spacing_xs)
+                        ], spacing=theme_manager.spacing_sm),
                         ft.Row([
                             ft.Icon(ft.Icons.PERSON, color=theme_manager.primary_color),
                             ft.Column([
-                                ft.Text("Developer", size=12, color=theme_manager.text_secondary_color),
-                                ft.Text(settings.developer_name, size=16),
-                            ], spacing=2)
-                        ], spacing=10),
+                                ft.Text("Developer", size=theme_manager.font_size_small, color=theme_manager.text_secondary_color),
+                                ft.Text(settings.developer_name, size=theme_manager.font_size_body),
+                            ], spacing=theme_manager.spacing_xs)
+                        ], spacing=theme_manager.spacing_sm),
                         ft.Row([
                             ft.Icon(ft.Icons.EMAIL, color=theme_manager.primary_color),
                             ft.Column([
-                                ft.Text(theme_manager.t("email"), size=12, color=theme_manager.text_secondary_color),
-                                ft.Text(settings.developer_email, size=16),
-                            ], spacing=2)
-                        ], spacing=10),
+                                ft.Text(theme_manager.t("email"), size=theme_manager.font_size_small, color=theme_manager.text_secondary_color),
+                                ft.Text(settings.developer_email, size=theme_manager.font_size_body),
+                            ], spacing=theme_manager.spacing_xs)
+                        ], spacing=theme_manager.spacing_sm),
                         ft.Row([
                             ft.Icon(ft.Icons.PHONE, color=theme_manager.primary_color),
                             ft.Column([
-                                ft.Text(theme_manager.t("contact"), size=12, color=theme_manager.text_secondary_color),
-                                ft.Text(settings.developer_contact, size=16),
-                            ], spacing=2)
-                        ], spacing=10),
-                    ], spacing=15),
+                                ft.Text(theme_manager.t("contact"), size=theme_manager.font_size_small, color=theme_manager.text_secondary_color),
+                                ft.Text(settings.developer_contact, size=theme_manager.font_size_body),
+                            ], spacing=theme_manager.spacing_xs)
+                        ], spacing=theme_manager.spacing_sm),
+                    ], spacing=theme_manager.spacing_md),
                     width=500
                 ),
                 
-            ], scroll=ft.ScrollMode.AUTO, spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-            padding=20,
+            ], scroll=ft.ScrollMode.AUTO, spacing=theme_manager.spacing_sm, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=theme_manager.padding_lg,
             expand=True
         )
         
@@ -219,7 +218,7 @@ class ProfilePage:
                 content=ft.Text(
                     theme_manager.t("license_expired"),
                     color=ft.Colors.WHITE,
-                    size=12,
+                    size=theme_manager.font_size_small,
                     weight=ft.FontWeight.BOLD
                 ),
                 bgcolor=ft.Colors.RED,
@@ -231,7 +230,7 @@ class ProfilePage:
                 content=ft.Text(
                     f"{theme_manager.t('license_expiring_soon')} ({days_remaining} {theme_manager.t('days_remaining')})",
                     color=ft.Colors.WHITE,
-                    size=12,
+                    size=theme_manager.font_size_small,
                     weight=ft.FontWeight.BOLD
                 ),
                 bgcolor=ft.Colors.ORANGE,
@@ -243,7 +242,7 @@ class ProfilePage:
                 content=ft.Text(
                     theme_manager.t("subscription"),
                     color=ft.Colors.WHITE,
-                    size=12,
+                    size=theme_manager.font_size_small,
                     weight=ft.FontWeight.BOLD
                 ),
                 bgcolor=theme_manager.success_color,
@@ -256,7 +255,7 @@ class ProfilePage:
                 ft.Row([
                     ft.Text(
                         theme_manager.t("subscription"),
-                        size=20,
+                        size=theme_manager.font_size_section_title,
                         weight=ft.FontWeight.BOLD
                     ),
                     status_badge
@@ -266,38 +265,38 @@ class ProfilePage:
                     ft.Container(
                         content=ft.Text(
                             tier_name,
-                            size=18,
+                            size=theme_manager.font_size_subsection_title,
                             weight=ft.FontWeight.BOLD,
                             color=ft.Colors.WHITE
                         ),
                         bgcolor=tier_color,
-                        padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                        padding=ft.padding.symmetric(horizontal=theme_manager.padding_sm, vertical=theme_manager.spacing_xs),
                         border_radius=theme_manager.corner_radius
                     ),
-                ], spacing=10),
-                ft.Container(height=10),
+                ], spacing=theme_manager.spacing_sm),
+                theme_manager.spacing_container("sm"),
                 ft.Row([
                     ft.Icon(ft.Icons.DEVICES, color=theme_manager.primary_color),
                     ft.Text(
                         f"{theme_manager.t('active_devices')}: {current_devices}/{max_devices}",
-                        size=14
+                        size=theme_manager.font_size_body
                     )
-                ], spacing=10),
+                ], spacing=theme_manager.spacing_sm),
                 ft.Row([
                     ft.Icon(ft.Icons.GROUP, color=theme_manager.primary_color),
                     ft.Text(
                         f"{theme_manager.t('groups_used')}: {current_groups}/{'∞' if max_groups == -1 else max_groups}",
-                        size=14
+                        size=theme_manager.font_size_body
                     )
-                ], spacing=10),
-                ft.Container(height=10),
+                ], spacing=theme_manager.spacing_sm),
+                theme_manager.spacing_container("sm"),
                 ft.Row([
                     ft.Icon(ft.Icons.CALENDAR_TODAY, color=theme_manager.primary_color),
                     ft.Text(
                         f"{theme_manager.t('expires_on')}: {expiration_date.strftime('%Y-%m-%d') if expiration_date else 'N/A'}",
-                        size=14
+                        size=theme_manager.font_size_body
                     )
-                ], spacing=10),
+                ], spacing=theme_manager.spacing_sm),
                 # Show remaining days prominently
                 ft.Container(
                     content=ft.Row([
@@ -308,17 +307,17 @@ class ProfilePage:
                         ),
                         ft.Text(
                             f"{days_remaining} {theme_manager.t('days_remaining')}" if days_remaining is not None else theme_manager.t("no_expiration"),
-                            size=16,
+                            size=theme_manager.font_size_body,
                             weight=ft.FontWeight.BOLD,
                             color=ft.Colors.WHITE
                         )
-                    ], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
+                    ], spacing=theme_manager.spacing_sm, alignment=ft.MainAxisAlignment.CENTER),
                     bgcolor=ft.Colors.BLUE_700 if days_remaining is not None and days_remaining > 7 else (ft.Colors.ORANGE_700 if days_remaining is not None and days_remaining > 0 else ft.Colors.RED_700),
-                    padding=ft.padding.symmetric(horizontal=16, vertical=10),
+                    padding=ft.padding.symmetric(horizontal=theme_manager.spacing_lg, vertical=theme_manager.spacing_sm),
                     border_radius=theme_manager.corner_radius,
                     width=500
                 ) if days_remaining is not None or expiration_date is None else ft.Container(height=0),
-                ft.Container(height=10),
+                theme_manager.spacing_container("sm"),
                 ft.ElevatedButton(
                     theme_manager.t("view_pricing"),
                     icon=ft.Icons.ARROW_FORWARD,
@@ -326,7 +325,7 @@ class ProfilePage:
                     bgcolor=theme_manager.primary_color,
                     color=ft.Colors.WHITE
                 )
-            ], spacing=15),
+            ], spacing=theme_manager.spacing_md),
             width=500
         )
     

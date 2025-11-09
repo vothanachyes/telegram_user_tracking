@@ -102,14 +102,13 @@ class SettingsPage(ft.Container):
             ft.Row([
                 ft.Text(
                     theme_manager.t("settings"),
-                    size=32,
+                    size=theme_manager.font_size_page_title,
                     weight=ft.FontWeight.BOLD,
-                expand=True
-            ),
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            ft.Container(height=20),
+                ),
+                ft.Container(expand=True)
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, spacing=0),
             self.tabs_widget,
-        ], spacing=15, expand=True)
+        ], spacing=0, expand=True)
     
     def update_settings(self):
         """Update all tabs with current settings."""

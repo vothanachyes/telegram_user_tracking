@@ -54,7 +54,7 @@ class LoginPage(ft.Container):
         self.error_text = ft.Text(
             "",
             color=ft.Colors.RED,
-            size=14,
+            size=theme_manager.font_size_body,
             visible=False
         )
         
@@ -69,7 +69,7 @@ class LoginPage(ft.Container):
         # Build layout
         super().__init__(
             content=ft.Column([
-                ft.Container(height=50),
+                theme_manager.spacing_container("xxl"),
                 # Logo/Title
                 ft.Container(
                     content=ft.Column([
@@ -80,51 +80,51 @@ class LoginPage(ft.Container):
                         ),
                         ft.Text(
                             settings.app_name,
-                            size=32,
+                            size=theme_manager.font_size_page_title,
                             weight=ft.FontWeight.BOLD,
                             text_align=ft.TextAlign.CENTER
                         ),
                         ft.Text(
                             f"v{settings.app_version}",
-                            size=14,
+                            size=theme_manager.font_size_body,
                             color=theme_manager.text_secondary_color,
                             text_align=ft.TextAlign.CENTER
                         )
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=theme_manager.spacing_sm),
                     alignment=ft.alignment.center
                 ),
-                ft.Container(height=30),
+                theme_manager.spacing_container("xl"),
                 # Login form
                 theme_manager.create_card(
                     content=ft.Column([
                         ft.Text(
                             theme_manager.t("login"),
-                            size=24,
+                            size=theme_manager.font_size_page_title,
                             weight=ft.FontWeight.BOLD
                         ),
-                        ft.Container(height=10),
+                        theme_manager.spacing_container("sm"),
                         self.email_field,
                         self.password_field,
                         self.remember_checkbox,
                         self.error_text,
-                        ft.Container(height=10),
+                        theme_manager.spacing_container("sm"),
                         ft.Row([
                             self.login_button,
                             self.loading_indicator
-                        ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.STRETCH, spacing=15),
+                        ], alignment=ft.MainAxisAlignment.CENTER, spacing=theme_manager.spacing_sm),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.STRETCH, spacing=theme_manager.spacing_md),
                     width=400,
-                    padding=30
+                    padding=theme_manager.padding_xl
                 ),
-                ft.Container(height=30),
+                theme_manager.spacing_container("xl"),
                 # Developer info
                 ft.Text(
                     f"{settings.developer_name} • {settings.developer_contact}",
-                    size=12,
+                    size=theme_manager.font_size_small,
                     color=theme_manager.text_secondary_color,
                     text_align=ft.TextAlign.CENTER
                 )
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, scroll=ft.ScrollMode.AUTO),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, scroll=ft.ScrollMode.AUTO, spacing=theme_manager.spacing_md),
             alignment=ft.alignment.center,
             expand=True,
             bgcolor=theme_manager.background_color

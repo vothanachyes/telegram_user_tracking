@@ -92,13 +92,12 @@ class TelegramPage(ft.Container):
             content=ft.Column([
                 ft.Text(
                     theme_manager.t("telegram"),
-                    size=32,
+                    size=theme_manager.font_size_page_title,
                     weight=ft.FontWeight.BOLD
                 ),
-                ft.Container(height=10),
                 self.tabs,
-            ], spacing=10, expand=True),
-            padding=20,
+            ], spacing=0, expand=True),
+            padding=theme_manager.padding_lg,
             expand=True
         )
     

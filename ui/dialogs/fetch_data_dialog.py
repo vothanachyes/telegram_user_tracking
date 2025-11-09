@@ -572,6 +572,10 @@ class FetchDataDialog(ft.AlertDialog):
                 self.status_text.value = f"{theme_manager.t('fetch_complete')}: {message_count} {theme_manager.t('messages')}"
                 self.status_text.color = ft.Colors.GREEN
                 
+                # Refresh group selector with updated last_fetch_date after successful fetch
+                groups = self.db_manager.get_all_groups()
+                self.group_selector.refresh_selected_group_info(groups)
+                
                 if self.page:
                     theme_manager.show_snackbar(
                         self.page,

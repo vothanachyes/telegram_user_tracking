@@ -92,6 +92,11 @@ class ThemeManager:
         return COLORS["secondary"] if self.is_dark else COLORS["primary"]
     
     @property
+    def primary_dark(self) -> str:
+        """Get primary dark color."""
+        return COLORS["primary_dark"]
+    
+    @property
     def background_color(self) -> str:
         """Get background color."""
         return COLORS["background_dark"] if self.is_dark else COLORS["background_light"]
@@ -141,6 +146,135 @@ class ThemeManager:
         """Get corner radius."""
         return self._corner_radius
     
+    # Font Size Properties
+    @property
+    def font_size_page_title(self) -> int:
+        """Get page title font size (24px)."""
+        return 24
+    
+    @property
+    def font_size_section_title(self) -> int:
+        """Get section title font size (20px)."""
+        return 20
+    
+    @property
+    def font_size_subsection_title(self) -> int:
+        """Get subsection title font size (18px)."""
+        return 18
+    
+    @property
+    def font_size_body(self) -> int:
+        """Get body text font size (14px)."""
+        return 14
+    
+    @property
+    def font_size_small(self) -> int:
+        """Get small text font size (12px)."""
+        return 12
+    
+    @property
+    def font_size_large_number(self) -> int:
+        """Get large number font size (32px)."""
+        return 32
+    
+    @property
+    def font_size_medium_number(self) -> int:
+        """Get medium number font size (24px)."""
+        return 24
+    
+    # Spacing Properties (8px base unit)
+    @property
+    def spacing_xs(self) -> int:
+        """Get extra small spacing (4px)."""
+        return 4
+    
+    @property
+    def spacing_sm(self) -> int:
+        """Get small spacing (8px)."""
+        return 8
+    
+    @property
+    def spacing_md(self) -> int:
+        """Get medium spacing (12px)."""
+        return 12
+    
+    @property
+    def spacing_lg(self) -> int:
+        """Get large spacing (16px)."""
+        return 16
+    
+    @property
+    def spacing_xl(self) -> int:
+        """Get extra large spacing (20px)."""
+        return 20
+    
+    @property
+    def spacing_xxl(self) -> int:
+        """Get 2X large spacing (24px)."""
+        return 24
+    
+    @property
+    def spacing_xxxl(self) -> int:
+        """Get 3X large spacing (32px)."""
+        return 32
+    
+    # Padding Properties
+    @property
+    def padding_xs(self) -> int:
+        """Get extra small padding (8px)."""
+        return 8
+    
+    @property
+    def padding_sm(self) -> int:
+        """Get small padding (12px)."""
+        return 12
+    
+    @property
+    def padding_md(self) -> int:
+        """Get medium padding (16px)."""
+        return 16
+    
+    @property
+    def padding_lg(self) -> int:
+        """Get large padding (20px)."""
+        return 20
+    
+    @property
+    def padding_xl(self) -> int:
+        """Get extra large padding (24px)."""
+        return 24
+    
+    # Container Height Properties
+    @property
+    def height_xs(self) -> int:
+        """Get extra small height (8px)."""
+        return 8
+    
+    @property
+    def height_sm(self) -> int:
+        """Get small height (12px)."""
+        return 12
+    
+    @property
+    def height_md(self) -> int:
+        """Get medium height (16px)."""
+        return 16
+    
+    @property
+    def height_lg(self) -> int:
+        """Get large height (20px)."""
+        return 20
+    
+    @property
+    def height_xl(self) -> int:
+        """Get extra large height (24px)."""
+        return 24
+    
+    @property
+    def height_xxl(self) -> int:
+        """Get 2X large height (32px)."""
+        return 32
+    
     def set_theme(self, theme: str):
         """Set theme (dark/light)."""
         self._current_theme = theme
@@ -173,11 +307,31 @@ class ThemeManager:
             lang_dict = TRANSLATIONS.get("en", {})
         return lang_dict.get(key, key)
     
+    def spacing_container(self, size: str = "lg") -> ft.Container:
+        """
+        Create a spacing container with standard height.
+        
+        Args:
+            size: Size of spacing (xs, sm, md, lg, xl, xxl)
+        
+        Returns:
+            Container with appropriate height for spacing
+        """
+        height_map = {
+            "xs": self.height_xs,
+            "sm": self.height_sm,
+            "md": self.height_md,
+            "lg": self.height_lg,
+            "xl": self.height_xl,
+            "xxl": self.height_xxl
+        }
+        return ft.Container(height=height_map.get(size, self.height_lg))
+    
     def create_card(self, content: ft.Control, **kwargs) -> ft.Container:
         """Create a themed card container."""
         # Set default padding only if not provided in kwargs
         if 'padding' not in kwargs:
-            kwargs['padding'] = 15
+            kwargs['padding'] = self.padding_md
         return ft.Container(
             content=content,
             bgcolor=self.surface_color,
@@ -320,6 +474,59 @@ class ThemeManager:
     def show_toast_info(self, page: ft.Page, message: str, duration: int = 3000):
         """Show an info toast notification."""
         self.show_toast(page, message, "info", duration)
+    
+    def get_gradient_background(self, rotation_angle: int = 0) -> ft.LinearGradient:
+        """
+        Get gradient background with rotation angle.
+        
+        Args:
+            rotation_angle: Rotation angle in degrees (0, 45, 90, 135, 180, 225, 270, 315)
+        
+        Returns:
+            LinearGradient with appropriate begin and end points
+        """
+        import math
+        
+        # Convert angle to radians
+        angle_rad = math.radians(rotation_angle)
+        
+        # Calculate begin and end points based on angle
+        # For 0°: top-left to bottom-right (diagonal)
+        # For 45°: top to bottom-right
+        # For 90°: top to bottom (vertical)
+        # For 135°: top-right to bottom-left
+        # For 180°: right to left (horizontal)
+        # etc.
+        # Use unit circle to calculate direction
+        begin_x = 0.5 * (1 - math.cos(angle_rad))
+        begin_y = 0.5 * (1 - math.sin(angle_rad))
+        end_x = 0.5 * (1 + math.cos(angle_rad))
+        end_y = 0.5 * (1 + math.sin(angle_rad))
+        
+        return ft.LinearGradient(
+            begin=ft.alignment.Alignment(begin_x, begin_y),
+            end=ft.alignment.Alignment(end_x, end_y),
+            colors=[self.primary_color, self.primary_dark]
+        )
+    
+    def get_header_background_image_path(self) -> Optional[str]:
+        """
+        Get header background image path if it exists.
+        
+        Returns:
+            Path to header background image or None
+        """
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent
+        for ext in ['.png', '.jpg', '.jpeg']:
+            bg_path = project_root / "assets" / f"header_background{ext}"
+            if bg_path.exists():
+                return str(bg_path)
+        return None
+    
+    def get_header_background_image_opacity(self) -> float:
+        """Get opacity for header background image (default 0.3)."""
+        return 0.3
     
 # Global theme manager instance
 theme_manager = ThemeManager()

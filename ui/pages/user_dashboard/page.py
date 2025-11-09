@@ -91,8 +91,8 @@ class UserDashboardPage(ft.Container):
                 self.user_detail_section,
                 # Tabs
                 self._create_tabs(groups, default_group_id),
-            ], spacing=15, expand=True),
-            padding=20,
+            ], spacing=theme_manager.spacing_md, expand=True),
+            padding=theme_manager.padding_lg,
             expand=True
         )
     

@@ -170,6 +170,29 @@ class GroupSelector:
                 return
         self.clear_group_info()
     
+    def refresh_selected_group_info(self, groups: List[TelegramGroup]):
+        """
+        Refresh the selected group's info after groups list is updated.
+        
+        Args:
+            groups: Updated list of TelegramGroup objects
+        """
+        # Update the groups list
+        self.groups = groups
+        
+        # If a group is selected, refresh its info
+        if self.selected_group_id:
+            for group in groups:
+                if group.group_id == self.selected_group_id:
+                    self.set_group_info(group.group_name, group.last_fetch_date)
+                    # Also update the dropdown option text
+                    self.update_groups(groups)
+                    # Restore the selected value
+                    self.group_dropdown.value = str(self.selected_group_id)
+                    if self.page:
+                        self.group_dropdown.update()
+                    return
+    
     def _on_group_change(self, e):
         """Handle group selection change from dropdown."""
         if not e.control.value:

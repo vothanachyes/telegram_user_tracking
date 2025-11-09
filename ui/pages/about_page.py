@@ -49,13 +49,12 @@ class AboutPage:
             content=ft.Column([
                 ft.Text(
                     theme_manager.t("about"),
-                    size=32,
+                    size=theme_manager.font_size_page_title,
                     weight=ft.FontWeight.BOLD
                 ),
-                ft.Container(height=20),
                 self.tabs
-            ], scroll=ft.ScrollMode.AUTO, spacing=10),
-            padding=20,
+            ], scroll=ft.ScrollMode.AUTO, spacing=0),
+            padding=theme_manager.padding_lg,
             expand=True
         )
     
@@ -72,75 +71,75 @@ class AboutPage:
                     content=ft.Column([
                         ft.Text(
                             theme_manager.t("app_info"),
-                            size=20,
+                            size=theme_manager.font_size_section_title,
                             weight=ft.FontWeight.BOLD
                         ),
                         ft.Divider(),
                         ft.Text(
                             theme_manager.t("app_description"),
-                            size=14,
+                            size=theme_manager.font_size_body,
                             color=theme_manager.text_secondary_color
                         ),
-                        ft.Container(height=20),
+                        theme_manager.spacing_container("lg"),
                         ft.Text(
                             theme_manager.t("features_overview"),
-                            size=18,
+                            size=theme_manager.font_size_subsection_title,
                             weight=ft.FontWeight.BOLD
                         ),
-                        ft.Container(height=10),
+                        theme_manager.spacing_container("sm"),
                         self._create_feature_item(theme_manager.t("feature_track_messages")),
                         self._create_feature_item(theme_manager.t("feature_user_analytics")),
                         self._create_feature_item(theme_manager.t("feature_export_reports")),
                         self._create_feature_item(theme_manager.t("feature_media_download")),
                         self._create_feature_item(theme_manager.t("feature_reaction_tracking")),
-                    ], spacing=15),
+                    ], spacing=theme_manager.spacing_md),
                     width=700
                 ),
                 
-                ft.Container(height=20),
+                theme_manager.spacing_container("lg"),
                 
                 # Developer info card
                 theme_manager.create_card(
                     content=ft.Column([
                         ft.Text(
                             theme_manager.t("developer_info"),
-                            size=20,
+                            size=theme_manager.font_size_section_title,
                             weight=ft.FontWeight.BOLD
                         ),
                         ft.Divider(),
                         ft.Row([
                             ft.Icon(ft.Icons.INFO, color=theme_manager.primary_color),
                             ft.Column([
-                                ft.Text(theme_manager.t("version"), size=12, color=theme_manager.text_secondary_color),
-                                ft.Text(settings.app_version, size=16),
-                            ], spacing=2)
-                        ], spacing=10),
+                                ft.Text(theme_manager.t("version"), size=theme_manager.font_size_small, color=theme_manager.text_secondary_color),
+                                ft.Text(settings.app_version, size=theme_manager.font_size_body),
+                            ], spacing=theme_manager.spacing_xs)
+                        ], spacing=theme_manager.spacing_sm),
                         ft.Row([
                             ft.Icon(ft.Icons.PERSON, color=theme_manager.primary_color),
                             ft.Column([
-                                ft.Text("Developer", size=12, color=theme_manager.text_secondary_color),
-                                ft.Text(settings.developer_name, size=16),
-                            ], spacing=2)
-                        ], spacing=10),
+                                ft.Text("Developer", size=theme_manager.font_size_small, color=theme_manager.text_secondary_color),
+                                ft.Text(settings.developer_name, size=theme_manager.font_size_body),
+                            ], spacing=theme_manager.spacing_xs)
+                        ], spacing=theme_manager.spacing_sm),
                         ft.Row([
                             ft.Icon(ft.Icons.EMAIL, color=theme_manager.primary_color),
                             ft.Column([
-                                ft.Text(theme_manager.t("email"), size=12, color=theme_manager.text_secondary_color),
-                                ft.Text(settings.developer_email, size=16),
-                            ], spacing=2)
-                        ], spacing=10),
+                                ft.Text(theme_manager.t("email"), size=theme_manager.font_size_small, color=theme_manager.text_secondary_color),
+                                ft.Text(settings.developer_email, size=theme_manager.font_size_body),
+                            ], spacing=theme_manager.spacing_xs)
+                        ], spacing=theme_manager.spacing_sm),
                         ft.Row([
                             ft.Icon(ft.Icons.PHONE, color=theme_manager.primary_color),
                             ft.Column([
-                                ft.Text(theme_manager.t("contact"), size=12, color=theme_manager.text_secondary_color),
-                                ft.Text(settings.developer_contact, size=16),
-                            ], spacing=2)
-                        ], spacing=10),
-                    ], spacing=15),
+                                ft.Text(theme_manager.t("contact"), size=theme_manager.font_size_small, color=theme_manager.text_secondary_color),
+                                ft.Text(settings.developer_contact, size=theme_manager.font_size_body),
+                            ], spacing=theme_manager.spacing_xs)
+                        ], spacing=theme_manager.spacing_sm),
+                    ], spacing=theme_manager.spacing_md),
                     width=700
                 ),
                 
-                ft.Container(height=20),
+                theme_manager.spacing_container("lg"),
                 
                 # License info card
                 self._build_license_info_card()
@@ -163,18 +162,18 @@ class AboutPage:
             content=ft.Column([
                 ft.Text(
                     theme_manager.t("pricing"),
-                    size=24,
+                    size=theme_manager.font_size_page_title,
                     weight=ft.FontWeight.BOLD
                 ),
-                ft.Container(height=20),
+                theme_manager.spacing_container("lg"),
                 ft.Row(
                     pricing_cards,
-                    spacing=20,
+                    spacing=theme_manager.spacing_lg,
                     wrap=True,
                     alignment=ft.MainAxisAlignment.CENTER
                 )
-            ], scroll=ft.ScrollMode.AUTO, spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-            padding=20,
+            ], scroll=ft.ScrollMode.AUTO, spacing=theme_manager.spacing_sm, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=theme_manager.padding_lg,
             expand=True
         )
     
@@ -182,8 +181,8 @@ class AboutPage:
         """Create a feature list item with checkmark."""
         return ft.Row([
             ft.Icon(ft.Icons.CHECK_CIRCLE, color=theme_manager.success_color, size=20),
-            ft.Text(text, size=14, color=theme_manager.text_color)
-        ], spacing=10)
+            ft.Text(text, size=theme_manager.font_size_body, color=theme_manager.text_color)
+        ], spacing=theme_manager.spacing_sm)
     
     def _build_license_info_card(self) -> ft.Container:
         """Build license information card."""
@@ -231,7 +230,7 @@ class AboutPage:
             content=ft.Column([
                 ft.Text(
                     theme_manager.t("current_plan"),
-                    size=20,
+                    size=theme_manager.font_size_section_title,
                     weight=ft.FontWeight.BOLD
                 ),
                 ft.Divider(),
@@ -239,39 +238,39 @@ class AboutPage:
                     ft.Container(
                         content=ft.Text(
                             tier_name,
-                            size=18,
+                            size=theme_manager.font_size_subsection_title,
                             weight=ft.FontWeight.BOLD,
                             color=ft.Colors.WHITE
                         ),
                         bgcolor=tier_color,
-                        padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                        padding=ft.padding.symmetric(horizontal=theme_manager.padding_sm, vertical=theme_manager.spacing_xs),
                         border_radius=theme_manager.corner_radius
                     ),
                     status_text
-                ], spacing=10, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                ft.Container(height=10),
+                ], spacing=theme_manager.spacing_sm, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                theme_manager.spacing_container("sm"),
                 ft.Row([
                     ft.Icon(ft.Icons.DEVICES, color=theme_manager.primary_color),
                     ft.Text(
                         f"{theme_manager.t('active_devices')}: {current_devices}/{max_devices}",
-                        size=14
+                        size=theme_manager.font_size_body
                     )
-                ], spacing=10),
+                ], spacing=theme_manager.spacing_sm),
                 ft.Row([
                     ft.Icon(ft.Icons.GROUP, color=theme_manager.primary_color),
                     ft.Text(
                         f"{theme_manager.t('groups_used')}: {current_groups}/{'∞' if max_groups == -1 else max_groups}",
-                        size=14
+                        size=theme_manager.font_size_body
                     )
-                ], spacing=10),
-                ft.Container(height=10),
+                ], spacing=theme_manager.spacing_sm),
+                theme_manager.spacing_container("sm"),
                 ft.Row([
                     ft.Icon(ft.Icons.CALENDAR_TODAY, color=theme_manager.primary_color),
                     ft.Text(
                         f"{theme_manager.t('expires_on')}: {expiration_date.strftime('%Y-%m-%d') if expiration_date else 'N/A'}",
-                        size=14
+                        size=theme_manager.font_size_body
                     )
-                ], spacing=10),
+                ], spacing=theme_manager.spacing_sm),
                 # Show remaining days prominently
                 ft.Container(
                     content=ft.Row([
@@ -282,17 +281,17 @@ class AboutPage:
                         ),
                         ft.Text(
                             f"{days_remaining} {theme_manager.t('days_remaining')}" if days_remaining is not None else theme_manager.t("no_expiration"),
-                            size=16,
+                            size=theme_manager.font_size_body,
                             weight=ft.FontWeight.BOLD,
                             color=ft.Colors.WHITE
                         )
-                    ], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
+                    ], spacing=theme_manager.spacing_sm, alignment=ft.MainAxisAlignment.CENTER),
                     bgcolor=ft.Colors.BLUE_700 if days_remaining is not None and days_remaining > 7 else (ft.Colors.ORANGE_700 if days_remaining is not None and days_remaining > 0 else ft.Colors.RED_700),
-                    padding=ft.padding.symmetric(horizontal=16, vertical=10),
+                    padding=ft.padding.symmetric(horizontal=theme_manager.spacing_lg, vertical=theme_manager.spacing_sm),
                     border_radius=theme_manager.corner_radius,
                     width=700
                 ) if days_remaining is not None or expiration_date is None else ft.Container(height=0),
-                ft.Container(height=10),
+                theme_manager.spacing_container("sm"),
                 ft.ElevatedButton(
                     theme_manager.t("view_pricing"),
                     icon=ft.Icons.ARROW_FORWARD,
@@ -300,7 +299,7 @@ class AboutPage:
                     bgcolor=theme_manager.primary_color,
                     color=ft.Colors.WHITE
                 )
-            ], spacing=15),
+            ], spacing=theme_manager.spacing_md),
             width=700
         )
     
@@ -327,24 +326,24 @@ class AboutPage:
         if max_groups == -1:
             feature_items.append(ft.Row([
                 ft.Icon(ft.Icons.CHECK, color=theme_manager.success_color, size=16),
-                ft.Text(theme_manager.t("feature_unlimited_groups"), size=12)
-            ], spacing=5))
+                ft.Text(theme_manager.t("feature_unlimited_groups"), size=theme_manager.font_size_small)
+            ], spacing=theme_manager.spacing_xs))
         else:
             feature_items.append(ft.Row([
                 ft.Icon(ft.Icons.CHECK, color=theme_manager.success_color, size=16),
-                ft.Text(f"{max_groups} {theme_manager.t('max_groups')}", size=12)
-            ], spacing=5))
+                ft.Text(f"{max_groups} {theme_manager.t('max_groups')}", size=theme_manager.font_size_small)
+            ], spacing=theme_manager.spacing_xs))
         
         feature_items.append(ft.Row([
             ft.Icon(ft.Icons.CHECK, color=theme_manager.success_color, size=16),
-            ft.Text(f"{max_devices} {theme_manager.t('max_devices')}", size=12)
-        ], spacing=5))
+            ft.Text(f"{max_devices} {theme_manager.t('max_devices')}", size=theme_manager.font_size_small)
+        ], spacing=theme_manager.spacing_xs))
         
         if "priority_support" in features:
             feature_items.append(ft.Row([
                 ft.Icon(ft.Icons.CHECK, color=theme_manager.success_color, size=16),
-                ft.Text(theme_manager.t("feature_priority_support"), size=12)
-            ], spacing=5))
+                ft.Text(theme_manager.t("feature_priority_support"), size=theme_manager.font_size_small)
+            ], spacing=theme_manager.spacing_xs))
         
         # Contact button
         contact_button = ft.ElevatedButton(
@@ -362,23 +361,23 @@ class AboutPage:
                     content=ft.Column([
                         ft.Text(
                             tier_name,
-                            size=24,
+                            size=theme_manager.font_size_page_title,
                             weight=ft.FontWeight.BOLD,
                             color=ft.Colors.WHITE
                         ),
                         ft.Text(
                             f"${price_usd} / {price_khr:,} KHR",
-                            size=16,
+                            size=theme_manager.font_size_body,
                             color=ft.Colors.WHITE
                         ),
                         ft.Text(
                             theme_manager.t("per_month"),
-                            size=12,
+                            size=theme_manager.font_size_small,
                             color=ft.Colors.WHITE70
                         )
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=theme_manager.spacing_xs),
                     bgcolor=tier_color,
-                    padding=20,
+                    padding=theme_manager.padding_lg,
                     border_radius=ft.border_radius.only(
                         top_left=theme_manager.corner_radius,
                         top_right=theme_manager.corner_radius
@@ -386,19 +385,19 @@ class AboutPage:
                 ),
                 ft.Container(
                     content=ft.Column([
-                        ft.Container(height=10),
-                        ft.Column(feature_items, spacing=8),
-                        ft.Container(height=20),
+                        theme_manager.spacing_container("sm"),
+                        ft.Column(feature_items, spacing=theme_manager.spacing_sm),
+                        theme_manager.spacing_container("lg"),
                         contact_button,
-                        ft.Container(height=10),
+                        theme_manager.spacing_container("sm"),
                         ft.Text(
                             theme_manager.t("current_plan") if is_current else "",
-                            size=12,
+                            size=theme_manager.font_size_small,
                             color=theme_manager.success_color,
                             weight=ft.FontWeight.BOLD if is_current else ft.FontWeight.NORMAL
                         ) if is_current else ft.Container(height=0)
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                    padding=20,
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=theme_manager.spacing_xs),
+                    padding=theme_manager.padding_lg,
                     bgcolor=theme_manager.surface_color,
                     border_radius=ft.border_radius.only(
                         bottom_left=theme_manager.corner_radius,

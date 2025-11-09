@@ -52,14 +52,14 @@ class DashboardPage(ft.Container):
                 icon=ft.Icons.STORAGE,
                 color=ft.Colors.ORANGE
             ),
-        ], spacing=15, wrap=True)
+        ], spacing=theme_manager.spacing_md, wrap=True)
         
         # Monthly stats
         self.monthly_stats = theme_manager.create_card(
             content=ft.Column([
                 ft.Text(
                     theme_manager.t("statistics"),
-                    size=20,
+                    size=theme_manager.font_size_section_title,
                     weight=ft.FontWeight.BOLD
                 ),
                 ft.Divider(),
@@ -67,12 +67,12 @@ class DashboardPage(ft.Container):
                     ft.Column([
                         ft.Text(
                             theme_manager.t("messages_today"),
-                            size=14,
+                            size=theme_manager.font_size_body,
                             color=theme_manager.text_secondary_color
                         ),
                         ft.Text(
                             str(stats['messages_today']),
-                            size=32,
+                            size=theme_manager.font_size_large_number,
                             weight=ft.FontWeight.BOLD
                         )
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
@@ -80,17 +80,17 @@ class DashboardPage(ft.Container):
                     ft.Column([
                         ft.Text(
                             theme_manager.t("messages_this_month"),
-                            size=14,
+                            size=theme_manager.font_size_body,
                             color=theme_manager.text_secondary_color
                         ),
                         ft.Text(
                             str(stats['messages_this_month']),
-                            size=32,
+                            size=theme_manager.font_size_large_number,
                             weight=ft.FontWeight.BOLD
                         )
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 ], alignment=ft.MainAxisAlignment.SPACE_AROUND, expand=True)
-            ], spacing=10)
+            ], spacing=theme_manager.spacing_sm)
         )
         
         # Recent activity
@@ -99,7 +99,7 @@ class DashboardPage(ft.Container):
                 ft.Row([
                     ft.Text(
                         theme_manager.t("recent_activity"),
-                        size=20,
+                        size=theme_manager.font_size_section_title,
                         weight=ft.FontWeight.BOLD
                     ),
                     ft.Container(expand=True),
@@ -111,7 +111,7 @@ class DashboardPage(ft.Container):
                 ]),
                 ft.Divider(),
                 self._get_recent_messages()
-            ], spacing=10)
+            ], spacing=theme_manager.spacing_sm)
         )
         
         # Build layout
@@ -120,21 +120,20 @@ class DashboardPage(ft.Container):
                 ft.Row([
                     ft.Text(
                         theme_manager.t("dashboard"),
-                        size=32,
+                        size=theme_manager.font_size_page_title,
                         weight=ft.FontWeight.BOLD
                     ),
                     ft.Container(expand=True),
                     self._create_sample_data_badge() if self.is_sample_data else ft.Container(),
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                ft.Container(height=20),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, spacing=0),
                 self.stat_cards,
-                ft.Container(height=20),
+                theme_manager.spacing_container("lg"),
                 ft.Row([
                     self.monthly_stats,
                     self.recent_activity,
-                ], spacing=15, expand=True),
-            ], scroll=ft.ScrollMode.AUTO, spacing=10),
-            padding=20,
+                ], spacing=theme_manager.spacing_md, expand=True),
+            ], scroll=ft.ScrollMode.AUTO, spacing=theme_manager.spacing_sm),
+            padding=theme_manager.padding_lg,
             expand=True
         )
     
@@ -165,13 +164,13 @@ class DashboardPage(ft.Container):
                     ),
                     trailing=ft.Text(
                         self._format_message_date(msg.date_sent),
-                        size=12,
+                        size=theme_manager.font_size_small,
                         color=theme_manager.text_secondary_color
                     )
                 )
             )
         
-        return ft.Column(message_items, spacing=5, scroll=ft.ScrollMode.AUTO, height=400)
+        return ft.Column(message_items, spacing=theme_manager.spacing_xs, scroll=ft.ScrollMode.AUTO, height=400)
     
     def _format_message_date(self, date_value) -> str:
         """Format message date, handling both string and datetime objects."""
@@ -250,7 +249,7 @@ class DashboardPage(ft.Container):
                 ),
                 ft.Text(
                     "Sample Data",
-                    size=13,
+                    size=theme_manager.font_size_small,
                     weight=ft.FontWeight.BOLD,
                     color=ft.Colors.ORANGE_700 if theme_manager.is_dark else ft.Colors.ORANGE_600
                 )

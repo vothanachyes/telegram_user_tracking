@@ -363,4 +363,33 @@ class TestLicensing:
                 
                 # Clean up for next iteration
                 test_db_manager.delete_license_cache(email)
+    
+    def test_license_cache_encryption_integration(self, test_db_manager, mock_firebase_config):
+        """Integration test for license cache encryption with license service."""
+        uid = 'test_user_123'
+        email = 'test@example.com'
+        
+        mock_firebase_config.initialize()
+        mock_firebase_config.create_mock_license(uid, tier=LICENSE_TIER_GOLD, expiration_days=30)
+        
+        with patch('services.license_service.firebase_config', mock_firebase_config):
+            license_service = LicenseService(test_db_manager)
+            
+            # Sync from Firebase (this will save encrypted cache)
+            result = license_service.sync_from_firebase(email, uid)
+            assert result is True
+            
+            # Verify cache was saved and can be retrieved (decrypted)
+            cache = test_db_manager.get_license_cache(email)
+            assert cache is not None
+            assert cache.license_tier == LICENSE_TIER_GOLD
+            assert cache.is_active is True
+            
+            # Verify license service can use the encrypted cache
+            tier = license_service.get_user_tier(email)
+            assert tier == LICENSE_TIER_GOLD
+            
+            status = license_service.check_license_status(email, uid)
+            assert status['is_active'] is True
+            assert status['tier'] == LICENSE_TIER_GOLD
 

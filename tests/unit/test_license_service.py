@@ -494,4 +494,98 @@ class TestLicenseService:
             assert 'tier_name' in info
             assert 'price_usd' in info
             assert 'price_khr' in info
+    
+    def test_license_cache_encryption(self, test_db_manager):
+        """Test that license cache fields are encrypted when saved."""
+        email = 'test@example.com'
+        expiration = datetime.now() + timedelta(days=30)
+        
+        cache = UserLicenseCache(
+            user_email=email,
+            license_tier=LICENSE_TIER_SILVER,
+            expiration_date=expiration,
+            max_devices=2,
+            max_groups=5,
+            max_accounts=1,
+            max_account_actions=2,
+            is_active=True,
+            last_synced=datetime.now()
+        )
+        
+        # Save license cache
+        result = test_db_manager.save_license_cache(cache)
+        assert result is not None
+        
+        # Check that data in database is encrypted (not plain text)
+        with test_db_manager.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT license_tier, expiration_date, max_devices, max_groups, is_active FROM user_license_cache WHERE user_email = ?",
+                (email,)
+            )
+            row = cursor.fetchone()
+            assert row is not None
+            
+            # Encrypted values should be base64-encoded strings, not plain text
+            assert row['license_tier'] != LICENSE_TIER_SILVER
+            assert row['max_devices'] != 2
+            assert row['max_groups'] != 5
+            assert row['is_active'] != 1  # Should be encrypted string, not boolean
+    
+    def test_license_cache_decryption(self, test_db_manager):
+        """Test that license cache fields are decrypted when retrieved."""
+        email = 'test@example.com'
+        expiration = datetime.now() + timedelta(days=30)
+        original_tier = LICENSE_TIER_GOLD
+        original_max_devices = 3
+        original_max_groups = 7
+        
+        cache = UserLicenseCache(
+            user_email=email,
+            license_tier=original_tier,
+            expiration_date=expiration,
+            max_devices=original_max_devices,
+            max_groups=original_max_groups,
+            max_accounts=2,
+            max_account_actions=3,
+            is_active=True,
+            last_synced=datetime.now()
+        )
+        
+        # Save license cache
+        test_db_manager.save_license_cache(cache)
+        
+        # Retrieve and verify decryption
+        retrieved_cache = test_db_manager.get_license_cache(email)
+        assert retrieved_cache is not None
+        assert retrieved_cache.license_tier == original_tier
+        assert retrieved_cache.max_devices == original_max_devices
+        assert retrieved_cache.max_groups == original_max_groups
+        assert retrieved_cache.is_active is True
+        assert retrieved_cache.expiration_date is not None
+    
+    def test_license_cache_encryption_with_none_values(self, test_db_manager):
+        """Test that None values are handled correctly in encryption."""
+        email = 'test@example.com'
+        
+        cache = UserLicenseCache(
+            user_email=email,
+            license_tier=LICENSE_TIER_SILVER,
+            expiration_date=None,
+            max_devices=1,
+            max_groups=3,
+            max_accounts=1,
+            max_account_actions=2,
+            is_active=True,
+            last_synced=None
+        )
+        
+        # Save license cache
+        result = test_db_manager.save_license_cache(cache)
+        assert result is not None
+        
+        # Retrieve and verify None values are preserved
+        retrieved_cache = test_db_manager.get_license_cache(email)
+        assert retrieved_cache is not None
+        assert retrieved_cache.expiration_date is None
+        assert retrieved_cache.last_synced is None
 

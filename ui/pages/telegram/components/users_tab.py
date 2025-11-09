@@ -29,10 +29,13 @@ class UsersTabComponent:
         
         # Filters bar (no dates for users tab)
         groups = view_model.get_all_groups()
+        # Auto-select first group if available
+        default_group_id = groups[0].group_id if groups else None
         self.filters_bar = FiltersBarComponent(
             groups=groups,
             on_group_change=self._on_group_change,
-            show_dates=False
+            show_dates=False,
+            default_group_id=default_group_id
         )
         
         # Users table
@@ -69,7 +72,7 @@ class UsersTabComponent:
         search_field = self.users_table.search_field
         clear_filter_btn = self.users_table.clear_filter_button
         
-        return ft.Container(
+        container = ft.Container(
             content=ft.Column([
                 # Filters row
                 ft.Row([
@@ -91,6 +94,12 @@ class UsersTabComponent:
             padding=10,
             expand=True
         )
+        
+        # Auto-refresh if first group is selected
+        if self.filters_bar.get_selected_group():
+            self.refresh_users()
+        
+        return container
     
     def refresh_users(self):
         """Refresh users table."""

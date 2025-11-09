@@ -74,6 +74,10 @@ class FiltersBarComponent:
         
         controls.append(self.group_dropdown)
         
+        # Trigger callback if default group was set (for auto-selection)
+        if self.selected_group is not None and self.on_group_change:
+            self.on_group_change(self.selected_group)
+        
         return ft.Row(controls, spacing=10, wrap=False)
     
     def get_start_date(self) -> Optional[datetime]:

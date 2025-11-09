@@ -45,10 +45,11 @@ class GroupsHandlers:
                 telegram_service=self.telegram_service,
                 on_group_added=self._on_group_added
             )
-            dialog.page = self.page
+            # Set page reference and initialize accounts
+            dialog.set_page(self.page)
             self.page.open(dialog)
         except Exception as ex:
-            logger.error(f"Error opening add group dialog: {ex}")
+            logger.error(f"Error opening add group dialog: {ex}", exc_info=True)
             if self.page:
                 from ui.theme import theme_manager
                 theme_manager.show_snackbar(

@@ -29,11 +29,14 @@ class MessagesTabComponent:
         
         # Filters bar
         groups = view_model.get_all_groups()
+        # Auto-select first group if available
+        default_group_id = groups[0].group_id if groups else None
         self.filters_bar = FiltersBarComponent(
             groups=groups,
             on_group_change=self._on_group_change,
             on_date_change=self._on_date_change,
-            show_dates=True
+            show_dates=True,
+            default_group_id=default_group_id
         )
         
         # Messages table
@@ -70,7 +73,7 @@ class MessagesTabComponent:
         search_field = self.messages_table.search_field
         clear_filter_btn = self.messages_table.clear_filter_button
         
-        return ft.Container(
+        container = ft.Container(
             content=ft.Column([
                 # Filters row
                 ft.Row([
@@ -91,6 +94,12 @@ class MessagesTabComponent:
             padding=10,
             expand=True
         )
+        
+        # Auto-refresh if first group is selected
+        if self.filters_bar.get_selected_group():
+            self.refresh_messages()
+        
+        return container
     
     def refresh_messages(self):
         """Refresh messages table."""

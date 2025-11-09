@@ -111,28 +111,21 @@ class QRCodeDialog(ft.AlertDialog):
         )
     
     def _generate_qr_image(self, token: str) -> str:
-        """Generate QR code image from token and return as base64 string."""
+        """
+        Generate QR code image from Telethon QR login URL.
+        
+        According to Telethon docs, qr_login.url already contains the full
+        tg://login URI with the token, so we can use it directly.
+        See: https://docs.telethon.dev/en/stable/modules/custom.html#module-telethon.tl.custom.qrlogin
+        """
         if not token:
             return ""
         
         try:
-            # Format token as Telegram login URL
-            # Telegram QR codes use the format: tg://login?token=<base64_urlsafe_token>
-            # The token should be base64 URL-safe encoded
-            import base64
-            # If token is already a base64 string, use it directly
-            # Otherwise, ensure it's URL-safe
-            try:
-                # Try to decode to verify it's valid base64
-                base64.b64decode(token)
-                # If successful, it's standard base64, convert to URL-safe
-                token_bytes = base64.b64decode(token)
-                token_urlsafe = base64.urlsafe_b64encode(token_bytes).decode('utf-8').rstrip('=')
-            except:
-                # If it fails, assume it's already URL-safe or use as-is
-                token_urlsafe = token
-            
-            qr_data = f"tg://login?token={token_urlsafe}"
+            # Telethon's qr_login.url already contains the full tg://login URI
+            # The URL "simply consists of token base64-encoded" according to docs
+            # So we can use it directly without any transformation
+            qr_data = token
             
             # Create QR code
             qr = qrcode.QRCode(

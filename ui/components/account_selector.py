@@ -34,6 +34,7 @@ class AccountSelector:
         self.page: Optional[ft.Page] = None
         self.selected_credential_id: Optional[int] = None
         self.accounts_with_status: List[Dict] = []
+        self._is_refreshing = False  # Track refresh state
         
         # Account dropdown (create manually to support Option objects with keys)
         self.account_dropdown = ft.Dropdown(
@@ -48,11 +49,19 @@ class AccountSelector:
             width=width
         )
         
-        # Refresh button
+        # Refresh button with loading indicator
         self.refresh_btn = ft.IconButton(
             icon=ft.Icons.REFRESH,
             tooltip=theme_manager.t("refresh_account_status"),
             on_click=self._on_refresh_click
+        )
+        
+        # Loading indicator (ProgressRing)
+        self.refresh_loading = ft.ProgressRing(
+            width=20,
+            height=20,
+            stroke_width=2,
+            visible=False
         )
         
         # Account count text
@@ -67,7 +76,15 @@ class AccountSelector:
         return ft.Column([
             ft.Row([
                 self.account_dropdown,
-                self.refresh_btn,
+                ft.Stack([
+                    self.refresh_btn,
+                    ft.Container(
+                        content=self.refresh_loading,
+                        alignment=ft.alignment.center,
+                        width=40,
+                        height=40
+                    )
+                ]),
             ], spacing=10, expand=True),
             self.account_count_text,
         ], spacing=5, tight=True)
@@ -139,18 +156,42 @@ class AccountSelector:
                         break
             
             if default_account:
-                self.set_selected_account(default_account.id)
+                self.set_selected_account(default_account.id, trigger_callback=True)
         
+        # Update controls safely (check if added to page)
         if self.page:
-            self.account_dropdown.update()
-            self.account_count_text.update()
+            try:
+                self.account_dropdown.update()
+                self.account_count_text.update()
+            except AssertionError:
+                # Control not added to page yet - will update when added
+                pass
     
-    def set_selected_account(self, credential_id: int):
-        """Set the selected account by credential ID."""
+    def set_selected_account(self, credential_id: int, trigger_callback: bool = False):
+        """
+        Set the selected account by credential ID.
+        
+        Args:
+            credential_id: The credential ID to select
+            trigger_callback: If True, trigger the on_account_selected callback
+        """
         self.selected_credential_id = credential_id
         self.account_dropdown.value = str(credential_id)
+        
+        # Trigger callback if requested (for auto-selection)
+        if trigger_callback and self.on_account_selected:
+            # Find selected credential and trigger callback
+            for item in self.accounts_with_status:
+                if item['credential'].id == credential_id:
+                    self.on_account_selected(item['credential'])
+                    break
+        
         if self.page:
-            self.account_dropdown.update()
+            try:
+                self.account_dropdown.update()
+            except AssertionError:
+                # Control not added to page yet - will update when added
+                pass
     
     def get_selected_account(self) -> Optional[TelegramCredential]:
         """Get the currently selected account credential."""
@@ -203,6 +244,10 @@ class AccountSelector:
     
     def _on_refresh_click(self, e):
         """Handle refresh button click."""
+        # Prevent multiple simultaneous refreshes
+        if self._is_refreshing:
+            return
+        
         if self.on_refresh:
             import asyncio
             
@@ -215,16 +260,43 @@ class AccountSelector:
                 elif hasattr(e, 'control') and hasattr(e.control, 'page') and e.control.page:
                     page = e.control.page
             
-            if asyncio.iscoroutinefunction(self.on_refresh):
-                if page:
-                    try:
-                        page.run_task(self.on_refresh)
-                    except Exception as ex:
-                        logger.error(f"Error running refresh task: {ex}", exc_info=True)
-                else:
-                    logger.warning("Page not available, cannot run refresh task")
+            # Set loading state
+            self._set_refreshing(True, page)
+            
+            # Create wrapper to handle completion
+            async def refresh_wrapper():
+                try:
+                    if asyncio.iscoroutinefunction(self.on_refresh):
+                        await self.on_refresh()
+                    else:
+                        self.on_refresh()
+                finally:
+                    self._set_refreshing(False, page)
+            
+            if page:
+                try:
+                    page.run_task(refresh_wrapper)
+                except Exception as ex:
+                    logger.error(f"Error running refresh task: {ex}", exc_info=True)
+                    self._set_refreshing(False, page)
             else:
-                self.on_refresh()
+                logger.warning("Page not available, cannot run refresh task")
+                self._set_refreshing(False, page)
+    
+    def _set_refreshing(self, is_refreshing: bool, page: Optional[ft.Page] = None):
+        """Set the refreshing state and update UI."""
+        self._is_refreshing = is_refreshing
+        self.refresh_btn.disabled = is_refreshing
+        self.refresh_loading.visible = is_refreshing
+        
+        update_page = page or self.page
+        if update_page:
+            try:
+                self.refresh_btn.update()
+                self.refresh_loading.update()
+            except AssertionError:
+                # Control not added to page yet - state will be applied when added
+                pass
     
     def disable(self):
         """Disable the account selector."""

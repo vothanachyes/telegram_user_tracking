@@ -9,6 +9,7 @@ from typing import Optional, Callable
 from ui.theme import theme_manager
 from utils.validators import validate_phone
 from config.settings import settings as app_settings
+from ui.dialogs.qr_code_dialog import QRCodeDialog
 import logging
 
 logger = logging.getLogger(__name__)
@@ -30,9 +31,15 @@ class AddAccountDialog(ft.AlertDialog):
         self.on_cancel_callback = on_cancel
         
         # State management
-        self.state = "phone_input"  # phone_input, otp_input, password_input, loading, error
+        self.state = "method_selection"  # method_selection, phone_input, qr_scanning, otp_input, password_input, loading, error
         self.submitted_phone: Optional[str] = None
         self.current_phone: Optional[str] = None
+        self.login_method = "phone"  # "phone" or "qr"
+        
+        # QR code dialog reference
+        self._qr_dialog = None
+        self._qr_cancelled = False
+        self._qr_token = None
         
         # OTP and password event handling
         self._otp_event: Optional[threading.Event] = None
@@ -40,11 +47,29 @@ class AddAccountDialog(ft.AlertDialog):
         self._password_event: Optional[threading.Event] = None
         self._password_value_container: Optional[dict] = None
         
+        # Login method selection
+        self.login_method_group = ft.RadioGroup(
+            content=ft.Row([
+                ft.Radio(value="phone", label=theme_manager.t("phone_login") or "Phone Login"),
+                ft.Radio(value="qr", label=theme_manager.t("qr_code_login") or "QR Code Login"),
+            ], spacing=20),
+            value="phone",
+            on_change=self._on_login_method_change
+        )
+        
+        # Phone instruction text
+        self.phone_instruction_text = ft.Text(
+            theme_manager.t("enter_phone_number_to_add_account") or "Enter phone number to add a new Telegram account",
+            size=14,
+            color=theme_manager.text_secondary_color,
+            visible=False
+        )
+        
         # Phone number input field with +855 prefix
         self.phone_input = theme_manager.create_text_field(
             label="",
             hint_text="123456789",
-            autofocus=True,
+            autofocus=False,
             on_submit=self._handle_submit,
             on_change=self._handle_phone_change
         )
@@ -141,9 +166,9 @@ class AddAccountDialog(ft.AlertDialog):
         
         # Submit button (will change text based on state)
         self.submit_btn = ft.ElevatedButton(
-            theme_manager.t("add_account") or "Add Account",
+            theme_manager.t("continue") or "Continue",
             on_click=self._handle_submit,
-            icon=ft.Icons.ADD
+            icon=ft.Icons.ARROW_FORWARD
         )
         
         # Create dialog
@@ -153,10 +178,14 @@ class AddAccountDialog(ft.AlertDialog):
             content=ft.Container(
                 content=ft.Column([
                     ft.Text(
-                        theme_manager.t("enter_phone_number_to_add_account") or "Enter phone number to add a new Telegram account",
+                        theme_manager.t("choose_login_method") or "Choose login method:",
                         size=14,
-                        color=theme_manager.text_secondary_color
+                        color=theme_manager.text_secondary_color,
+                        weight=ft.FontWeight.BOLD
                     ),
+                    self.login_method_group,
+                    ft.Container(height=10),
+                    self.phone_instruction_text,
                     self.phone_field,
                     self.otp_field,
                     self.otp_helper,
@@ -181,6 +210,17 @@ class AddAccountDialog(ft.AlertDialog):
             actions_alignment=ft.MainAxisAlignment.END,
         )
     
+    def _on_login_method_change(self, e):
+        """Handle login method change."""
+        self.login_method = self.login_method_group.value
+        # Show/hide phone field and instruction text based on method
+        phone_visible = (self.login_method == "phone")
+        self.phone_field.visible = phone_visible
+        if hasattr(self, 'phone_instruction_text'):
+            self.phone_instruction_text.visible = phone_visible
+        if self.page:
+            self.page.update()
+    
     def _handle_phone_change(self, e):
         """Handle phone number input change - remove leading zero."""
         if self.phone_input.value and self.phone_input.value.startswith("0"):
@@ -190,12 +230,40 @@ class AddAccountDialog(ft.AlertDialog):
     
     def _handle_submit(self, e):
         """Handle submit button click or Enter key."""
-        if self.state == "phone_input":
+        if self.state == "method_selection":
+            # Start authentication based on selected method
+            if self.login_method == "qr":
+                self._handle_qr_login()
+            else:
+                self._handle_phone_submit()
+        elif self.state == "phone_input":
             self._handle_phone_submit()
         elif self.state == "otp_input":
             self._handle_otp_submit(e)
         elif self.state == "password_input":
             self._handle_password_submit(e)
+    
+    def _handle_qr_login(self):
+        """Handle QR code login initiation."""
+        # Check if API credentials are configured
+        if not app_settings.has_telegram_credentials:
+            self._show_error("Please configure API credentials first in Settings > Configuration")
+            return
+        
+        # Start QR code authentication flow
+        if self.page and hasattr(self.page, 'run_task'):
+            self.page.run_task(
+                self._authenticate_telegram_qr,
+                app_settings.telegram_api_id,
+                app_settings.telegram_api_hash
+            )
+        else:
+            asyncio.create_task(
+                self._authenticate_telegram_qr(
+                    app_settings.telegram_api_id,
+                    app_settings.telegram_api_hash
+                )
+            )
     
     def _handle_phone_submit(self):
         """Handle phone number submission."""
@@ -480,6 +548,146 @@ class AddAccountDialog(ft.AlertDialog):
             self.submit_btn.text = theme_manager.t("add_account") or "Add Account"
             self.submit_btn.icon = ft.Icons.ADD
             self.title.value = theme_manager.t("add_account") or "Add Account"
+    
+    async def _authenticate_telegram_qr(self, api_id: str, api_hash: str):
+        """Authenticate Telegram account via QR code."""
+        try:
+            self._show_loading(theme_manager.t("generating_qr_code") or "Generating QR code...")
+            self._qr_cancelled = False
+            self._qr_token = None
+            
+            # Create QR code dialog
+            self._qr_dialog = QRCodeDialog(
+                qr_token="",
+                on_cancel=self._on_qr_dialog_cancel,
+                on_refresh=self._on_qr_dialog_refresh
+            )
+            self._qr_dialog.page = self.page
+            
+            # Open QR dialog
+            if self.page:
+                try:
+                    self.page.open(self._qr_dialog)
+                except Exception:
+                    self.page.dialog = self._qr_dialog
+                    self._qr_dialog.open = True
+                    self.page.update()
+            
+            await asyncio.sleep(0.1)
+            
+            def qr_callback(token: str):
+                """Callback to update QR code in dialog."""
+                if self._qr_dialog and not self._qr_cancelled:
+                    self._qr_dialog.refresh_qr_code(token)
+                    self._qr_token = token
+            
+            def status_callback(status: str):
+                """Callback to update status in dialog."""
+                if self._qr_dialog and not self._qr_cancelled:
+                    is_success = "success" in status.lower() or "successful" in status.lower()
+                    self._qr_dialog.update_status(status, is_success=is_success)
+            
+            async def password_callback() -> str:
+                """Callback to get 2FA password."""
+                if self._qr_dialog:
+                    self._qr_dialog.update_status("Two-factor authentication required. Please enter your password.", is_error=False)
+                
+                # Show password input in main dialog
+                password_event = threading.Event()
+                password_value_container = {"value": None}
+                self._password_event = password_event
+                self._password_value_container = password_value_container
+                
+                # Transition to password input
+                self._transition_to_password()
+                
+                # Wait for password (async)
+                def _wait_for_password_blocking() -> str:
+                    """Blocking function to wait for 2FA password."""
+                    import time
+                    timeout = 300
+                    start_time = time.time()
+                    
+                    while time.time() - start_time < timeout:
+                        if password_event.is_set():
+                            value = password_value_container["value"]
+                            return value or ""
+                        time.sleep(0.1)
+                    
+                    return ""
+                
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, _wait_for_password_blocking)
+                return result
+            
+            def cancelled_callback() -> bool:
+                """Callback to check if cancelled."""
+                return self._qr_cancelled
+            
+            # Start QR session
+            success, error, phone_number = await self.telegram_service.start_session_qr(
+                api_id=api_id,
+                api_hash=api_hash,
+                qr_callback=qr_callback,
+                status_callback=status_callback,
+                password_callback=password_callback,
+                cancelled_callback=cancelled_callback
+            )
+            
+            # Close QR dialog
+            if self._qr_dialog and self.page:
+                try:
+                    if hasattr(self.page, 'close'):
+                        self.page.close(self._qr_dialog)
+                    else:
+                        self._qr_dialog.open = False
+                        if self.page.dialog == self._qr_dialog:
+                            self.page.dialog = None
+                        self.page.update()
+                except Exception:
+                    pass
+            
+            if success:
+                # Account saved automatically by telegram_service.start_session_qr
+                logger.info(f"Account {phone_number} authenticated via QR code and saved successfully")
+                self.submitted_phone = phone_number
+                
+                # Close dialog
+                self.open = False
+                if self.page:
+                    self.page.update()
+                
+                # Call success callback
+                if self.on_success_callback:
+                    self.on_success_callback(phone_number)
+            else:
+                # Show error and allow retry
+                error_msg = error or theme_manager.t("authentication_failed") or "Authentication failed. Please try again."
+                self._show_error(error_msg)
+                # Reset to method selection
+                self.state = "method_selection"
+                self.phone_field.visible = (self.login_method == "phone")
+                self.submit_btn.text = theme_manager.t("add_account") or "Add Account"
+                self.submit_btn.icon = ft.Icons.ADD
+                self.title.value = theme_manager.t("add_account") or "Add Account"
+                
+        except Exception as e:
+            logger.error(f"Error authenticating Telegram account via QR: {e}", exc_info=True)
+            self._show_error(f"Error: {str(e)}")
+            # Reset to method selection
+            self.state = "method_selection"
+            self.phone_field.visible = (self.login_method == "phone")
+            self.submit_btn.text = theme_manager.t("add_account") or "Add Account"
+            self.submit_btn.icon = ft.Icons.ADD
+            self.title.value = theme_manager.t("add_account") or "Add Account"
+    
+    def _on_qr_dialog_cancel(self):
+        """Handle QR dialog cancellation."""
+        self._qr_cancelled = True
+    
+    def _on_qr_dialog_refresh(self) -> str:
+        """Handle QR dialog refresh request."""
+        return self._qr_token or ""
     
     def _handle_cancel(self, e):
         """Handle cancel button click."""

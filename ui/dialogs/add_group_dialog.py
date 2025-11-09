@@ -120,9 +120,18 @@ class AddGroupDialog(ft.AlertDialog):
             accounts_with_status = await self.telegram_service.get_all_accounts_with_status()
             if accounts_with_status:
                 self.account_selector.update_accounts(accounts_with_status)
+                logger.debug(f"Initialized {len(accounts_with_status)} accounts in add group dialog")
+            else:
+                self.account_selector.update_accounts([])
+                logger.warning("No accounts found for add group dialog")
+            # Update the page to show the dropdown options
+            if self.page:
+                self.page.update()
         except Exception as e:
-            logger.error(f"Error initializing accounts: {e}")
+            logger.error(f"Error initializing accounts: {e}", exc_info=True)
             self.account_selector.update_accounts([])
+            if self.page:
+                self.page.update()
     
     async def _refresh_accounts(self):
         """Refresh account list."""
@@ -253,18 +262,17 @@ class AddGroupDialog(ft.AlertDialog):
                     group_id=group_id
                 )
             elif invite_link:
-                # Handle invite links - Pyrogram can resolve them directly
+                # Handle invite links - Telethon can resolve them directly
                 success, group, error_msg, has_access = await self.telegram_service.fetch_and_validate_group(
                     self.selected_credential,
                     invite_link=invite_link
                 )
             elif username:
-                # For username, we need to resolve it first
-                # This is a simplified version - in production, you'd resolve username to ID first
-                self._show_error("Username resolution not yet implemented. Please use group ID or link.")
-                if self.page:
-                    self.page.update()
-                return
+                # Resolve username using Telethon - it can handle usernames directly
+                success, group, error_msg, has_access = await self.telegram_service.fetch_and_validate_group(
+                    self.selected_credential,
+                    username=username
+                )
             else:
                 self._show_error("Could not parse input")
                 if self.page:

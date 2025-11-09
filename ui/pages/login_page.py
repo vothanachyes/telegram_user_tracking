@@ -7,6 +7,7 @@ import asyncio
 import logging
 import threading
 import time
+import os
 from typing import Callable, Optional, Tuple
 from ui.theme import theme_manager
 from services.auth_service import auth_service
@@ -32,6 +33,18 @@ class LoginPage(ft.Container):
         
         # Load saved credentials
         saved_email, saved_password = self._load_saved_credentials()
+        
+        # In dev mode, check .env for Firebase credentials if no saved credentials
+        dev_email = None
+        dev_password = None
+        if not saved_email or not saved_password:
+            dev_email = os.getenv("DEV_FIREBASE_ACC") or os.getenv("FIREBASE_ACC")
+            dev_password = os.getenv("DEV_FIREBASE_PASS") or os.getenv("FIREBASE_PASS")
+            if dev_email and dev_password:
+                logger.debug("Found DEV_FIREBASE_ACC and DEV_FIREBASE_PASS in .env")
+                # Use dev credentials if no saved credentials
+                saved_email = dev_email
+                saved_password = dev_password
         
         # Create form fields
         self.email_field = theme_manager.create_text_field(
@@ -131,6 +144,7 @@ class LoginPage(ft.Container):
         )
         
         # Store flag for auto-login attempt
+        # Auto-login if we have saved credentials OR dev credentials from .env
         self._should_auto_login = bool(saved_email and saved_password)
         self._pending_error = None
     
@@ -161,7 +175,7 @@ class LoginPage(ft.Container):
         await self._attempt_auto_login()
     
     async def _attempt_auto_login(self):
-        """Attempt to auto-login with saved credentials.
+        """Attempt to auto-login with saved credentials or dev credentials from .env.
         
         Note: This always authenticates fresh with Firebase (not cached credentials).
         Firebase will verify:
@@ -172,9 +186,17 @@ class LoginPage(ft.Container):
         """
         saved_email, saved_password = self._load_saved_credentials()
         
+        # If no saved credentials, check .env for dev credentials
         if not saved_email or not saved_password:
-            logger.warning("Auto-login: No saved credentials found")
-            return  # No credentials to use
+            dev_email = os.getenv("DEV_FIREBASE_ACC") or os.getenv("FIREBASE_ACC")
+            dev_password = os.getenv("DEV_FIREBASE_PASS") or os.getenv("FIREBASE_PASS")
+            if dev_email and dev_password:
+                saved_email = dev_email
+                saved_password = dev_password
+                logger.debug("Using DEV_FIREBASE credentials from .env for auto-login")
+            else:
+                logger.warning("Auto-login: No saved credentials or dev credentials found")
+                return  # No credentials to use
         
         # Initialize auth service
         if not auth_service.initialize():

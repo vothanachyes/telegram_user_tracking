@@ -50,6 +50,7 @@ class SplashScreen(ft.Container):
                     ),
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                alignment=ft.MainAxisAlignment.CENTER,
                 spacing=0,
             ),
             alignment=ft.alignment.center,

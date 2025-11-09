@@ -116,10 +116,20 @@ class GroupSelector:
         self.group_dropdown.options = options
         
         if self.page:
-            self.group_dropdown.update()
+            try:
+                self.group_dropdown.update()
+            except AssertionError:
+                # Control not added to page yet - will update when added
+                pass
     
-    def set_selected_group(self, group_id: int):
-        """Set the selected group by group ID."""
+    def set_selected_group(self, group_id: int, trigger_callback: bool = False):
+        """
+        Set the selected group by group ID.
+        
+        Args:
+            group_id: The group ID to select
+            trigger_callback: If True, trigger the on_group_selected callback
+        """
         self.selected_group_id = group_id
         self.group_dropdown.value = str(group_id)
         self.manual_entry_field.value = str(group_id)
@@ -127,10 +137,18 @@ class GroupSelector:
         # Update group info
         self._update_group_info(group_id)
         
+        # Trigger callback if requested (for auto-selection)
+        if trigger_callback and self.on_group_selected:
+            self.on_group_selected(group_id)
+        
         if self.page:
-            self.group_dropdown.update()
-            self.manual_entry_field.update()
-            self.group_info_text.update()
+            try:
+                self.group_dropdown.update()
+                self.manual_entry_field.update()
+                self.group_info_text.update()
+            except AssertionError:
+                # Control not added to page yet - will update when added
+                pass
     
     def get_selected_group_id(self) -> Optional[int]:
         """Get the currently selected group ID."""
@@ -155,14 +173,22 @@ class GroupSelector:
         
         self.group_info_text.visible = True
         if self.page:
-            self.group_info_text.update()
+            try:
+                self.group_info_text.update()
+            except AssertionError:
+                # Control not added to page yet - will update when added
+                pass
     
     def clear_group_info(self):
         """Clear group info display."""
         self.group_info_text.value = ""
         self.group_info_text.visible = False
         if self.page:
-            self.group_info_text.update()
+            try:
+                self.group_info_text.update()
+            except AssertionError:
+                # Control not added to page yet - will update when added
+                pass
     
     def _update_group_info(self, group_id: int):
         """Update group info from saved groups."""
@@ -192,7 +218,11 @@ class GroupSelector:
                     # Restore the selected value
                     self.group_dropdown.value = str(self.selected_group_id)
                     if self.page:
-                        self.group_dropdown.update()
+                        try:
+                            self.group_dropdown.update()
+                        except AssertionError:
+                            # Control not added to page yet - will update when added
+                            pass
                     return
     
     def _on_group_change(self, e):
@@ -222,7 +252,11 @@ class GroupSelector:
             self.selected_group_id = None
             self.clear_group_info()
             if self.page:
-                self.group_dropdown.update()
+                try:
+                    self.group_dropdown.update()
+                except AssertionError:
+                    # Control not added to page yet - will update when added
+                    pass
     
     def _on_manual_entry_submit(self, e):
         """Handle manual entry field submit."""

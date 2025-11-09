@@ -5,8 +5,7 @@ flet[all]>=0.28.3  # Latest stable version (May 20, 2025) - supports Python 3.9-
 pandas>=2.1.0
 
 # Telegram API
-pyrogram>=2.0.106
-tgcrypto>=1.2.5
+telethon>=1.34.0
 
 # Firebase Authentication
 firebase-admin>=6.2.0

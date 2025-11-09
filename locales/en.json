@@ -215,6 +215,7 @@
   "account_status_not_available": "Not Available",
   "account_deletion_limit_reached": "Account deletion limit reached. You can delete/add accounts 2 times within 48 hours.",
   "account_addition_limit_reached": "Account addition limit reached. You can add accounts 2 times within 48 hours.",
+  "account_action_limit_reached_with_wait": "Account action limit reached. Please wait {waiting_time} before adding or deleting accounts.",
   "select_account": "Select Account",
   "account_last_used": "Last used: {date}",
   "cannot_select_expired_account": "This account session has expired",

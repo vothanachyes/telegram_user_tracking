@@ -9,11 +9,11 @@ from typing import Optional, List, Dict
 from datetime import datetime
 
 try:
-    from pyrogram.errors import Unauthorized, AuthKeyUnregistered, SessionRevoked
-    PYROGRAM_AVAILABLE = True
+    from telethon.errors import UnauthorizedError, AuthKeyUnregisteredError, SessionRevokedError
+    TELETHON_AVAILABLE = True
 except ImportError:
-    PYROGRAM_AVAILABLE = False
-    Unauthorized = AuthKeyUnregistered = SessionRevoked = None
+    TELETHON_AVAILABLE = False
+    UnauthorizedError = AuthKeyUnregisteredError = SessionRevokedError = None
 
 from database.db_manager import DatabaseManager
 from database.models import TelegramCredential
@@ -62,13 +62,14 @@ class AccountStatusChecker:
             
             try:
                 await temp_client.connect()
-                me = await temp_client.get_me()
-                if me:
-                    await temp_client.disconnect()
-                    return 'active'
-                else:
-                    await temp_client.disconnect()
-                    return 'expired'
+                # Check if authorized
+                if await temp_client.is_user_authorized():
+                    me = await temp_client.get_me()
+                    if me:
+                        await temp_client.disconnect()
+                        return 'active'
+                await temp_client.disconnect()
+                return 'expired'
             except Exception as e:
                 # Disconnect client first
                 try:
@@ -80,51 +81,51 @@ class AccountStatusChecker:
                 error_type = type(e).__name__
                 error_str = str(e).lower()
                 
-                # Handle database lock errors - these come from Pyrogram's internal SQLite storage
-                # Pyrogram uses SQLite for session storage, and concurrent access can cause locks
+                # Handle database lock errors - these come from Telethon's internal SQLite storage
+                # Telethon uses SQLite for session storage, and concurrent access can cause locks
                 if isinstance(e, sqlite3.OperationalError) and "database is locked" in error_str:
-                    # This is Pyrogram's session database lock, not our app database
-                    # Retry with longer delays to allow Pyrogram's session file to unlock
+                    # This is Telethon's session database lock, not our app database
+                    # Retry with longer delays to allow Telethon's session file to unlock
                     if retry_count < 2:  # Retry up to 2 times
                         wait_time = 0.5 * (retry_count + 1)  # Longer delay: 0.5s, 1.0s
                         logger.debug(
-                            f"Pyrogram session database locked for {credential.phone_number} "
+                            f"Telethon session database locked for {credential.phone_number} "
                             f"(attempt {retry_count + 1}), retrying in {wait_time}s..."
                         )
                         await asyncio.sleep(wait_time)
                         return await self.check_account_status(credential, retry_count + 1)
                     else:
                         logger.warning(
-                            f"Pyrogram session database locked after {retry_count + 1} retries "
+                            f"Telethon session database locked after {retry_count + 1} retries "
                             f"for {credential.phone_number}. This is usually due to concurrent session access."
                         )
                         return 'error'  # Mark as error, not expired - session might still be valid
                 elif "database is locked" in error_str:
                     # String match for database lock (might be wrapped)
-                    # This is Pyrogram's session database lock, not our app database
+                    # This is Telethon's session database lock, not our app database
                     if retry_count < 2:  # Retry up to 2 times
                         wait_time = 0.5 * (retry_count + 1)  # Longer delay: 0.5s, 1.0s
                         logger.debug(
-                            f"Pyrogram session database locked for {credential.phone_number} "
+                            f"Telethon session database locked for {credential.phone_number} "
                             f"(attempt {retry_count + 1}), retrying in {wait_time}s..."
                         )
                         await asyncio.sleep(wait_time)
                         return await self.check_account_status(credential, retry_count + 1)
                     else:
                         logger.warning(
-                            f"Pyrogram session database locked after {retry_count + 1} retries "
+                            f"Telethon session database locked after {retry_count + 1} retries "
                             f"for {credential.phone_number}. This is usually due to concurrent session access."
                         )
                         return 'error'  # Mark as error, not expired - session might still be valid
                 
                 # Check for specific session expiration exceptions
-                if Unauthorized and isinstance(e, Unauthorized):
+                if UnauthorizedError and isinstance(e, UnauthorizedError):
                     logger.debug(f"Account {credential.phone_number} session expired (Unauthorized)")
                     return 'expired'
-                elif AuthKeyUnregistered and isinstance(e, AuthKeyUnregistered):
+                elif AuthKeyUnregisteredError and isinstance(e, AuthKeyUnregisteredError):
                     logger.debug(f"Account {credential.phone_number} auth key unregistered")
                     return 'expired'
-                elif SessionRevoked and isinstance(e, SessionRevoked):
+                elif SessionRevokedError and isinstance(e, SessionRevokedError):
                     logger.debug(f"Account {credential.phone_number} session revoked")
                     return 'expired'
                 elif "unauthorized" in error_str or "auth key" in error_str or "session revoked" in error_str:
@@ -257,9 +258,9 @@ class AccountStatusChecker:
             
             # Delay between checks to:
             # 1. Prevent overwhelming Telegram API
-            # 2. Allow Pyrogram's session SQLite files to unlock (avoid concurrent access)
+            # 2. Allow Telethon's session SQLite files to unlock (avoid concurrent access)
             # 3. Give database time to release any locks
-            await asyncio.sleep(0.3)  # Increased to 300ms to avoid Pyrogram session file locks
+            await asyncio.sleep(0.3)  # Increased to 300ms to avoid Telethon session file locks
         
         return credentials_with_status
 

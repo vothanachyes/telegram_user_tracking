@@ -32,7 +32,7 @@ class GroupPhotoDownloader:
         Download group photo from Telegram.
         
         Args:
-            client: Pyrogram client instance
+            client: Telethon client instance
             group_id: Telegram group ID
             group_username: Optional group username for folder naming
             
@@ -44,10 +44,10 @@ class GroupPhotoDownloader:
                 logger.error("Client is None")
                 return None
             
-            # Get chat to access photo
-            chat = await client.get_chat(group_id)
+            # Get entity to access photo
+            entity = await client.get_entity(group_id)
             
-            if not chat.photo:
+            if not hasattr(entity, 'photo') or not entity.photo:
                 logger.debug(f"No photo available for group {group_id}")
                 return None
             
@@ -55,19 +55,27 @@ class GroupPhotoDownloader:
             group_folder = Path(self.download_root_dir) / "groups" / str(group_id)
             group_folder.mkdir(parents=True, exist_ok=True)
             
-            # Download photo
+            # Download photo - use download_profile_photo for chat/profile photos
             photo_path = group_folder / "photo.jpg"
             
-            downloaded_path = await client.download_media(
-                chat.photo.big_file_id,
-                file_name=str(photo_path)
+            # Telethon's download_profile_photo downloads the profile/chat photo
+            # It returns the downloaded file path
+            downloaded_path = await client.download_profile_photo(
+                entity,
+                file=str(photo_path)
             )
             
-            if downloaded_path and os.path.exists(downloaded_path):
-                logger.info(f"Downloaded group photo to {downloaded_path}")
-                return str(downloaded_path)
+            # download_profile_photo returns the path if successful, None otherwise
+            if downloaded_path:
+                # Verify the file exists
+                if os.path.exists(downloaded_path):
+                    logger.info(f"Downloaded group photo to {downloaded_path}")
+                    return str(downloaded_path)
+                else:
+                    logger.warning(f"Photo download returned path but file doesn't exist: {downloaded_path}")
+                    return None
             else:
-                logger.warning(f"Photo download returned path but file doesn't exist: {downloaded_path}")
+                logger.debug(f"Photo download returned None for group {group_id} - photo may not be available")
                 return None
                 
         except Exception as e:

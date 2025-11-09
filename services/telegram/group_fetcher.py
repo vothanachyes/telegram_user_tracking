@@ -74,7 +74,8 @@ class GroupFetcher:
         self,
         account_credential: TelegramCredential,
         group_id: Optional[int] = None,
-        invite_link: Optional[str] = None
+        invite_link: Optional[str] = None,
+        username: Optional[str] = None
     ) -> Tuple[bool, Optional[TelegramGroup], Optional[str], bool]:
         """
         Fetch group info using specific account and validate access.
@@ -82,19 +83,20 @@ class GroupFetcher:
         
         Args:
             account_credential: TelegramCredential to use
-            group_id: Group ID to validate (optional if invite_link provided)
-            invite_link: Invite link URL to validate (optional if group_id provided)
+            group_id: Group ID to validate (optional if invite_link or username provided)
+            invite_link: Invite link URL to validate (optional if group_id or username provided)
+            username: Group username without @ (optional if group_id or invite_link provided)
             
         Returns:
             (success, group_info, error_message, has_access)
         """
         temp_client = None
         try:
-            # Import Pyrogram errors for specific error handling
+            # Import Telethon errors for specific error handling
             try:
-                from pyrogram.errors import ChatNotFound, Forbidden, Unauthorized, UsernameNotOccupied
+                from telethon.errors import ChatNotFoundError, ChannelPrivateError, UsernameNotOccupiedError, UnauthorizedError
             except ImportError:
-                ChatNotFound = Forbidden = Unauthorized = UsernameNotOccupied = None
+                ChatNotFoundError = ChannelPrivateError = UsernameNotOccupiedError = UnauthorizedError = None
             
             # Create temporary client
             temp_client = await self.client_utils.create_temporary_client(account_credential)
@@ -107,7 +109,8 @@ class GroupFetcher:
             # Fetch group info
             success, group, error = await temp_group_manager.fetch_group_info(
                 group_id=group_id,
-                invite_link=invite_link
+                invite_link=invite_link,
+                username=username
             )
             
             if not success:
@@ -130,6 +133,10 @@ class GroupFetcher:
                 if "forbidden" in error_lower or "permission" in error_lower:
                     return False, None, "permission_denied", False  # Special marker for permission error
                 
+                # Check if it's a username not found error
+                if "username not occupied" in error_lower or ("username" in error_lower and "not found" in error_lower):
+                    return False, None, "Username not found or group does not exist", False
+                
                 # Check if it's a not found/not member error
                 if "not found" in error_lower or "chat not found" in error_lower or "not a member" in error_lower:
                     return False, None, "not_member", False  # Special marker for not member error
@@ -141,7 +148,7 @@ class GroupFetcher:
             return True, group, None, True
             
         except Exception as e:
-            # Handle Pyrogram-specific exceptions
+            # Handle Telethon-specific exceptions
             error_str = str(e).lower()
             error_type = type(e).__name__
             
@@ -153,18 +160,20 @@ class GroupFetcher:
             if "peer id invalid" in error_str:
                 return False, None, "not_member", False
             
-            # Check for specific Pyrogram error types
-            if ChatNotFound and isinstance(e, ChatNotFound):
+            # Check for specific Telethon error types
+            if ChatNotFoundError and isinstance(e, ChatNotFoundError):
                 return False, None, "not_member", False
-            elif Forbidden and isinstance(e, Forbidden):
+            elif ChannelPrivateError and isinstance(e, ChannelPrivateError):
                 return False, None, "permission_denied", False
-            elif Unauthorized and isinstance(e, Unauthorized):
+            elif UsernameNotOccupiedError and isinstance(e, UsernameNotOccupiedError):
+                return False, None, "Username not found or group does not exist", False
+            elif UnauthorizedError and isinstance(e, UnauthorizedError):
                 return False, None, "Account session expired, please reconnect", False
             elif "unauthorized" in error_str or "expired" in error_str:
                 return False, None, "Account session expired, please reconnect", False
             elif "forbidden" in error_str or "permission" in error_str:
                 return False, None, "permission_denied", False
-            elif "not found" in error_str or "chat not found" in error_str:
+            elif "not found" in error_str or "chat not found" in error_str or "username not occupied" in error_str:
                 return False, None, "not_member", False
             
             logger.error(f"Error validating group access: {e}")

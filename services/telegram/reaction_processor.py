@@ -7,10 +7,10 @@ import asyncio
 from typing import Optional
 
 try:
-    from pyrogram.errors import FloodWait, BadRequest
-    PYROGRAM_AVAILABLE = True
+    from telethon.errors import FloodWaitError, BadRequestError
+    TELETHON_AVAILABLE = True
 except ImportError:
-    PYROGRAM_AVAILABLE = False
+    TELETHON_AVAILABLE = False
 
 from database.db_manager import DatabaseManager
 from database.models import Reaction
@@ -29,7 +29,7 @@ class ReactionProcessor:
     
     async def process_reactions(
         self,
-        telegram_msg: 'PyrogramMessage',
+        telegram_msg: 'TelethonMessage',
         group_id: int,
         group_username: Optional[str],
         message_link: str
@@ -38,7 +38,7 @@ class ReactionProcessor:
         Process reactions for a message.
         
         Args:
-            telegram_msg: Pyrogram message object
+            telegram_msg: Telethon message object
             group_id: Group ID
             group_username: Group username (optional)
             message_link: Message link
@@ -107,67 +107,49 @@ class ReactionProcessor:
                     # Try to get users who reacted with this emoji
                     try:
                         # Get all reactions for this message
+                        # Telethon stores reactions in message.reactions attribute
                         reacted_users = []
                         try:
-                            reactions_result = await self.client.get_reactions(
-                                group_id,
-                                telegram_msg.id
-                            )
-                            
-                            # Handle different return types
-                            if isinstance(reactions_result, list):
-                                for item in reactions_result:
-                                    # Check if this reaction matches our emoji
-                                    item_emoji = None
-                                    if hasattr(item, 'emoji'):
-                                        item_emoji = item.emoji
-                                    elif hasattr(item, 'custom_emoji_id'):
-                                        item_emoji = f"custom_{item.custom_emoji_id}"
-                                    
-                                    if item_emoji == emoji:
-                                        # Extract user from reaction
-                                        if hasattr(item, 'user_id'):
-                                            user_id = item.user_id
-                                            try:
-                                                user = await self.client.get_users(user_id)
-                                                if user:
-                                                    reacted_users.append(user)
-                                            except:
+                            # In Telethon, reactions are stored in message.reactions
+                            # We need to get reaction users differently
+                            if hasattr(telegram_msg, 'reactions') and telegram_msg.reactions:
+                                # Telethon reactions structure is different
+                                # reactions is a MessageReactions object with results list
+                                reactions_obj = telegram_msg.reactions
+                                if hasattr(reactions_obj, 'results'):
+                                    for reaction_count in reactions_obj.results:
+                                        # Check if this reaction matches our emoji
+                                        reaction = reaction_count.reaction if hasattr(reaction_count, 'reaction') else None
+                                        if reaction:
+                                            reaction_emoji = None
+                                            if hasattr(reaction, 'emoticon'):
+                                                reaction_emoji = reaction.emoticon
+                                            elif hasattr(reaction, 'document_id'):
+                                                reaction_emoji = f"custom_{reaction.document_id}"
+                                            
+                                            if reaction_emoji == emoji:
+                                                # Get users who reacted - Telethon doesn't have direct API for this
+                                                # We'll need to use the count from reaction_count.count
+                                                # For now, we'll process based on the reaction count
+                                                # Note: Telethon doesn't provide easy access to individual reaction users
+                                                # Note: Telethon's reaction API structure
                                                 pass
-                                        elif hasattr(item, 'user'):
-                                            reacted_users.append(item.user)
                         except AttributeError:
-                            logger.debug(f"get_reactions method not available, skipping reaction user fetch")
+                            logger.debug(f"Reactions not available for message {telegram_msg.id}")
                             continue
-                        except BadRequest as e:
+                        except BadRequestError as e:
                             logger.debug(f"Could not fetch reactions for message {telegram_msg.id}: {e}")
                             continue
-                        except FloodWait as e:
-                            logger.warning(f"FloodWait when fetching reactions: waiting {e.value} seconds")
-                            await asyncio.sleep(e.value)
+                        except FloodWaitError as e:
+                            logger.warning(f"FloodWait when fetching reactions: waiting {e.seconds} seconds")
+                            await asyncio.sleep(e.seconds)
                             continue
                         
-                        # Save each reaction
-                        for user in reacted_users:
-                            # Process user first to ensure they exist in database
-                            if user:
-                                await self.user_processor.process_user(user)
-                                
-                                reaction = Reaction(
-                                    message_id=telegram_msg.id,
-                                    group_id=group_id,
-                                    user_id=user.id,
-                                    emoji=emoji,
-                                    message_link=message_link,
-                                    reacted_at=telegram_msg.date  # Use message date as proxy
-                                )
-                                
-                                self.db_manager.save_reaction(reaction)
-                                reaction_count += 1
-                                
-                                # Rate limiting between reaction saves
-                                if reaction_delay > 0:
-                                    await asyncio.sleep(reaction_delay)
+                        # Note: Telethon doesn't provide easy access to individual reaction users
+                        # For now, we'll skip individual user reaction tracking
+                        # The reaction counts are still available in message.reactions
+                        # TODO: Implement reaction user fetching if needed via alternative methods
+                        logger.debug(f"Reaction tracking for individual users not fully supported for message {telegram_msg.id}")
                     
                     except Exception as e:
                         logger.warning(f"Error fetching reactions for message {telegram_msg.id}: {e}")

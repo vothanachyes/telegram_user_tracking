@@ -5,14 +5,14 @@ Message fetcher for fetching messages from Telegram groups.
 import logging
 import asyncio
 from typing import Optional, Callable, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
-    from pyrogram.errors import FloodWait
-    PYROGRAM_AVAILABLE = True
+    from telethon.errors import FloodWaitError
+    TELETHON_AVAILABLE = True
 except ImportError:
-    PYROGRAM_AVAILABLE = False
-    FloodWait = None
+    TELETHON_AVAILABLE = False
+    FloodWaitError = None
 
 from database.db_manager import DatabaseManager
 from database.models import TelegramCredential, Message
@@ -25,6 +25,30 @@ from services.telegram.group_manager import GroupManager
 from services.telegram.client_utils import ClientUtils
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_to_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """
+    Normalize a datetime to UTC timezone.
+    If datetime is naive, assume it's in local timezone and convert to UTC.
+    If datetime is timezone-aware, convert to UTC.
+    
+    Args:
+        dt: Datetime to normalize (can be None)
+        
+    Returns:
+        UTC timezone-aware datetime or None
+    """
+    if dt is None:
+        return None
+    
+    if dt.tzinfo is None:
+        # Naive datetime - assume local timezone and convert to UTC
+        # For date-only comparisons, we'll treat it as UTC midnight
+        return dt.replace(tzinfo=timezone.utc)
+    else:
+        # Timezone-aware datetime - convert to UTC
+        return dt.astimezone(timezone.utc)
 
 
 class MessageFetcher:
@@ -105,20 +129,55 @@ class MessageFetcher:
             link_count = 0
             fetch_delay = settings.settings.fetch_delay_seconds
             
-            async for telegram_msg in temp_client.get_chat_history(group_id):
+            # Normalize dates to UTC for comparison (fixes timezone-aware vs naive datetime issue)
+            normalized_start_date = _normalize_to_utc(start_date)
+            normalized_end_date = _normalize_to_utc(end_date)
+            
+            # Log fetch parameters for debugging
+            logger.debug(f"Starting fetch for group {group_id} with start_date={start_date}, end_date={end_date}")
+            if start_date:
+                logger.debug(f"start_date timezone-aware: {start_date.tzinfo is not None}, normalized={normalized_start_date}")
+            if end_date:
+                logger.debug(f"end_date timezone-aware: {end_date.tzinfo is not None}, normalized={normalized_end_date}")
+            
+            # Get entity for iter_messages
+            entity = await temp_client.get_entity(group_id)
+            processed_count = 0
+            skipped_count = 0
+            async for telegram_msg in temp_client.iter_messages(entity, reverse=True):
                 try:
-                    if start_date and telegram_msg.date < start_date:
-                        break
+                    processed_count += 1
                     
-                    if end_date and telegram_msg.date > end_date:
-                        continue
+                    # Normalize message date to UTC for comparison
+                    msg_date = telegram_msg.date
+                    normalized_msg_date = _normalize_to_utc(msg_date)
+                    
+                    # Log datetime comparison details for debugging (first few messages only)
+                    if processed_count <= 5 or (normalized_start_date or normalized_end_date):
+                        logger.debug(
+                            f"Message {telegram_msg.id}: date={msg_date}, "
+                            f"normalized_date={normalized_msg_date}, "
+                            f"start_date={normalized_start_date}, "
+                            f"end_date={normalized_end_date}"
+                        )
+                    
+                    if normalized_start_date:
+                        if normalized_msg_date < normalized_start_date:
+                            logger.debug(f"Message {telegram_msg.id} before start_date, breaking")
+                            break
+                    
+                    if normalized_end_date:
+                        if normalized_msg_date > normalized_end_date:
+                            logger.debug(f"Message {telegram_msg.id} after end_date, skipping")
+                            skipped_count += 1
+                            continue
                     
                     if self.db_manager.is_message_deleted(telegram_msg.id, group_id):
                         continue
                     
-                    if telegram_msg.from_user:
-                        await self.user_processor.process_user(telegram_msg.from_user)
-                        unique_users.add(telegram_msg.from_user.id)
+                    if telegram_msg.sender:
+                        await self.user_processor.process_user(telegram_msg.sender)
+                        unique_users.add(telegram_msg.sender.id)
                     
                     message = await self.message_processor.process_message(
                         telegram_msg,
@@ -179,12 +238,21 @@ class MessageFetcher:
                     if fetch_delay > 0:
                         await asyncio.sleep(fetch_delay)
                     
-                except FloodWait as e:
-                    logger.warning(f"FloodWait: waiting {e.value} seconds")
-                    await asyncio.sleep(e.value)
+                except FloodWaitError as e:
+                    logger.warning(f"FloodWait: waiting {e.seconds} seconds")
+                    await asyncio.sleep(e.seconds)
                 except Exception as e:
-                    logger.error(f"Error processing message {telegram_msg.id}: {e}")
+                    logger.error(
+                        f"Error processing message {telegram_msg.id}: {e}. "
+                        f"Message date: {telegram_msg.date if hasattr(telegram_msg, 'date') else 'N/A'}"
+                    )
                     continue
+            
+            logger.debug(
+                f"Fetch iteration complete: processed={processed_count}, "
+                f"saved={message_count}, skipped={skipped_count}, "
+                f"unique_users={len(unique_users)}"
+            )
             
             total_messages = self.db_manager.get_message_count(group_id)
             temp_group_manager.update_group_stats(group, total_messages)
@@ -294,20 +362,59 @@ class MessageFetcher:
             link_count = 0
             fetch_delay = settings.settings.fetch_delay_seconds
             
-            async for telegram_msg in temp_client.get_chat_history(group_id):
+            # Normalize dates to UTC for comparison (fixes timezone-aware vs naive datetime issue)
+            normalized_start_date = _normalize_to_utc(start_date)
+            normalized_end_date = _normalize_to_utc(end_date)
+            
+            # Log fetch parameters for debugging
+            logger.debug(
+                f"Starting fetch for group {group_id} using account {credential.phone_number} "
+                f"with start_date={start_date}, end_date={end_date}"
+            )
+            if start_date:
+                logger.debug(f"start_date timezone-aware: {start_date.tzinfo is not None}, normalized={normalized_start_date}")
+            if end_date:
+                logger.debug(f"end_date timezone-aware: {end_date.tzinfo is not None}, normalized={normalized_end_date}")
+            
+            # Get entity for iter_messages
+            entity = await temp_client.get_entity(group_id)
+            logger.debug(f"Entity: {entity}")
+            processed_count = 0
+            skipped_count = 0
+            async for telegram_msg in temp_client.iter_messages(entity, reverse=True):
                 try:
-                    if start_date and telegram_msg.date < start_date:
-                        break
+                    processed_count += 1
                     
-                    if end_date and telegram_msg.date > end_date:
-                        continue
+                    # Normalize message date to UTC for comparison
+                    msg_date = telegram_msg.date
+                    normalized_msg_date = _normalize_to_utc(msg_date)
+                    
+                    # Log datetime comparison details for debugging (first few messages only)
+                    if processed_count <= 5 or (normalized_start_date or normalized_end_date):
+                        logger.debug(
+                            f"Message {telegram_msg.id}: date={msg_date}, "
+                            f"normalized_date={normalized_msg_date}, "
+                            f"start_date={normalized_start_date}, "
+                            f"end_date={normalized_end_date}"
+                        )
+                    
+                    if normalized_start_date:
+                        if normalized_msg_date < normalized_start_date:
+                            logger.debug(f"Message {telegram_msg.id} before start_date, breaking")
+                            break
+                    
+                    if normalized_end_date:
+                        if normalized_msg_date > normalized_end_date:
+                            logger.debug(f"Message {telegram_msg.id} after end_date, skipping")
+                            skipped_count += 1
+                            continue
                     
                     if self.db_manager.is_message_deleted(telegram_msg.id, group_id):
                         continue
                     
-                    if telegram_msg.from_user:
-                        await self.user_processor.process_user(telegram_msg.from_user)
-                        unique_users.add(telegram_msg.from_user.id)
+                    if telegram_msg.sender:
+                        await self.user_processor.process_user(telegram_msg.sender)
+                        unique_users.add(telegram_msg.sender.id)
                     
                     message = await self.message_processor.process_message(
                         telegram_msg,
@@ -368,12 +475,21 @@ class MessageFetcher:
                     if fetch_delay > 0:
                         await asyncio.sleep(fetch_delay)
                     
-                except FloodWait as e:
-                    logger.warning(f"FloodWait: waiting {e.value} seconds")
-                    await asyncio.sleep(e.value)
+                except FloodWaitError as e:
+                    logger.warning(f"FloodWait: waiting {e.seconds} seconds")
+                    await asyncio.sleep(e.seconds)
                 except Exception as e:
-                    logger.error(f"Error processing message {telegram_msg.id}: {e}")
+                    logger.error(
+                        f"Error processing message {telegram_msg.id}: {e}. "
+                        f"Message date: {telegram_msg.date if hasattr(telegram_msg, 'date') else 'N/A'}"
+                    )
                     continue
+            
+            logger.debug(
+                f"Fetch iteration complete: processed={processed_count}, "
+                f"saved={message_count}, skipped={skipped_count}, "
+                f"unique_users={len(unique_users)}"
+            )
             
             total_messages = self.db_manager.get_message_count(group_id)
             temp_group_manager.update_group_stats(group, total_messages)

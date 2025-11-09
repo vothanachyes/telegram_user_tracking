@@ -7,11 +7,11 @@ from typing import Optional, Callable, List, Tuple, Dict
 from datetime import datetime
 
 try:
-    from pyrogram import Client
-    PYROGRAM_AVAILABLE = True
+    from telethon import TelegramClient
+    TELETHON_AVAILABLE = True
 except ImportError:
-    PYROGRAM_AVAILABLE = False
-    Client = None
+    TELETHON_AVAILABLE = False
+    TelegramClient = None
 
 from database.db_manager import DatabaseManager
 from database.models import TelegramCredential, TelegramGroup, Message
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class TelegramService:
-    """Orchestrates Telegram API operations using Pyrogram."""
+    """Orchestrates Telegram API operations using Telethon."""
     
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
@@ -58,17 +58,17 @@ class TelegramService:
         self.account_status_checker = AccountStatusChecker(db_manager, self.client_manager)
     
     @property
-    def client(self) -> Optional[Client]:
+    def client(self) -> Optional[TelegramClient]:
         """Get current client instance."""
         return self.client_manager.get_client()
     
     @property
     def is_available(self) -> bool:
-        """Check if Pyrogram is available."""
+        """Check if Telethon is available."""
         return self.client_manager.is_available
     
-    def create_client(self, phone: str, api_id: str, api_hash: str) -> Optional[Client]:
-        """Create Pyrogram client."""
+    def create_client(self, phone: str, api_id: str, api_hash: str) -> Optional[TelegramClient]:
+        """Create Telethon client."""
         return self.client_utils.create_client(phone, api_id, api_hash)
     
     async def start_session(
@@ -232,7 +232,8 @@ class TelegramService:
         self,
         account_credential: TelegramCredential,
         group_id: Optional[int] = None,
-        invite_link: Optional[str] = None
+        invite_link: Optional[str] = None,
+        username: Optional[str] = None
     ) -> Tuple[bool, Optional[TelegramGroup], Optional[str], bool]:
         """
         Fetch group info using specific account and validate access.
@@ -240,8 +241,9 @@ class TelegramService:
         
         Args:
             account_credential: TelegramCredential to use
-            group_id: Group ID to validate (optional if invite_link provided)
-            invite_link: Invite link URL to validate (optional if group_id provided)
+            group_id: Group ID to validate (optional if invite_link or username provided)
+            invite_link: Invite link URL to validate (optional if group_id or username provided)
+            username: Group username without @ (optional if group_id or invite_link provided)
             
         Returns:
             (success, group_info, error_message, has_access)
@@ -249,5 +251,6 @@ class TelegramService:
         return await self.group_fetcher.fetch_and_validate_group(
             account_credential,
             group_id=group_id,
-            invite_link=invite_link
+            invite_link=invite_link,
+            username=username
         )

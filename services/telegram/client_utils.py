@@ -6,11 +6,11 @@ import logging
 from typing import Optional
 
 try:
-    from pyrogram import Client
-    PYROGRAM_AVAILABLE = True
+    from telethon import TelegramClient
+    TELETHON_AVAILABLE = True
 except ImportError:
-    PYROGRAM_AVAILABLE = False
-    Client = None
+    TELETHON_AVAILABLE = False
+    TelegramClient = None
 
 from database.models import TelegramCredential
 from config.settings import settings
@@ -25,14 +25,14 @@ class ClientUtils:
     def __init__(self, client_manager: ClientManager):
         self.client_manager = client_manager
     
-    def create_client(self, phone: str, api_id: str, api_hash: str) -> Optional[Client]:
-        """Create Pyrogram client."""
+    def create_client(self, phone: str, api_id: str, api_hash: str) -> Optional[TelegramClient]:
+        """Create Telethon client."""
         return self.client_manager.create_client(phone, api_id, api_hash)
     
     async def create_temporary_client(
         self,
         credential: TelegramCredential
-    ) -> Optional[Client]:
+    ) -> Optional[TelegramClient]:
         """
         Create a temporary client for a specific credential.
         Does not affect the current connected client.
@@ -41,7 +41,7 @@ class ClientUtils:
             credential: TelegramCredential to create client for
             
         Returns:
-            Temporary Client instance or None if failed
+            Temporary TelegramClient instance or None if failed
         """
         if not settings.has_telegram_credentials:
             return None
@@ -56,13 +56,13 @@ class ClientUtils:
             if client:
                 await client.connect()
                 # Verify it's authorized
-                me = await client.get_me()
-                if not me:
-                    await client.disconnect()
-                    return None
-                return client
+                if await client.is_user_authorized():
+                    me = await client.get_me()
+                    if me:
+                        return client
+                await client.disconnect()
+                return None
             return None
         except Exception as e:
             logger.error(f"Error creating temporary client: {e}")
             return None
-

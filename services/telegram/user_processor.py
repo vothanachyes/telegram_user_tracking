@@ -22,25 +22,24 @@ class UserProcessor:
         Process and save Telegram user.
         
         Args:
-            telegram_user: Pyrogram user object
+            telegram_user: Telethon user object
             
         Returns:
             TelegramUser object or None if failed/skipped
         """
         try:
             # Build full name
-            full_name = telegram_user.first_name or ""
-            if telegram_user.last_name:
-                full_name += f" {telegram_user.last_name}"
-            full_name = full_name.strip() or "Unknown User"
+            first_name = getattr(telegram_user, 'first_name', None) or ""
+            last_name = getattr(telegram_user, 'last_name', None) or ""
+            full_name = f"{first_name} {last_name}".strip() or "Unknown User"
             
             user = TelegramUser(
                 user_id=telegram_user.id,
-                username=telegram_user.username,
-                first_name=telegram_user.first_name,
-                last_name=telegram_user.last_name,
+                username=getattr(telegram_user, 'username', None),
+                first_name=first_name,
+                last_name=last_name if last_name else None,
                 full_name=full_name,
-                phone=telegram_user.phone_number if hasattr(telegram_user, 'phone_number') else None
+                phone=getattr(telegram_user, 'phone', None)
             )
             
             # Check if user is soft deleted

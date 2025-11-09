@@ -25,7 +25,7 @@ class MessageProcessor:
     
     async def process_message(
         self,
-        telegram_msg: 'PyrogramMessage',
+        telegram_msg: 'TelethonMessage',
         group_id: int,
         group_username: Optional[str]
     ) -> Optional[Message]:
@@ -33,7 +33,7 @@ class MessageProcessor:
         Process Telegram message and extract metadata.
         
         Args:
-            telegram_msg: Pyrogram message object
+            telegram_msg: Telethon message object
             group_id: Group ID
             group_username: Group username (optional)
             
@@ -41,7 +41,7 @@ class MessageProcessor:
             Message object or None if failed
         """
         try:
-            if not telegram_msg.from_user:
+            if not telegram_msg.sender:
                 return None
             
             # Determine media type and message type
@@ -53,12 +53,12 @@ class MessageProcessor:
             has_link = False
             sticker_emoji = None
             
-            # Check for sticker
+            # Check for sticker (Telethon uses message.media)
             if telegram_msg.sticker:
                 has_sticker = True
                 message_type = "sticker"
-                if hasattr(telegram_msg.sticker, 'emoji') and telegram_msg.sticker.emoji:
-                    sticker_emoji = telegram_msg.sticker.emoji
+                if hasattr(telegram_msg.sticker, 'alt') and telegram_msg.sticker.alt:
+                    sticker_emoji = telegram_msg.sticker.alt
                 has_media = True
                 media_type = "sticker"
                 media_count = 1
@@ -74,14 +74,14 @@ class MessageProcessor:
                 media_type = "video"
                 message_type = "video"
                 media_count = 1
-            # Check for video note
-            elif telegram_msg.video_note:
+            # Check for video note (round video)
+            elif telegram_msg.round:
                 has_media = True
                 media_type = "video_note"
                 message_type = "video_note"
                 media_count = 1
             # Check for animation (GIF)
-            elif telegram_msg.animation:
+            elif telegram_msg.gif:
                 has_media = True
                 media_type = "animation"
                 message_type = "animation"
@@ -105,7 +105,7 @@ class MessageProcessor:
                 message_type = "voice"
                 media_count = 1
             # Check for location
-            elif telegram_msg.location:
+            elif telegram_msg.geo:
                 message_type = "location"
             # Check for contact
             elif telegram_msg.contact:
@@ -113,14 +113,14 @@ class MessageProcessor:
             # Check for poll
             elif telegram_msg.poll:
                 message_type = "poll"
-            # Check for media group
-            elif telegram_msg.media_group_id:
+            # Check for media group (grouped_id in Telethon)
+            elif telegram_msg.grouped_id:
                 has_media = True
                 media_type = "media_group"
                 message_type = "media_group"
             
-            # Get message content
-            content = telegram_msg.text or telegram_msg.caption or ""
+            # Get message content (Telethon uses 'message' attribute for text)
+            content = getattr(telegram_msg, 'message', None) or ""
             
             # Detect links in content
             if content and URL_PATTERN.search(content):
@@ -134,9 +134,9 @@ class MessageProcessor:
             message = Message(
                 message_id=telegram_msg.id,
                 group_id=group_id,
-                user_id=telegram_msg.from_user.id,
+                user_id=telegram_msg.sender.id if telegram_msg.sender else 0,
                 content=content,
-                caption=telegram_msg.caption,
+                caption=getattr(telegram_msg, 'message', None) or "",  # Telethon uses 'message' for text
                 date_sent=telegram_msg.date,
                 has_media=has_media,
                 media_type=media_type,

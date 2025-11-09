@@ -25,14 +25,16 @@ class GroupManager:
         self,
         group_id: Optional[int] = None,
         invite_link: Optional[str] = None,
+        username: Optional[str] = None,
         download_photo: bool = True
     ) -> Tuple[bool, Optional[TelegramGroup], Optional[str]]:
         """
         Fetch group information.
         
         Args:
-            group_id: Group ID (optional if invite_link provided)
-            invite_link: Invite link URL (optional if group_id provided)
+            group_id: Group ID (optional if invite_link or username provided)
+            invite_link: Invite link URL (optional if group_id or username provided)
+            username: Group username without @ (optional if group_id or invite_link provided)
             download_photo: Whether to download group photo
             
         Returns:
@@ -42,83 +44,120 @@ class GroupManager:
             if not self.client:
                 return False, None, "Not connected to Telegram"
             
-            # Use invite link or group_id - Pyrogram's get_chat accepts both
-            chat_identifier = invite_link if invite_link else group_id
+            # Determine chat identifier - priority: invite_link > username > group_id
+            # Telethon's get_entity accepts usernames (with or without @), invite links, and IDs
+            if invite_link:
+                chat_identifier = invite_link
+            elif username:
+                # Ensure username starts with @ for Telethon
+                chat_identifier = username if username.startswith('@') else f"@{username}"
+            elif group_id:
+                chat_identifier = group_id
+            else:
+                return False, None, "Either group_id, invite_link, or username must be provided"
 
             logger.debug(f"Fetching group info with identifier: {chat_identifier} (type: {type(chat_identifier).__name__})")
             
-            if not chat_identifier:
-                return False, None, "Either group_id or invite_link must be provided"
-            
-            # Use the identifier directly - Pyrogram's get_chat() handles both formats
-            # For negative IDs like -1002529132546, Pyrogram will extract the channel_id internally
-            # For invite links, Pyrogram resolves them directly
+            # Use the identifier directly - Telethon's get_entity() handles:
+            # - Negative IDs like -1002529132546
+            # - Invite links (https://t.me/joinchat/...)
+            # - Usernames (@username or username)
             # 
             # IMPORTANT: For negative group IDs to work, the account must:
             # 1. Be a member of the group (not just accessed via invite link)
-            # 2. Have the chat cached in Pyrogram's session
-            # If get_chat() fails with "Peer id invalid", it means the account needs to join the group first
-            chat = await self.client.get_chat(chat_identifier)
+            # 2. Have the chat cached in Telethon's session
+            # If get_entity() fails with "Peer id invalid", it means the account needs to join the group first
+            
+            # Handle positive integer IDs that might be group/channel IDs
+            # Telethon treats positive integers as user IDs (PeerUser), so we need to try
+            # converting to negative format for groups/channels
+            entity = None
+            if isinstance(chat_identifier, int) and chat_identifier > 0:
+                # Try positive ID first (in case it's actually a user)
+                try:
+                    entity = await self.client.get_entity(chat_identifier)
+                    # Check if it's actually a group/channel, not a user
+                    from telethon.tl.types import User
+                    if isinstance(entity, User):
+                        # This is a user, not a group - try negative formats
+                        logger.debug(f"Positive ID {chat_identifier} resolved to User, trying group/channel formats...")
+                        entity = None
+                except Exception as e:
+                    error_str = str(e).lower()
+                    if "peeruser" in error_str or "could not find the input entity for peeruser" in error_str:
+                        # Telethon tried to resolve as user but failed - try group/channel formats
+                        logger.debug(f"Positive ID {chat_identifier} was treated as PeerUser, trying group/channel formats...")
+                    else:
+                        raise
+            
+            # If entity is None, try alternative formats for group/channel IDs
+            if entity is None and isinstance(chat_identifier, int) and chat_identifier > 0:
+                # Try negative format for regular groups: -{id}
+                try:
+                    negative_id = -chat_identifier
+                    logger.debug(f"Trying negative format: {negative_id}")
+                    entity = await self.client.get_entity(negative_id)
+                except Exception:
+                    # Try supergroup/channel format: -100{id}
+                    try:
+                        supergroup_id = int(f"-100{chat_identifier}")
+                        logger.debug(f"Trying supergroup format: {supergroup_id}")
+                        entity = await self.client.get_entity(supergroup_id)
+                    except Exception:
+                        # If all formats fail, raise the original error
+                        raise ValueError(
+                            f"Could not resolve group ID {chat_identifier}. "
+                            f"Telethon tried to resolve it as a user (PeerUser) but it doesn't exist. "
+                            f"Please provide the group's invite link, username, or ensure the account is a member of the group."
+                        )
+            
+            # If still None, try the original identifier (for negative IDs, usernames, links)
+            if entity is None:
+                entity = await self.client.get_entity(chat_identifier)
             
             # Determine the correct group ID format
-            # For channels/supergroups, Pyrogram returns positive channel_id
-            # but we need the full group ID format: -100{channel_id}
-            # For regular groups, Pyrogram may return positive ID that needs to be negated
-            resolved_group_id = chat.id
+            # Telethon returns entity.id which is already in the correct format
+            # For channels/supergroups, Telethon returns negative IDs like -100{channel_id}
+            # For regular groups, Telethon returns negative IDs like -{id}
+            resolved_group_id = entity.id
             
             # Check if this is a channel or supergroup
-            # Pyrogram's Chat object has type attribute
+            # Telethon uses type checking with telethon.tl.types
             is_channel_or_supergroup = False
             try:
-                from pyrogram.enums import ChatType
+                from telethon.tl.types import Channel, Chat
+                is_channel_or_supergroup = isinstance(entity, Channel)
+            except ImportError:
+                # Fallback: check using hasattr
                 is_channel_or_supergroup = (
-                    chat.type == ChatType.CHANNEL or 
-                    chat.type == ChatType.SUPERGROUP
-                )
-            except (ImportError, AttributeError):
-                # Fallback: check using hasattr for older Pyrogram versions
-                is_channel_or_supergroup = (
-                    hasattr(chat, 'is_channel') and chat.is_channel
-                ) or (
-                    hasattr(chat, 'is_supergroup') and chat.is_supergroup
+                    hasattr(entity, 'broadcast') or 
+                    hasattr(entity, 'megagroup') or
+                    hasattr(entity, 'gigagroup')
                 )
             
-            # Convert channel_id to full group ID format if needed
-            if is_channel_or_supergroup and resolved_group_id > 0:
-                # Convert: 2529132546 -> -1002529132546
-                # Format: -100{channel_id} (string concatenation, not math)
-                resolved_group_id = int(f"-100{resolved_group_id}")
-                logger.debug(
-                    f"Converted channel_id {chat.id} to full group ID {resolved_group_id} "
-                    f"(type: {getattr(chat, 'type', 'unknown')}, invite_link: {bool(invite_link)})"
-                )
-            elif resolved_group_id > 0 and not is_channel_or_supergroup:
-                # Regular group with positive ID - convert to negative format
-                # Regular groups use -{id} format (NOT -100{id})
-                # Example: 4703210976 -> -4703210976
-                resolved_group_id = -resolved_group_id
-                logger.debug(
-                    f"Converted regular group ID {chat.id} to negative format {resolved_group_id} "
-                    f"(type: {getattr(chat, 'type', 'unknown')}, invite_link: {bool(invite_link)})"
-                )
-            # If resolved_group_id is already negative, keep it as is
-            # (could be -4703210976 for regular group or -1004703210976 for supergroup)
+            # Telethon already returns IDs in the correct format
+            # No conversion needed - entity.id is already in the correct format
+            logger.debug(
+                f"Group ID from Telethon: {resolved_group_id} "
+                f"(type: {type(entity).__name__}, invite_link: {bool(invite_link)})"
+            )
             
-            # If we fetched via invite_link, try to ensure the group is accessible via group_id
-            # by refreshing dialogs. This helps Pyrogram cache the group in its session
-            # so the group_id can be used directly later (similar to how Telethon works)
-            if invite_link:
+            # If we fetched via invite_link or username, try to ensure the group is accessible via group_id
+            # by refreshing dialogs. This helps Telethon cache the group in its session
+            # so the group_id can be used directly later
+            if invite_link or username:
+                fetch_method = "invite link" if invite_link else "username"
                 logger.debug(
-                    f"Group fetched via invite link. Resolved ID: {resolved_group_id} "
-                    f"(original chat.id: {chat.id}, is_supergroup: {is_channel_or_supergroup})"
+                    f"Group fetched via {fetch_method}. Resolved ID: {resolved_group_id} "
+                    f"(entity.id: {entity.id}, is_supergroup: {is_channel_or_supergroup})"
                 )
                 try:
                     # Try to access the group using the resolved group_id to cache it
-                    # This ensures Pyrogram recognizes the group_id for future use
-                    test_chat = await self.client.get_chat(resolved_group_id)
+                    # This ensures Telethon recognizes the group_id for future use
+                    test_entity = await self.client.get_entity(resolved_group_id)
                     logger.info(
                         f"Successfully cached group_id {resolved_group_id} in session. "
-                        f"Chat type: {getattr(test_chat, 'type', 'unknown')}"
+                        f"Entity type: {type(test_entity).__name__}"
                     )
                 except Exception as cache_error:
                     # If direct access fails, try refreshing dialogs
@@ -127,23 +166,21 @@ class GroupManager:
                         f"Attempting to refresh dialogs to find group in session..."
                     )
                     try:
-                        # Refresh dialogs to update session (similar to Telethon's behavior)
-                        # This ensures Pyrogram has the group in its dialog list
+                        # Refresh dialogs to update session
+                        # This ensures Telethon has the group in its dialog list
                         found_in_dialogs = False
-                        async for dialog in self.client.get_dialogs(limit=200):
-                            # Check if this dialog matches our group (handle both positive and negative IDs)
-                            dialog_id = dialog.chat.id
-                            if (dialog_id == resolved_group_id or 
-                                abs(dialog_id) == abs(resolved_group_id) or
-                                (resolved_group_id < 0 and dialog_id > 0 and abs(dialog_id) == abs(resolved_group_id))):
+                        async for dialog in self.client.iter_dialogs(limit=200):
+                            # Check if this dialog matches our group
+                            dialog_id = dialog.entity.id
+                            if dialog_id == resolved_group_id:
                                 logger.info(
                                     f"Group {resolved_group_id} found in dialogs! "
-                                    f"Dialog ID: {dialog_id}, Chat: {dialog.chat.title}"
+                                    f"Dialog ID: {dialog_id}, Chat: {dialog.name}"
                                 )
                                 found_in_dialogs = True
                                 # Try to access it again after finding in dialogs
                                 try:
-                                    await self.client.get_chat(resolved_group_id)
+                                    await self.client.get_entity(resolved_group_id)
                                     logger.info(f"Successfully accessed group {resolved_group_id} after dialog refresh")
                                 except Exception as retry_error:
                                     logger.warning(f"Still cannot access group {resolved_group_id} after dialog refresh: {retry_error}")
@@ -164,14 +201,14 @@ class GroupManager:
                         )
             
             group = TelegramGroup(
-                group_id=resolved_group_id,  # Use converted ID
-                group_name=chat.title or "Unknown Group",
-                group_username=chat.username
+                group_id=resolved_group_id,  # Use entity ID
+                group_name=getattr(entity, 'title', None) or "Unknown Group",
+                group_username=getattr(entity, 'username', None)
             )
 
             logger.debug(
                 f"Created group: id={resolved_group_id}, name={group.group_name}, "
-                f"username={group.group_username}, original_chat_id={chat.id}"
+                f"username={group.group_username}, entity_id={entity.id}"
             )
             
             # Download group photo if requested
@@ -190,8 +227,19 @@ class GroupManager:
             error_str = str(e).lower()
             error_msg = str(e)
             
-            # Handle specific Pyrogram errors
-            if "channel_invalid" in error_str:
+            # Handle specific Telethon errors
+            if "peeruser" in error_str or "could not find the input entity for peeruser" in error_str:
+                # Positive integer ID was treated as user ID but doesn't exist
+                if group_id and group_id > 0:
+                    error_msg = (
+                        f"Group ID {group_id} was treated as a user ID. "
+                        f"Please provide the group's invite link, username, or use the negative group ID format "
+                        f"(e.g., -{group_id} or -100{group_id} for supergroups)."
+                    )
+                else:
+                    error_msg = "Could not find the entity. Please provide an invite link, username, or ensure the account is a member."
+                logger.warning(f"PeerUser error: {e}")
+            elif "channel_invalid" in error_str:
                 if invite_link:
                     error_msg = "Invalid invite link or account needs to join the group first. Please join the group using the invite link in Telegram, then try again."
                 else:

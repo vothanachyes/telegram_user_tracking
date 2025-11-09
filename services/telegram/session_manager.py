@@ -38,7 +38,14 @@ class SessionManager:
         )
         
         if success and client:
-            session_file_path = Path(client.workdir) / client.name
+            # Telethon stores session file path in client.session.filename
+            session_file_path = Path(client.session.filename) if hasattr(client.session, 'filename') else None
+            if not session_file_path:
+                # Fallback: construct session path from phone number
+                from utils.constants import BASE_DIR
+                session_name = f"session_{phone.replace('+', '')}"
+                session_file_path = BASE_DIR / "data" / "sessions" / session_name
+            
             credential = TelegramCredential(
                 phone_number=phone,
                 session_string=str(session_file_path),
@@ -61,18 +68,40 @@ class SessionManager:
         Start Telegram session with QR code flow.
         Returns (success, error_message, phone_number)
         """
-        success, error, client, phone_number = await self.client_manager.start_session_qr(
+        success, error, client, phone_number, session_file_path = await self.client_manager.start_session_qr(
             api_id, api_hash, qr_callback, status_callback, password_callback, cancelled_callback
         )
         
         if success and client and phone_number:
-            session_file_path = Path(client.workdir) / client.name
+            # Use the actual session file path returned from client_manager
+            # This ensures we use the correct path (renamed or original if rename failed)
+            if session_file_path:
+                session_file_path = Path(session_file_path)
+            else:
+                # Fallback: construct expected path
+                from utils.constants import BASE_DIR
+                session_name = f"session_{phone_number.replace('+', '')}"
+                session_file_path = BASE_DIR / "data" / "sessions" / session_name
+                logger.warning(f"Session path not returned from client_manager, using fallback: {session_file_path}")
+            
+            # Verify the session file exists
+            if not session_file_path.exists():
+                logger.error(f"Session file does not exist at {session_file_path} after QR login")
+                # Try to get from client as last resort
+                if hasattr(client.session, 'filename'):
+                    session_file_path = Path(client.session.filename)
+                    logger.warning(f"Using client session filename as fallback: {session_file_path}")
+                else:
+                    logger.error(f"Cannot determine session file path for {phone_number}")
+                    return False, "Session file path not found", phone_number
+            
             credential = TelegramCredential(
                 phone_number=phone_number,
                 session_string=str(session_file_path),
                 is_default=True
             )
             self.db_manager.save_telegram_credential(credential)
+            logger.info(f"Saved QR login credential for {phone_number} with session: {session_file_path}")
         
         return success, error, phone_number
     

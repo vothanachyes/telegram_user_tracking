@@ -88,6 +88,7 @@ class SettingsManager(BaseDatabaseManager):
                     db_path=_safe_get_row_value(row, 'db_path', None),
                     encryption_enabled=bool(_safe_get_row_value(row, 'encryption_enabled', False)),
                     encryption_key_hash=_safe_get_row_value(row, 'encryption_key_hash', None),
+                    session_encryption_enabled=bool(_safe_get_row_value(row, 'session_encryption_enabled', True)),
                     created_at=_parse_datetime(row['created_at']),
                     updated_at=_parse_datetime(row['updated_at'])
                 )
@@ -124,6 +125,7 @@ class SettingsManager(BaseDatabaseManager):
                         db_path = ?,
                         encryption_enabled = ?,
                         encryption_key_hash = ?,
+                        session_encryption_enabled = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = 1
                 """, (
@@ -147,7 +149,8 @@ class SettingsManager(BaseDatabaseManager):
                     settings.rate_limit_warning_last_seen,
                     settings.db_path,
                     settings.encryption_enabled,
-                    settings.encryption_key_hash
+                    settings.encryption_key_hash,
+                    settings.session_encryption_enabled
                 ))
                 conn.commit()
                 return True

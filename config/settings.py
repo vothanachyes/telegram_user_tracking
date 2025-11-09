@@ -255,6 +255,16 @@ class Settings:
         """
         settings = self.load_settings()
         return settings.encryption_enabled
+    
+    def is_session_encryption_enabled(self) -> bool:
+        """
+        Check if session file encryption is enabled.
+        
+        Returns:
+            True if session encryption is enabled, False otherwise
+        """
+        settings = self.load_settings()
+        return settings.session_encryption_enabled
 
 
 # Global settings instance

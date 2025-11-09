@@ -77,6 +77,15 @@ class ClientManager:
                     except Exception as e:
                         logger.warning(f"Could not delete temporary session file {temp_name}.session: {e}")
                 
+                # Clean up encrypted session files (.session.enc)
+                temp_file_enc = self._session_path / f"{temp_name}.session.enc"
+                if temp_file_enc.exists():
+                    try:
+                        temp_file_enc.unlink()
+                        logger.debug(f"Cleaned up temporary encrypted session file: {temp_name}.session.enc")
+                    except Exception as e:
+                        logger.warning(f"Could not delete temporary encrypted session file {temp_name}.session.enc: {e}")
+                
                 # Also check without extension (legacy)
                 temp_file_no_ext = self._session_path / temp_name
                 if temp_file_no_ext.exists():
@@ -103,7 +112,7 @@ class ClientManager:
         api_hash: str
     ) -> Optional[TelegramClient]:
         """
-        Create Telethon client.
+        Create Telethon client with encrypted session support.
         
         Args:
             phone: Phone number
@@ -121,12 +130,43 @@ class ClientManager:
             session_name = f"session_{phone.replace('+', '')}"
             session_file = self._session_path / session_name
             
-            # Telethon uses session file path directly
-            client = TelegramClient(
-                str(session_file),
-                int(api_id),
-                api_hash
-            )
+            # Check if session encryption is enabled
+            try:
+                from config.settings import settings
+                from services.telegram.sessions import EncryptedSQLiteSession
+                
+                if settings.is_session_encryption_enabled():
+                    # Use encrypted session
+                    db_manager = settings.db_manager
+                    session = EncryptedSQLiteSession(str(session_file), db_manager)
+                    client = TelegramClient(
+                        session,
+                        int(api_id),
+                        api_hash
+                    )
+                    logger.debug(f"Created client with encrypted session: {session_file}")
+                else:
+                    # Use regular session
+                    client = TelegramClient(
+                        str(session_file),
+                        int(api_id),
+                        api_hash
+                    )
+            except ImportError:
+                # Encrypted session not available, use regular session
+                client = TelegramClient(
+                    str(session_file),
+                    int(api_id),
+                    api_hash
+                )
+            except Exception as e:
+                logger.warning(f"Error creating encrypted session, falling back to regular: {e}")
+                # Fallback to regular session
+                client = TelegramClient(
+                    str(session_file),
+                    int(api_id),
+                    api_hash
+                )
             
             return client
         except Exception as e:
@@ -309,11 +349,42 @@ class ClientManager:
             session_name = "qr_login_temp"
             session_file = self._session_path / session_name
             
-            client = TelegramClient(
-                str(session_file),
-                int(api_id),
-                api_hash
-            )
+            # Check if session encryption is enabled
+            try:
+                from config.settings import settings
+                from services.telegram.sessions import EncryptedSQLiteSession
+                
+                if settings.is_session_encryption_enabled():
+                    # Use encrypted session for QR login
+                    db_manager = settings.db_manager
+                    session = EncryptedSQLiteSession(str(session_file), db_manager)
+                    client = TelegramClient(
+                        session,
+                        int(api_id),
+                        api_hash
+                    )
+                else:
+                    # Use regular session
+                    client = TelegramClient(
+                        str(session_file),
+                        int(api_id),
+                        api_hash
+                    )
+            except ImportError:
+                # Encrypted session not available, use regular session
+                client = TelegramClient(
+                    str(session_file),
+                    int(api_id),
+                    api_hash
+                )
+            except Exception as e:
+                logger.warning(f"Error creating encrypted session for QR login, falling back to regular: {e}")
+                # Fallback to regular session
+                client = TelegramClient(
+                    str(session_file),
+                    int(api_id),
+                    api_hash
+                )
             
             await client.connect()
             
@@ -355,8 +426,17 @@ class ClientManager:
                 if phone_number:
                     new_session_name = f"session_{phone_number.replace('+', '')}"
                     # Telethon session files have .session extension
+                    # Check if encryption is enabled to determine final extension
+                    try:
+                        from config.settings import settings
+                        use_encryption = settings.is_session_encryption_enabled()
+                    except Exception:
+                        use_encryption = False
+                    
                     new_session_file = self._session_path / f"{new_session_name}.session"
+                    new_session_file_enc = self._session_path / f"{new_session_name}.session.enc"
                     old_session_file = self._session_path / f"{session_name}.session"
+                    old_session_file_enc = self._session_path / f"{session_name}.session.enc"
                     
                     # Ensure session is saved
                     try:
@@ -372,38 +452,49 @@ class ClientManager:
                     rename_success = False
                     actual_session_path = old_session_file  # Default to old path if rename fails
                     
-                    if old_session_file.exists():
+                    # Check for encrypted session file first, then unencrypted
+                    old_file_to_rename = None
+                    new_file_path = None
+                    
+                    if use_encryption and old_session_file_enc.exists():
+                        old_file_to_rename = old_session_file_enc
+                        new_file_path = new_session_file_enc
+                    elif old_session_file.exists():
+                        old_file_to_rename = old_session_file
+                        new_file_path = new_session_file if not use_encryption else new_session_file_enc
+                    
+                    if old_file_to_rename and old_file_to_rename.exists():
                         try:
-                            old_session_file.rename(new_session_file)
+                            old_file_to_rename.rename(new_file_path)
                             rename_success = True
-                            actual_session_path = new_session_file
-                            logger.info(f"Successfully renamed session file from {session_name} to {new_session_name}")
+                            actual_session_path = new_file_path
+                            logger.info(f"Successfully renamed session file from {old_file_to_rename.name} to {new_file_path.name}")
                         except Exception as e:
                             logger.debug(f"Could not rename while connected (expected): {e}")
                             # Disconnect to release file lock, then rename
                             try:
                                 await client.disconnect()
                                 await asyncio.sleep(0.2)  # Brief delay after disconnect
-                                if old_session_file.exists():
-                                    old_session_file.rename(new_session_file)
+                                if old_file_to_rename.exists():
+                                    old_file_to_rename.rename(new_file_path)
                                     rename_success = True
-                                    actual_session_path = new_session_file
-                                    logger.info(f"Successfully renamed session file after disconnect: {session_name} to {new_session_name}")
+                                    actual_session_path = new_file_path
+                                    logger.info(f"Successfully renamed session file after disconnect: {old_file_to_rename.name} to {new_file_path.name}")
                                 else:
-                                    logger.warning(f"Old session file disappeared after disconnect: {old_session_file}")
+                                    logger.warning(f"Old session file disappeared after disconnect: {old_file_to_rename}")
                             except Exception as e2:
                                 logger.error(f"Error renaming session file: {e2}", exc_info=True)
                                 # Try copy as last resort
                                 try:
                                     import shutil
-                                    if old_session_file.exists():
-                                        shutil.copy2(old_session_file, new_session_file)
-                                        old_session_file.unlink()
+                                    if old_file_to_rename.exists():
+                                        shutil.copy2(old_file_to_rename, new_file_path)
+                                        old_file_to_rename.unlink()
                                         rename_success = True
-                                        actual_session_path = new_session_file
-                                        logger.info(f"Copied session file from {session_name} to {new_session_name}")
+                                        actual_session_path = new_file_path
+                                        logger.info(f"Copied session file from {old_file_to_rename.name} to {new_file_path.name}")
                                     else:
-                                        logger.error(f"Old session file does not exist for copying: {old_session_file}")
+                                        logger.error(f"Old session file does not exist for copying: {old_file_to_rename}")
                                 except Exception as e3:
                                     logger.error(f"Error copying session file: {e3}", exc_info=True)
                     

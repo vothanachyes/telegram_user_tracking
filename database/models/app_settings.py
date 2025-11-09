@@ -18,12 +18,12 @@ class AppSettings:
     telegram_api_hash: Optional[str] = None
     download_root_dir: str = "./downloads"
     download_media: bool = False
-    max_file_size_mb: int = 50
-    fetch_delay_seconds: float = 1.0
-    download_photos: bool = True
-    download_videos: bool = True
-    download_documents: bool = True
-    download_audio: bool = True
+    max_file_size_mb: int = 3
+    fetch_delay_seconds: float = 5.0
+    download_photos: bool = False
+    download_videos: bool = False
+    download_documents: bool = False
+    download_audio: bool = False
     track_reactions: bool = True
     reaction_fetch_delay: float = 0.5
     pin_enabled: bool = False
@@ -32,6 +32,7 @@ class AppSettings:
     db_path: Optional[str] = None  # Custom database path (None = use default)
     encryption_enabled: bool = False  # Database encryption enabled
     encryption_key_hash: Optional[str] = None  # Hash of encryption key (encrypted with DPAPI)
+    session_encryption_enabled: bool = True  # Session file encryption enabled (default: True)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

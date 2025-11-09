@@ -44,8 +44,36 @@ class Settings:
     def db_manager(self) -> DatabaseManager:
         """Get database manager instance."""
         if self._db_manager is None:
-            self._db_manager = DatabaseManager(DATABASE_PATH)
+            # Use custom path from settings if available, otherwise use default
+            db_path = DATABASE_PATH
+            if self._app_settings and self._app_settings.db_path:
+                db_path = self._app_settings.db_path
+            self._db_manager = DatabaseManager(db_path)
         return self._db_manager
+    
+    def reload_db_manager(self, new_path: Optional[str] = None):
+        """
+        Reload database manager with a new path.
+        Used when database path is changed.
+        
+        Args:
+            new_path: New database path (if None, uses path from settings)
+        """
+        # Close existing connection if any
+        if self._db_manager:
+            # DatabaseManager doesn't have explicit close, but we can recreate it
+            pass
+        
+        # Determine path to use
+        if new_path:
+            db_path = new_path
+        elif self._app_settings and self._app_settings.db_path:
+            db_path = self._app_settings.db_path
+        else:
+            db_path = DATABASE_PATH
+        
+        # Create new manager
+        self._db_manager = DatabaseManager(db_path)
     
     def load_settings(self) -> AppSettings:
         """Load settings from database."""
@@ -157,6 +185,76 @@ class Settings:
     @property
     def primary_color(self) -> str:
         return PRIMARY_COLOR
+    
+    def enable_field_encryption(self) -> bool:
+        """
+        Enable field-level encryption and generate encryption key if not exists.
+        
+        Returns:
+            True if encryption was enabled successfully, False otherwise
+        """
+        try:
+            from services.database.field_encryption_service import FieldEncryptionService
+            from services.database.encryption_service import DatabaseEncryptionService
+            
+            settings = self.load_settings()
+            
+            # If encryption is already enabled, return True
+            if settings.encryption_enabled:
+                return True
+            
+            # Generate encryption key if not exists
+            if not settings.encryption_key_hash:
+                encryption_key = FieldEncryptionService.generate_encryption_key()
+                key_hash = FieldEncryptionService.hash_key(encryption_key)
+                settings.encryption_key_hash = key_hash
+                logger.info("Generated new field encryption key")
+            
+            # Enable encryption
+            settings.encryption_enabled = True
+            
+            # Save settings
+            if self.save_settings(settings):
+                logger.info("Field-level encryption enabled successfully")
+                return True
+            else:
+                logger.error("Failed to save encryption settings")
+                return False
+        except Exception as e:
+            logger.error(f"Error enabling field encryption: {e}")
+            return False
+    
+    def disable_field_encryption(self) -> bool:
+        """
+        Disable field-level encryption.
+        Note: This does NOT decrypt existing data - data remains encrypted.
+        
+        Returns:
+            True if encryption was disabled successfully, False otherwise
+        """
+        try:
+            settings = self.load_settings()
+            settings.encryption_enabled = False
+            
+            if self.save_settings(settings):
+                logger.info("Field-level encryption disabled")
+                return True
+            else:
+                logger.error("Failed to save encryption settings")
+                return False
+        except Exception as e:
+            logger.error(f"Error disabling field encryption: {e}")
+            return False
+    
+    def is_field_encryption_enabled(self) -> bool:
+        """
+        Check if field-level encryption is enabled.
+        
+        Returns:
+            True if encryption is enabled, False otherwise
+        """
+        settings = self.load_settings()
+        return settings.encryption_enabled
 
 
 # Global settings instance

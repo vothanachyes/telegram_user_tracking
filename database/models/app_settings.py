@@ -29,6 +29,9 @@ class AppSettings:
     pin_enabled: bool = False
     encrypted_pin: Optional[str] = None
     rate_limit_warning_last_seen: Optional[datetime] = None
+    db_path: Optional[str] = None  # Custom database path (None = use default)
+    encryption_enabled: bool = False  # Database encryption enabled
+    encryption_key_hash: Optional[str] = None  # Hash of encryption key (encrypted with DPAPI)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

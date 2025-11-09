@@ -16,6 +16,16 @@ class UserManager(BaseDatabaseManager):
     def save_user(self, user: TelegramUser) -> Optional[int]:
         """Save or update a Telegram user."""
         try:
+            encryption_service = self.get_encryption_service()
+            
+            # Encrypt sensitive fields
+            encrypted_username = encryption_service.encrypt_field(user.username) if encryption_service else user.username
+            encrypted_first_name = encryption_service.encrypt_field(user.first_name) if encryption_service else user.first_name
+            encrypted_last_name = encryption_service.encrypt_field(user.last_name) if encryption_service else user.last_name
+            encrypted_full_name = encryption_service.encrypt_field(user.full_name) if encryption_service else user.full_name
+            encrypted_phone = encryption_service.encrypt_field(user.phone) if encryption_service else user.phone
+            encrypted_bio = encryption_service.encrypt_field(user.bio) if encryption_service else user.bio
+            
             with self.get_connection() as conn:
                 cursor = conn.execute("""
                     INSERT INTO telegram_users 
@@ -32,12 +42,12 @@ class UserManager(BaseDatabaseManager):
                         updated_at = CURRENT_TIMESTAMP
                 """, (
                     user.user_id,
-                    user.username,
-                    user.first_name,
-                    user.last_name,
-                    user.full_name,
-                    user.phone,
-                    user.bio,
+                    encrypted_username,
+                    encrypted_first_name,
+                    encrypted_last_name,
+                    encrypted_full_name,
+                    encrypted_phone,
+                    encrypted_bio,
                     user.profile_photo_path
                 ))
                 conn.commit()
@@ -48,6 +58,8 @@ class UserManager(BaseDatabaseManager):
     
     def get_all_users(self, include_deleted: bool = False) -> List[TelegramUser]:
         """Get all Telegram users."""
+        encryption_service = self.get_encryption_service()
+        
         query = "SELECT * FROM telegram_users"
         if not include_deleted:
             query += " WHERE is_deleted = 0"
@@ -55,23 +67,36 @@ class UserManager(BaseDatabaseManager):
         
         with self.get_connection() as conn:
             cursor = conn.execute(query)
-            return [TelegramUser(
-                id=row['id'],
-                user_id=row['user_id'],
-                username=row['username'],
-                first_name=row['first_name'],
-                last_name=row['last_name'],
-                full_name=row['full_name'],
-                phone=row['phone'],
-                bio=row['bio'],
-                profile_photo_path=row['profile_photo_path'],
-                is_deleted=bool(row['is_deleted']),
-                created_at=_parse_datetime(row['created_at']),
-                updated_at=_parse_datetime(row['updated_at'])
-            ) for row in cursor.fetchall()]
+            users = []
+            for row in cursor.fetchall():
+                # Decrypt sensitive fields
+                username = encryption_service.decrypt_field(row['username']) if encryption_service else row['username']
+                first_name = encryption_service.decrypt_field(row['first_name']) if encryption_service else row['first_name']
+                last_name = encryption_service.decrypt_field(row['last_name']) if encryption_service else row['last_name']
+                full_name = encryption_service.decrypt_field(row['full_name']) if encryption_service else row['full_name']
+                phone = encryption_service.decrypt_field(row['phone']) if encryption_service else row['phone']
+                bio = encryption_service.decrypt_field(row['bio']) if encryption_service else row['bio']
+                
+                users.append(TelegramUser(
+                    id=row['id'],
+                    user_id=row['user_id'],
+                    username=username,
+                    first_name=first_name,
+                    last_name=last_name,
+                    full_name=full_name or "",
+                    phone=phone,
+                    bio=bio,
+                    profile_photo_path=row['profile_photo_path'],
+                    is_deleted=bool(row['is_deleted']),
+                    created_at=_parse_datetime(row['created_at']),
+                    updated_at=_parse_datetime(row['updated_at'])
+                ))
+            return users
     
     def get_user_by_id(self, user_id: int) -> Optional[TelegramUser]:
         """Get user by Telegram user ID."""
+        encryption_service = self.get_encryption_service()
+        
         with self.get_connection() as conn:
             cursor = conn.execute(
                 "SELECT * FROM telegram_users WHERE user_id = ?",
@@ -79,15 +104,23 @@ class UserManager(BaseDatabaseManager):
             )
             row = cursor.fetchone()
             if row:
+                # Decrypt sensitive fields
+                username = encryption_service.decrypt_field(row['username']) if encryption_service else row['username']
+                first_name = encryption_service.decrypt_field(row['first_name']) if encryption_service else row['first_name']
+                last_name = encryption_service.decrypt_field(row['last_name']) if encryption_service else row['last_name']
+                full_name = encryption_service.decrypt_field(row['full_name']) if encryption_service else row['full_name']
+                phone = encryption_service.decrypt_field(row['phone']) if encryption_service else row['phone']
+                bio = encryption_service.decrypt_field(row['bio']) if encryption_service else row['bio']
+                
                 return TelegramUser(
                     id=row['id'],
                     user_id=row['user_id'],
-                    username=row['username'],
-                    first_name=row['first_name'],
-                    last_name=row['last_name'],
-                    full_name=row['full_name'],
-                    phone=row['phone'],
-                    bio=row['bio'],
+                    username=username,
+                    first_name=first_name,
+                    last_name=last_name,
+                    full_name=full_name or "",
+                    phone=phone,
+                    bio=bio,
                     profile_photo_path=row['profile_photo_path'],
                     is_deleted=bool(row['is_deleted']),
                     created_at=_parse_datetime(row['created_at']),
@@ -97,6 +130,8 @@ class UserManager(BaseDatabaseManager):
     
     def get_users_by_group(self, group_id: int, include_deleted: bool = False) -> List[TelegramUser]:
         """Get users who have sent messages in a specific group."""
+        encryption_service = self.get_encryption_service()
+        
         query = """
             SELECT DISTINCT u.* FROM telegram_users u
             INNER JOIN messages m ON u.user_id = m.user_id
@@ -111,20 +146,31 @@ class UserManager(BaseDatabaseManager):
         
         with self.get_connection() as conn:
             cursor = conn.execute(query, params)
-            return [TelegramUser(
-                id=row['id'],
-                user_id=row['user_id'],
-                username=row['username'],
-                first_name=row['first_name'],
-                last_name=row['last_name'],
-                full_name=row['full_name'],
-                phone=row['phone'],
-                bio=row['bio'],
-                profile_photo_path=row['profile_photo_path'],
-                is_deleted=bool(row['is_deleted']),
-                created_at=_parse_datetime(row['created_at']),
-                updated_at=_parse_datetime(row['updated_at'])
-            ) for row in cursor.fetchall()]
+            users = []
+            for row in cursor.fetchall():
+                # Decrypt sensitive fields
+                username = encryption_service.decrypt_field(row['username']) if encryption_service else row['username']
+                first_name = encryption_service.decrypt_field(row['first_name']) if encryption_service else row['first_name']
+                last_name = encryption_service.decrypt_field(row['last_name']) if encryption_service else row['last_name']
+                full_name = encryption_service.decrypt_field(row['full_name']) if encryption_service else row['full_name']
+                phone = encryption_service.decrypt_field(row['phone']) if encryption_service else row['phone']
+                bio = encryption_service.decrypt_field(row['bio']) if encryption_service else row['bio']
+                
+                users.append(TelegramUser(
+                    id=row['id'],
+                    user_id=row['user_id'],
+                    username=username,
+                    first_name=first_name,
+                    last_name=last_name,
+                    full_name=full_name or "",
+                    phone=phone,
+                    bio=bio,
+                    profile_photo_path=row['profile_photo_path'],
+                    is_deleted=bool(row['is_deleted']),
+                    created_at=_parse_datetime(row['created_at']),
+                    updated_at=_parse_datetime(row['updated_at'])
+                ))
+            return users
     
     def search_users(
         self,
@@ -136,64 +182,109 @@ class UserManager(BaseDatabaseManager):
         if not query or not query.strip():
             return []
         
-        search_term = f"%{query.strip()}%"
-        conditions = []
-        params = []
+        encryption_service = self.get_encryption_service()
+        query_lower = query.strip().lower()
         
-        # Check if query starts with @ (username search)
-        if query.strip().startswith('@'):
-            username_query = query.strip().lstrip('@')
-            conditions.append("(username LIKE ? OR username LIKE ?)")
-            params.extend([f"%{username_query}%", username_query])
+        # If encryption is enabled, we need to decrypt all users and search in memory
+        # This is less efficient but necessary since we can't search encrypted fields with SQL LIKE
+        if encryption_service and encryption_service.is_enabled():
+            # Get all users and filter in memory
+            all_users = self.get_all_users(include_deleted=include_deleted)
+            
+            # Filter users based on search query
+            matching_users = []
+            for user in all_users:
+                # Check if query matches any field (case-insensitive)
+                matches = False
+                if query_lower.startswith('@'):
+                    # Username search
+                    username_query = query_lower[1:]
+                    if user.username and username_query in user.username.lower():
+                        matches = True
+                else:
+                    # Search in all fields
+                    if (user.full_name and query_lower in user.full_name.lower()) or \
+                       (user.first_name and query_lower in user.first_name.lower()) or \
+                       (user.last_name and query_lower in user.last_name.lower()) or \
+                       (user.username and query_lower in user.username.lower()) or \
+                       (user.phone and query_lower in user.phone.lower()):
+                        matches = True
+                
+                if matches:
+                    matching_users.append(user)
+            
+            # Sort by relevance (full_name first, then username, then phone)
+            def sort_key(user):
+                if user.full_name and query_lower in user.full_name.lower():
+                    return (1, user.full_name or "")
+                elif user.username and query_lower in user.username.lower():
+                    return (2, user.username or "")
+                elif user.phone and query_lower in user.phone.lower():
+                    return (3, user.phone or "")
+                return (4, user.full_name or "")
+            
+            matching_users.sort(key=sort_key)
+            return matching_users[:limit]
         else:
-            # Search in full_name, first_name, last_name, username, phone
-            conditions.append("""
-                (full_name LIKE ? OR 
-                 first_name LIKE ? OR 
-                 last_name LIKE ? OR 
-                 username LIKE ? OR 
-                 phone LIKE ?)
-            """)
-            params.extend([search_term, search_term, search_term, search_term, search_term])
-        
-        if not include_deleted:
-            conditions.append("is_deleted = 0")
-        
-        where_clause = " AND ".join(conditions)
-        
-        sql = f"""
-            SELECT * FROM telegram_users
-            WHERE {where_clause}
-            ORDER BY 
-                CASE 
-                    WHEN full_name LIKE ? THEN 1
-                    WHEN username LIKE ? THEN 2
-                    WHEN phone LIKE ? THEN 3
-                    ELSE 4
-                END,
-                full_name
-            LIMIT ?
-        """
-        
-        # Add ordering params
-        params.extend([search_term, search_term, search_term, limit])
-        
-        with self.get_connection() as conn:
-            cursor = conn.execute(sql, params)
-            return [TelegramUser(
-                id=row['id'],
-                user_id=row['user_id'],
-                username=row['username'],
-                first_name=row['first_name'],
-                last_name=row['last_name'],
-                full_name=row['full_name'],
-                phone=row['phone'],
-                bio=row['bio'],
-                profile_photo_path=row['profile_photo_path'],
-                is_deleted=bool(row['is_deleted']),
-                created_at=_parse_datetime(row['created_at']),
-                updated_at=_parse_datetime(row['updated_at'])
-            ) for row in cursor.fetchall()]
+            # No encryption - use SQL LIKE search (more efficient)
+            search_term = f"%{query.strip()}%"
+            conditions = []
+            params = []
+            
+            # Check if query starts with @ (username search)
+            if query.strip().startswith('@'):
+                username_query = query.strip().lstrip('@')
+                conditions.append("(username LIKE ? OR username LIKE ?)")
+                params.extend([f"%{username_query}%", username_query])
+            else:
+                # Search in full_name, first_name, last_name, username, phone
+                conditions.append("""
+                    (full_name LIKE ? OR 
+                     first_name LIKE ? OR 
+                     last_name LIKE ? OR 
+                     username LIKE ? OR 
+                     phone LIKE ?)
+                """)
+                params.extend([search_term, search_term, search_term, search_term, search_term])
+            
+            if not include_deleted:
+                conditions.append("is_deleted = 0")
+            
+            where_clause = " AND ".join(conditions)
+            
+            sql = f"""
+                SELECT * FROM telegram_users
+                WHERE {where_clause}
+                ORDER BY 
+                    CASE 
+                        WHEN full_name LIKE ? THEN 1
+                        WHEN username LIKE ? THEN 2
+                        WHEN phone LIKE ? THEN 3
+                        ELSE 4
+                    END,
+                    full_name
+                LIMIT ?
+            """
+            
+            # Add ordering params
+            params.extend([search_term, search_term, search_term, limit])
+            
+            with self.get_connection() as conn:
+                cursor = conn.execute(sql, params)
+                return [TelegramUser(
+                    id=row['id'],
+                    user_id=row['user_id'],
+                    username=row['username'],
+                    first_name=row['first_name'],
+                    last_name=row['last_name'],
+                    full_name=row['full_name'],
+                    phone=row['phone'],
+                    bio=row['bio'],
+                    profile_photo_path=row['profile_photo_path'],
+                    is_deleted=bool(row['is_deleted']),
+                    created_at=_parse_datetime(row['created_at']),
+                    updated_at=_parse_datetime(row['updated_at'])
+                ) for row in cursor.fetchall()]
     
     def soft_delete_user(self, user_id: int) -> bool:
         """Soft delete a user."""

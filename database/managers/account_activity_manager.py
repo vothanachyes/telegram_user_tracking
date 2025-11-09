@@ -40,12 +40,17 @@ class AccountActivityManager(BaseDatabaseManager):
             return None
         
         try:
+            encryption_service = self.get_encryption_service()
+            
+            # Encrypt sensitive fields
+            encrypted_phone = encryption_service.encrypt_field(phone_number) if encryption_service else phone_number
+            
             with self.get_connection() as conn:
                 cursor = conn.execute("""
                     INSERT INTO account_activity_log 
                     (user_email, action, phone_number, action_timestamp)
                     VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                """, (user_email, action, phone_number))
+                """, (user_email, action, encrypted_phone))
                 conn.commit()
                 logger.info(f"Logged account action: {action} for user {user_email}")
                 return cursor.lastrowid
@@ -188,13 +193,18 @@ class AccountActivityManager(BaseDatabaseManager):
                     LIMIT ?
                 """, (user_email, limit))
                 
+                encryption_service = self.get_encryption_service()
+                
                 results = []
                 for row in cursor.fetchall():
+                    # Decrypt sensitive fields
+                    phone_number = encryption_service.decrypt_field(row['phone_number']) if encryption_service else row['phone_number']
+                    
                     results.append({
                         'id': row['id'],
                         'user_email': row['user_email'],
                         'action': row['action'],
-                        'phone_number': row['phone_number'],
+                        'phone_number': phone_number,
                         'action_timestamp': _parse_datetime(row['action_timestamp'])
                     })
                 return results

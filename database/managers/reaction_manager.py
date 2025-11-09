@@ -16,6 +16,11 @@ class ReactionManager(BaseDatabaseManager):
     def save_reaction(self, reaction: Reaction) -> Optional[int]:
         """Save a reaction."""
         try:
+            encryption_service = self.get_encryption_service()
+            
+            # Encrypt sensitive fields
+            encrypted_message_link = encryption_service.encrypt_field(reaction.message_link) if encryption_service else reaction.message_link
+            
             with self.get_connection() as conn:
                 cursor = conn.execute("""
                     INSERT INTO reactions 
@@ -27,7 +32,7 @@ class ReactionManager(BaseDatabaseManager):
                     reaction.group_id,
                     reaction.user_id,
                     reaction.emoji,
-                    reaction.message_link,
+                    encrypted_message_link,
                     reaction.reacted_at
                 ))
                 conn.commit()
@@ -38,22 +43,30 @@ class ReactionManager(BaseDatabaseManager):
     
     def get_reactions_by_message(self, message_id: int, group_id: int) -> List[Reaction]:
         """Get all reactions for a specific message."""
+        encryption_service = self.get_encryption_service()
+        
         with self.get_connection() as conn:
             cursor = conn.execute("""
                 SELECT * FROM reactions 
                 WHERE message_id = ? AND group_id = ?
                 ORDER BY created_at DESC
             """, (message_id, group_id))
-            return [Reaction(
-                id=row['id'],
-                message_id=row['message_id'],
-                group_id=row['group_id'],
-                user_id=row['user_id'],
-                emoji=row['emoji'],
-                message_link=row['message_link'],
-                reacted_at=_parse_datetime(row['reacted_at']),
-                created_at=_parse_datetime(row['created_at'])
-            ) for row in cursor.fetchall()]
+            reactions = []
+            for row in cursor.fetchall():
+                # Decrypt sensitive fields
+                message_link = encryption_service.decrypt_field(row['message_link']) if encryption_service else row['message_link']
+                
+                reactions.append(Reaction(
+                    id=row['id'],
+                    message_id=row['message_id'],
+                    group_id=row['group_id'],
+                    user_id=row['user_id'],
+                    emoji=row['emoji'],
+                    message_link=message_link,
+                    reacted_at=_parse_datetime(row['reacted_at']),
+                    created_at=_parse_datetime(row['created_at'])
+                ))
+            return reactions
     
     def get_reactions_by_user(
         self, 
@@ -61,6 +74,8 @@ class ReactionManager(BaseDatabaseManager):
         group_id: Optional[int] = None
     ) -> List[Reaction]:
         """Get all reactions given by a user."""
+        encryption_service = self.get_encryption_service()
+        
         query = "SELECT * FROM reactions WHERE user_id = ?"
         params = [user_id]
         
@@ -72,16 +87,22 @@ class ReactionManager(BaseDatabaseManager):
         
         with self.get_connection() as conn:
             cursor = conn.execute(query, params)
-            return [Reaction(
-                id=row['id'],
-                message_id=row['message_id'],
-                group_id=row['group_id'],
-                user_id=row['user_id'],
-                emoji=row['emoji'],
-                message_link=row['message_link'],
-                reacted_at=_parse_datetime(row['reacted_at']),
-                created_at=_parse_datetime(row['created_at'])
-            ) for row in cursor.fetchall()]
+            reactions = []
+            for row in cursor.fetchall():
+                # Decrypt sensitive fields
+                message_link = encryption_service.decrypt_field(row['message_link']) if encryption_service else row['message_link']
+                
+                reactions.append(Reaction(
+                    id=row['id'],
+                    message_id=row['message_id'],
+                    group_id=row['group_id'],
+                    user_id=row['user_id'],
+                    emoji=row['emoji'],
+                    message_link=message_link,
+                    reacted_at=_parse_datetime(row['reacted_at']),
+                    created_at=_parse_datetime(row['created_at'])
+                ))
+            return reactions
     
     def delete_reaction(self, reaction_id: int) -> bool:
         """Delete a reaction by ID."""

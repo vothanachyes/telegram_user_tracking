@@ -3,6 +3,7 @@ Base database manager with connection management, migrations, and helper functio
 """
 
 import sqlite3
+import base64
 from datetime import datetime
 from typing import Any, Optional
 from pathlib import Path
@@ -68,6 +69,7 @@ class BaseDatabaseManager:
     def __init__(self, db_path: str = "./data/app.db"):
         """Initialize database manager."""
         self.db_path = db_path
+        self._encryption_service = None
         self._ensure_db_directory()
         self._init_database()
     
@@ -210,7 +212,8 @@ class BaseDatabaseManager:
             
             # Check if user_license_cache table exists
             cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_license_cache'")
-            if not cursor.fetchone():
+            table_exists = cursor.fetchone()
+            if not table_exists:
                 conn.execute("""
                     CREATE TABLE user_license_cache (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -219,6 +222,8 @@ class BaseDatabaseManager:
                         expiration_date TIMESTAMP,
                         max_devices INTEGER NOT NULL DEFAULT 1,
                         max_groups INTEGER NOT NULL DEFAULT 3,
+                        max_accounts INTEGER NOT NULL DEFAULT 1,
+                        max_account_actions INTEGER NOT NULL DEFAULT 2,
                         last_synced TIMESTAMP,
                         is_active BOOLEAN NOT NULL DEFAULT 1,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -228,6 +233,20 @@ class BaseDatabaseManager:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_user_license_cache_email ON user_license_cache(user_email)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_user_license_cache_active ON user_license_cache(is_active)")
                 logger.info("Created user_license_cache table")
+            else:
+                # Table exists - check for missing columns and add them
+                cursor = conn.execute("PRAGMA table_info(user_license_cache)")
+                license_columns = {row[1] for row in cursor.fetchall()}
+                
+                # Add max_accounts column if missing
+                if 'max_accounts' not in license_columns:
+                    conn.execute("ALTER TABLE user_license_cache ADD COLUMN max_accounts INTEGER NOT NULL DEFAULT 1")
+                    logger.info("Added max_accounts column to user_license_cache table")
+                
+                # Add max_account_actions column if missing
+                if 'max_account_actions' not in license_columns:
+                    conn.execute("ALTER TABLE user_license_cache ADD COLUMN max_account_actions INTEGER NOT NULL DEFAULT 2")
+                    logger.info("Added max_account_actions column to user_license_cache table")
             
             # Check if app_update_history table exists
             cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='app_update_history'")
@@ -332,6 +351,21 @@ class BaseDatabaseManager:
                 conn.execute("ALTER TABLE app_settings ADD COLUMN rate_limit_warning_last_seen TIMESTAMP")
                 logger.info("Added rate_limit_warning_last_seen column to app_settings table")
             
+            # Add db_path to app_settings if missing
+            if 'db_path' not in settings_columns:
+                conn.execute("ALTER TABLE app_settings ADD COLUMN db_path TEXT")
+                logger.info("Added db_path column to app_settings table")
+            
+            # Add encryption_enabled to app_settings if missing
+            if 'encryption_enabled' not in settings_columns:
+                conn.execute("ALTER TABLE app_settings ADD COLUMN encryption_enabled BOOLEAN NOT NULL DEFAULT 0")
+                logger.info("Added encryption_enabled column to app_settings table")
+            
+            # Add encryption_key_hash to app_settings if missing
+            if 'encryption_key_hash' not in settings_columns:
+                conn.execute("ALTER TABLE app_settings ADD COLUMN encryption_key_hash TEXT")
+                logger.info("Added encryption_key_hash column to app_settings table")
+            
             # Create indexes if they don't exist
             conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_message_type ON messages(message_type)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_reactions_message_id ON reactions(message_id)")
@@ -358,4 +392,74 @@ class BaseDatabaseManager:
             pass
         
         return conn
+    
+    def get_encryption_service(self):
+        """
+        Get or initialize field encryption service.
+        Lazy initialization to avoid circular dependencies.
+        
+        Returns:
+            FieldEncryptionService instance, or None if encryption is disabled
+        """
+        if self._encryption_service is None:
+            try:
+                from services.database.field_encryption_service import FieldEncryptionService
+                from services.database.encryption_service import DatabaseEncryptionService
+                import platform
+                import hashlib
+                
+                # Get settings to check if encryption is enabled
+                with self.get_connection() as conn:
+                    cursor = conn.execute(
+                        "SELECT encryption_enabled, encryption_key_hash FROM app_settings WHERE id = 1"
+                    )
+                    row = cursor.fetchone()
+                    
+                    if row and row['encryption_enabled']:
+                        # Encryption is enabled - derive key from device-specific info and hash
+                        # This ensures the key is consistent for the same device but different per device
+                        encryption_key_hash = row['encryption_key_hash']
+                        
+                        if encryption_key_hash:
+                            # Derive encryption key from device info and stored hash
+                            # This creates a device-specific key that's consistent across sessions
+                            device_id = f"{platform.node()}-{platform.machine()}-{platform.system()}"
+                            
+                            # Use PBKDF2 to derive a consistent key
+                            from cryptography.hazmat.primitives import hashes
+                            from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+                            from cryptography.hazmat.backends import default_backend
+                            
+                            salt = hashlib.sha256(f"{device_id}-field-encryption".encode()).digest()[:16]
+                            kdf = PBKDF2HMAC(
+                                algorithm=hashes.SHA256(),
+                                length=32,
+                                salt=salt,
+                                iterations=100000,
+                                backend=default_backend()
+                            )
+                            
+                            # Use the stored hash as part of the key derivation
+                            key_material = f"{device_id}-{encryption_key_hash}".encode()
+                            key_bytes = kdf.derive(key_material)
+                            encryption_key = base64.urlsafe_b64encode(key_bytes).decode('utf-8')
+                            
+                            self._encryption_service = FieldEncryptionService(encryption_key)
+                        else:
+                            # Encryption enabled but no key hash - disable encryption
+                            logger.warning("Encryption enabled but no key hash found - disabling encryption")
+                            self._encryption_service = FieldEncryptionService(None)
+                    else:
+                        # Encryption not enabled
+                        self._encryption_service = FieldEncryptionService(None)
+            except Exception as e:
+                logger.error(f"Error initializing encryption service: {e}")
+                # Create disabled encryption service on error
+                try:
+                    from services.database.field_encryption_service import FieldEncryptionService
+                    self._encryption_service = FieldEncryptionService(None)
+                except Exception:
+                    pass
+        
+        return self._encryption_service
 

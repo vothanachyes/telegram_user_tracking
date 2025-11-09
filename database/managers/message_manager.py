@@ -17,6 +17,13 @@ class MessageManager(BaseDatabaseManager):
     def save_message(self, message: Message) -> Optional[int]:
         """Save a message."""
         try:
+            encryption_service = self.get_encryption_service()
+            
+            # Encrypt sensitive fields
+            encrypted_content = encryption_service.encrypt_field(message.content) if encryption_service else message.content
+            encrypted_caption = encryption_service.encrypt_field(message.caption) if encryption_service else message.caption
+            encrypted_message_link = encryption_service.encrypt_field(message.message_link) if encryption_service else message.message_link
+            
             with self.get_connection() as conn:
                 cursor = conn.execute("""
                     INSERT INTO messages 
@@ -39,13 +46,13 @@ class MessageManager(BaseDatabaseManager):
                     message.message_id,
                     message.group_id,
                     message.user_id,
-                    message.content,
-                    message.caption,
+                    encrypted_content,
+                    encrypted_caption,
                     message.date_sent,
                     message.has_media,
                     message.media_type,
                     message.media_count,
-                    message.message_link,
+                    encrypted_message_link,
                     message.message_type,
                     message.has_sticker,
                     message.has_link,
@@ -95,28 +102,38 @@ class MessageManager(BaseDatabaseManager):
         if limit:
             query += f" LIMIT {limit} OFFSET {offset}"
         
+        encryption_service = self.get_encryption_service()
+        
         with self.get_connection() as conn:
             cursor = conn.execute(query, params)
-            return [Message(
-                id=row['id'],
-                message_id=row['message_id'],
-                group_id=row['group_id'],
-                user_id=row['user_id'],
-                content=row['content'],
-                caption=row['caption'],
-                date_sent=_parse_datetime(row['date_sent']),
-                has_media=bool(row['has_media']),
-                media_type=row['media_type'],
-                media_count=row['media_count'],
-                message_link=row['message_link'],
-                message_type=_safe_get_row_value(row, 'message_type'),
-                has_sticker=bool(_safe_get_row_value(row, 'has_sticker', False)),
-                has_link=bool(_safe_get_row_value(row, 'has_link', False)),
-                sticker_emoji=_safe_get_row_value(row, 'sticker_emoji'),
-                is_deleted=bool(row['is_deleted']),
-                created_at=_parse_datetime(row['created_at']),
-                updated_at=_parse_datetime(row['updated_at'])
-            ) for row in cursor.fetchall()]
+            messages = []
+            for row in cursor.fetchall():
+                # Decrypt sensitive fields
+                content = encryption_service.decrypt_field(row['content']) if encryption_service else row['content']
+                caption = encryption_service.decrypt_field(row['caption']) if encryption_service else row['caption']
+                message_link = encryption_service.decrypt_field(row['message_link']) if encryption_service else row['message_link']
+                
+                messages.append(Message(
+                    id=row['id'],
+                    message_id=row['message_id'],
+                    group_id=row['group_id'],
+                    user_id=row['user_id'],
+                    content=content,
+                    caption=caption,
+                    date_sent=_parse_datetime(row['date_sent']),
+                    has_media=bool(row['has_media']),
+                    media_type=row['media_type'],
+                    media_count=row['media_count'],
+                    message_link=message_link,
+                    message_type=_safe_get_row_value(row, 'message_type'),
+                    has_sticker=bool(_safe_get_row_value(row, 'has_sticker', False)),
+                    has_link=bool(_safe_get_row_value(row, 'has_link', False)),
+                    sticker_emoji=_safe_get_row_value(row, 'sticker_emoji'),
+                    is_deleted=bool(row['is_deleted']),
+                    created_at=_parse_datetime(row['created_at']),
+                    updated_at=_parse_datetime(row['updated_at'])
+                ))
+            return messages
     
     def get_message_count(
         self,

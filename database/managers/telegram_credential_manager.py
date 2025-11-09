@@ -16,6 +16,12 @@ class TelegramCredentialManager(BaseDatabaseManager):
     def save_telegram_credential(self, credential: TelegramCredential) -> Optional[int]:
         """Save or update Telegram credential."""
         try:
+            encryption_service = self.get_encryption_service()
+            
+            # Encrypt sensitive fields
+            encrypted_phone = encryption_service.encrypt_field(credential.phone_number) if encryption_service else credential.phone_number
+            encrypted_session = encryption_service.encrypt_field(credential.session_string) if encryption_service else credential.session_string
+            
             with self.get_connection() as conn:
                 # If set as default, unset all others
                 if credential.is_default:
@@ -30,8 +36,8 @@ class TelegramCredentialManager(BaseDatabaseManager):
                         is_default = excluded.is_default,
                         last_used = CURRENT_TIMESTAMP
                 """, (
-                    credential.phone_number,
-                    credential.session_string,
+                    encrypted_phone,
+                    encrypted_session,
                     credential.is_default
                 ))
                 conn.commit()
@@ -42,19 +48,28 @@ class TelegramCredentialManager(BaseDatabaseManager):
     
     def get_telegram_credentials(self) -> List[TelegramCredential]:
         """Get all saved Telegram credentials."""
+        encryption_service = self.get_encryption_service()
+        
         with self.get_connection() as conn:
             cursor = conn.execute("""
                 SELECT * FROM telegram_credentials 
                 ORDER BY is_default DESC, last_used DESC
             """)
-            return [TelegramCredential(
-                id=row['id'],
-                phone_number=row['phone_number'],
-                session_string=row['session_string'],
-                is_default=bool(row['is_default']),
-                last_used=_parse_datetime(row['last_used']),
-                created_at=_parse_datetime(row['created_at'])
-            ) for row in cursor.fetchall()]
+            credentials = []
+            for row in cursor.fetchall():
+                # Decrypt sensitive fields
+                phone_number = encryption_service.decrypt_field(row['phone_number']) if encryption_service else row['phone_number']
+                session_string = encryption_service.decrypt_field(row['session_string']) if encryption_service else row['session_string']
+                
+                credentials.append(TelegramCredential(
+                    id=row['id'],
+                    phone_number=phone_number or "",
+                    session_string=session_string,
+                    is_default=bool(row['is_default']),
+                    last_used=_parse_datetime(row['last_used']),
+                    created_at=_parse_datetime(row['created_at'])
+                ))
+            return credentials
     
     def get_default_credential(self) -> Optional[TelegramCredential]:
         """Get default Telegram credential."""
@@ -66,6 +81,8 @@ class TelegramCredentialManager(BaseDatabaseManager):
     
     def get_credential_by_id(self, credential_id: int) -> Optional[TelegramCredential]:
         """Get Telegram credential by ID."""
+        encryption_service = self.get_encryption_service()
+        
         with self.get_connection() as conn:
             cursor = conn.execute(
                 "SELECT * FROM telegram_credentials WHERE id = ?",
@@ -73,10 +90,14 @@ class TelegramCredentialManager(BaseDatabaseManager):
             )
             row = cursor.fetchone()
             if row:
+                # Decrypt sensitive fields
+                phone_number = encryption_service.decrypt_field(row['phone_number']) if encryption_service else row['phone_number']
+                session_string = encryption_service.decrypt_field(row['session_string']) if encryption_service else row['session_string']
+                
                 return TelegramCredential(
                     id=row['id'],
-                    phone_number=row['phone_number'],
-                    session_string=row['session_string'],
+                    phone_number=phone_number or "",
+                    session_string=session_string,
                     is_default=bool(row['is_default']),
                     last_used=_parse_datetime(row['last_used']),
                     created_at=_parse_datetime(row['created_at'])
@@ -157,11 +178,16 @@ class TelegramCredentialManager(BaseDatabaseManager):
         Returns:
             Tuple of (exists, reason) where reason is None if doesn't exist
         """
+        encryption_service = self.get_encryption_service()
+        
+        # Encrypt phone number for comparison
+        encrypted_phone = encryption_service.encrypt_field(phone_number) if encryption_service else phone_number
+        
         # Check if phone number exists in database
         with self.get_connection() as conn:
             cursor = conn.execute(
                 "SELECT id FROM telegram_credentials WHERE phone_number = ?",
-                (phone_number,)
+                (encrypted_phone,)
             )
             if cursor.fetchone():
                 return True, f"Account with phone number {phone_number} already exists in database"

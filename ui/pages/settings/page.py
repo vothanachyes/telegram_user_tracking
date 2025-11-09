@@ -9,7 +9,7 @@ from database.models import AppSettings
 from ui.theme import theme_manager
 from config.settings import settings as app_settings
 from services.telegram import TelegramService
-from ui.pages.settings.tabs import GeneralTab, AuthenticateTab, ConfigureTab
+from ui.pages.settings.tabs import GeneralTab, AuthenticateTab, ConfigureTab, SecurityTab
 from ui.pages.settings.handlers import SettingsHandlers
 
 
@@ -56,6 +56,13 @@ class SettingsPage(ft.Container):
             handlers=self.handlers
         )
         
+        self.security_tab = SecurityTab(
+            current_settings=self.current_settings,
+            db_manager=self.db_manager,
+            handlers=self.handlers,
+            on_settings_changed=self.on_settings_changed
+        )
+        
         # Update handlers reference
         self.handlers.authenticate_tab = self.authenticate_tab
         
@@ -94,6 +101,11 @@ class SettingsPage(ft.Container):
                         icon=ft.Icons.TUNE,
                         content=self.configure_tab.build()
                     ),
+                    ft.Tab(
+                        text=theme_manager.t("security"),
+                        icon=ft.Icons.SECURITY,
+                        content=self.security_tab.build()
+                    ),
                 ],
             expand=True
         )
@@ -117,6 +129,7 @@ class SettingsPage(ft.Container):
         self.general_tab.update_settings(self.current_settings)
         self.authenticate_tab.update_settings(self.current_settings)
         self.configure_tab.update_settings(self.current_settings)
+        self.security_tab.update_settings(self.current_settings)
     
     def set_page(self, page: ft.Page):
         """Set page reference for all tabs and handlers."""
@@ -125,4 +138,5 @@ class SettingsPage(ft.Container):
         self.general_tab.page = page
         self.authenticate_tab.page = page
         self.configure_tab.page = page
+        self.security_tab.page = page
 

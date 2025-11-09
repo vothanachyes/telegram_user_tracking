@@ -21,6 +21,10 @@ python-dotenv>=1.0.0
 cryptography>=41.0.5
 requests>=2.31.0
 
+# Platform-specific Authentication
+pywin32>=306; sys_platform == "win32"
+python-pam>=2.0.0; sys_platform == "linux"
+
 # Build
 pyinstaller>=6.1.0
 

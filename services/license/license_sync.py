@@ -66,6 +66,7 @@ class LicenseSync:
                     'max_devices': tier_info.get('max_devices', 1),
                     'max_groups': tier_info.get('max_groups', 1),
                     'max_accounts': tier_info.get('max_accounts', 1),
+                    'max_account_actions': 2,  # Default max account actions
                     'active_device_ids': [],
                     # Set expiration based on tier's period
                     # Admin can extend this later
@@ -132,7 +133,8 @@ class LicenseSync:
                             'license_tier': LICENSE_TIER_BRONZE,
                             'max_devices': tier_info.get('max_devices', 1),
                             'max_groups': tier_info.get('max_groups', 1),
-                            'max_accounts': tier_info.get('max_accounts', 1)
+                            'max_accounts': tier_info.get('max_accounts', 1),
+                            'max_account_actions': 2
                         }
                         firebase_config.set_user_license(uid, updated_license)
                         
@@ -158,7 +160,8 @@ class LicenseSync:
                             'license_tier': LICENSE_TIER_BRONZE,
                             'max_devices': tier_info.get('max_devices', 1),
                             'max_groups': tier_info.get('max_groups', 1),
-                            'max_accounts': tier_info.get('max_accounts', 1)
+                            'max_accounts': tier_info.get('max_accounts', 1),
+                            'max_account_actions': 2
                         }
                         firebase_config.set_user_license(uid, updated_license)
                         
@@ -169,6 +172,7 @@ class LicenseSync:
             max_devices = license_data.get('max_devices', LICENSE_PRICING.get(tier, {}).get('max_devices', 1))
             max_groups = license_data.get('max_groups', LICENSE_PRICING.get(tier, {}).get('max_groups', 3))
             max_accounts = license_data.get('max_accounts', LICENSE_PRICING.get(tier, {}).get('max_accounts', 1))
+            max_account_actions = license_data.get('max_account_actions', 2)  # Default to 2 if not specified
             
             # Create cache entry
             cache = UserLicenseCache(
@@ -178,6 +182,7 @@ class LicenseSync:
                 max_devices=max_devices,
                 max_groups=max_groups,
                 max_accounts=max_accounts,
+                max_account_actions=max_account_actions,
                 is_active=True
             )
             

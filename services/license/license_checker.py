@@ -74,7 +74,8 @@ class LicenseChecker:
                     'days_until_expiration': None,
                     'max_devices': default_tier_info.get('max_devices', 1),
                     'max_groups': default_tier_info.get('max_groups', 3),
-                    'max_accounts': default_tier_info.get('max_accounts', 1)
+                    'max_accounts': default_tier_info.get('max_accounts', 1),
+                    'max_account_actions': 2
                 }
             if not user_email:
                 user_email = current_user.get('email')
@@ -126,7 +127,8 @@ class LicenseChecker:
             'days_until_expiration': days_until_expiration,
             'max_devices': cache.max_devices,
             'max_groups': cache.max_groups,
-            'max_accounts': cache.max_accounts
+            'max_accounts': cache.max_accounts,
+            'max_account_actions': cache.max_account_actions
         }
     
     def get_license_info(self, user_email: Optional[str] = None, uid: Optional[str] = None) -> Dict[str, Any]:

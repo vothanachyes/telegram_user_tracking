@@ -27,6 +27,7 @@ class UserLicenseCache:
     max_devices: int = 1
     max_groups: int = 3
     max_accounts: int = 1
+    max_account_actions: int = 2  # Max add/delete operations per time window
     last_synced: Optional[datetime] = None
     is_active: bool = True
     created_at: Optional[datetime] = None

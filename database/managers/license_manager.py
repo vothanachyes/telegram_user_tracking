@@ -19,14 +19,15 @@ class LicenseManager(BaseDatabaseManager):
             with self.get_connection() as conn:
                 cursor = conn.execute("""
                     INSERT INTO user_license_cache 
-                    (user_email, license_tier, expiration_date, max_devices, max_groups, max_accounts, last_synced, is_active)
-                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                    (user_email, license_tier, expiration_date, max_devices, max_groups, max_accounts, max_account_actions, last_synced, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
                     ON CONFLICT(user_email) DO UPDATE SET
                         license_tier = excluded.license_tier,
                         expiration_date = excluded.expiration_date,
                         max_devices = excluded.max_devices,
                         max_groups = excluded.max_groups,
                         max_accounts = excluded.max_accounts,
+                        max_account_actions = excluded.max_account_actions,
                         last_synced = CURRENT_TIMESTAMP,
                         is_active = excluded.is_active,
                         updated_at = CURRENT_TIMESTAMP
@@ -37,6 +38,7 @@ class LicenseManager(BaseDatabaseManager):
                     license_cache.max_devices,
                     license_cache.max_groups,
                     license_cache.max_accounts,
+                    license_cache.max_account_actions,
                     license_cache.is_active
                 ))
                 conn.commit()
@@ -60,6 +62,12 @@ class LicenseManager(BaseDatabaseManager):
                 except (KeyError, IndexError):
                     max_accounts = 1  # Default to 1 for backward compatibility
                 
+                # Handle max_account_actions column - may not exist in older databases
+                try:
+                    max_account_actions = row['max_account_actions']
+                except (KeyError, IndexError):
+                    max_account_actions = 2  # Default to 2 for backward compatibility
+                
                 return UserLicenseCache(
                     id=row['id'],
                     user_email=row['user_email'],
@@ -68,6 +76,7 @@ class LicenseManager(BaseDatabaseManager):
                     max_devices=row['max_devices'],
                     max_groups=row['max_groups'],
                     max_accounts=max_accounts,
+                    max_account_actions=max_account_actions,
                     last_synced=_parse_datetime(row['last_synced']),
                     is_active=bool(row['is_active']),
                     created_at=_parse_datetime(row['created_at']),

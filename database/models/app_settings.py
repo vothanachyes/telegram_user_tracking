@@ -17,7 +17,7 @@ class AppSettings:
     telegram_api_id: Optional[str] = None
     telegram_api_hash: Optional[str] = None
     download_root_dir: str = "./downloads"
-    download_media: bool = True
+    download_media: bool = False
     max_file_size_mb: int = 50
     fetch_delay_seconds: float = 1.0
     download_photos: bool = True

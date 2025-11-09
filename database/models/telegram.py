@@ -12,7 +12,7 @@ class TelegramCredential:
     """Telegram credential model for saved sessions."""
     id: Optional[int] = None
     phone_number: str = ""
-    session_string: Optional[str] = None  # Encrypted Pyrogram session
+    session_string: Optional[str] = None  # Telethon session file path
     is_default: bool = False
     last_used: Optional[datetime] = None
     created_at: Optional[datetime] = None

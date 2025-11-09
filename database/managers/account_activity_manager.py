@@ -85,21 +85,83 @@ class AccountActivityManager(BaseDatabaseManager):
             logger.error(f"Error getting recent activity count: {e}")
             return 0
     
-    def can_perform_account_action(self, user_email: str) -> bool:
+    def can_perform_account_action(self, user_email: str, max_actions: int = 2) -> bool:
         """
         Check if user can perform account action (add/delete).
-        Maximum 2 operations per 48 hours.
         
         Args:
             user_email: Email of the user
+            max_actions: Maximum number of actions allowed (default: 2, can be from license)
             
         Returns:
             True if user can perform action, False otherwise
         """
         count = self.get_recent_activity_count(user_email, hours=48)
-        can_perform = count < 2
-        logger.debug(f"User {user_email} can perform action: {can_perform} (count: {count}/2)")
+        can_perform = count < max_actions
+        logger.debug(f"User {user_email} can perform action: {can_perform} (count: {count}/{max_actions})")
         return can_perform
+    
+    def get_earliest_activity_timestamp(self, user_email: str, hours: int = 48) -> Optional[datetime]:
+        """
+        Get the earliest activity timestamp in the last N hours.
+        Used to calculate waiting time until next action is allowed.
+        
+        Args:
+            user_email: Email of the user
+            hours: Number of hours to look back (default: 48)
+            
+        Returns:
+            Datetime of earliest activity in window, or None if no activities
+        """
+        try:
+            with self.get_connection() as conn:
+                cutoff_time = datetime.now() - timedelta(hours=hours)
+                cutoff_str = cutoff_time.strftime("%Y-%m-%d %H:%M:%S")
+                cursor = conn.execute("""
+                    SELECT MIN(datetime(action_timestamp)) as earliest_timestamp
+                    FROM account_activity_log
+                    WHERE user_email = ? 
+                    AND datetime(action_timestamp) >= datetime(?)
+                """, (user_email, cutoff_str))
+                result = cursor.fetchone()
+                if result and result['earliest_timestamp']:
+                    return _parse_datetime(result['earliest_timestamp'])
+                return None
+        except Exception as e:
+            logger.error(f"Error getting earliest activity timestamp: {e}")
+            return None
+    
+    def get_waiting_time_hours(self, user_email: str, max_actions: int = 2, hours: int = 48) -> Optional[float]:
+        """
+        Calculate waiting time in hours until next action is allowed.
+        
+        Args:
+            user_email: Email of the user
+            max_actions: Maximum number of actions allowed
+            hours: Time window in hours (default: 48)
+            
+        Returns:
+            Hours remaining until earliest action expires from window, or None if action is allowed
+        """
+        count = self.get_recent_activity_count(user_email, hours=hours)
+        if count < max_actions:
+            return None  # Action is allowed, no waiting time
+        
+        earliest = self.get_earliest_activity_timestamp(user_email, hours=hours)
+        if not earliest:
+            return None  # No activities found, should be allowed
+        
+        # Calculate when the earliest activity will be outside the window
+        window_end = earliest + timedelta(hours=hours)
+        now = datetime.now()
+        
+        if window_end > now:
+            # Calculate hours remaining
+            delta = window_end - now
+            return delta.total_seconds() / 3600.0
+        else:
+            # Window has already passed, should be allowed
+            return None
     
     def get_activity_log(
         self,

@@ -203,8 +203,11 @@ class DatabaseManager(BaseDatabaseManager):
     def get_recent_activity_count(self, user_email, hours=48):
         return self._account_activity.get_recent_activity_count(user_email, hours)
     
-    def can_perform_account_action(self, user_email):
-        return self._account_activity.can_perform_account_action(user_email)
+    def can_perform_account_action(self, user_email, max_actions=2):
+        return self._account_activity.can_perform_account_action(user_email, max_actions=max_actions)
+    
+    def get_waiting_time_hours(self, user_email, max_actions=2, hours=48):
+        return self._account_activity.get_waiting_time_hours(user_email, max_actions=max_actions, hours=hours)
     
     def get_activity_log(self, user_email, limit=10):
         return self._account_activity.get_activity_log(user_email, limit)

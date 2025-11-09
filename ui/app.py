@@ -364,7 +364,7 @@ class TelegramUserTrackingApp:
                         return False
                     
                     # Check if it's a FetchDataPage
-                    from ui.pages.fetch_data_page import FetchDataPage
+                    from ui.pages.fetch_data.page import FetchDataPage
                     if isinstance(current_page, FetchDataPage):
                         # Check view model
                         if hasattr(current_page, 'view_model'):

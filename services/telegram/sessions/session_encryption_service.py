@@ -208,17 +208,30 @@ class SessionEncryptionService:
             # Decode from base64
             session_data = base64.b64decode(decrypted_b64.encode('utf-8'))
             
-            # Write to temporary file
+            # Write to temporary file in the same directory as encrypted file for permissions
+            # This ensures SQLite can write to it (same directory, same permissions)
+            temp_dir = encrypted_path.parent
             temp_file = tempfile.NamedTemporaryFile(
                 mode='wb',
                 suffix=self.SESSION_EXTENSION,
+                dir=str(temp_dir),
                 delete=False
             )
             temp_file.write(session_data)
+            temp_file.flush()  # Ensure data is written
             temp_file.close()
             
-            logger.debug(f"Decrypted session file to temporary file: {temp_file.name}")
-            return Path(temp_file.name)
+            # Ensure the temp file is writable (SQLite needs write access)
+            temp_path = Path(temp_file.name)
+            try:
+                # Make sure file is writable
+                import os
+                os.chmod(temp_path, 0o600)  # Read/write for owner only
+            except Exception as e:
+                logger.warning(f"Could not set permissions on temp file {temp_path}: {e}")
+            
+            logger.debug(f"Decrypted session file to temporary file: {temp_path}")
+            return temp_path
             
         except Exception as e:
             logger.error(f"Error decrypting session file {encrypted_path}: {e}", exc_info=True)

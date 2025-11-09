@@ -98,10 +98,10 @@ class EncryptedSQLiteSession(SQLiteSession):
         Save session and encrypt if encryption is enabled.
         """
         try:
-            # Let parent save normally
+            # Let parent save normally (this saves to the actual file path, which might be temp)
             super().save()
             
-            # If encryption is enabled, encrypt the session file
+            # If encryption is enabled and we're using a temp file, re-encrypt back to encrypted file
             if self._use_encryption:
                 # Get the actual session file path that was saved
                 session_file = Path(self.filename) if hasattr(self, 'filename') else self.session_path
@@ -110,8 +110,46 @@ class EncryptedSQLiteSession(SQLiteSession):
                 if not session_file.suffix:
                     session_file = session_file.with_suffix('.session')
                 
-                # Encrypt the session file (if it's not already encrypted)
-                if session_file.exists() and not self.encryption_service.is_encrypted(session_file):
+                # If we're working with a temp decrypted file, encrypt it back to the encrypted location
+                if self._temp_decrypted_file and session_file == self._temp_decrypted_file:
+                    # This is a temp file - encrypt it back to the encrypted location
+                    encrypted_path = self.encryption_service.get_encrypted_path(self.session_path)
+                    if not encrypted_path.suffix or encrypted_path.suffix != '.enc':
+                        encrypted_path = encrypted_path.with_suffix('.session.enc')
+                    
+                    # Read the temp file and encrypt it to the encrypted location
+                    if session_file.exists():
+                        try:
+                            # Read the decrypted session data from temp file
+                            with open(session_file, 'rb') as f:
+                                session_data = f.read()
+                            
+                            # Encrypt and write to encrypted location
+                            import base64
+                            from services.database.field_encryption_service import FieldEncryptionService
+                            encryption_service = self.encryption_service._get_encryption_service()
+                            
+                            if encryption_service:
+                                session_data_b64 = base64.b64encode(session_data).decode('utf-8')
+                                encrypted_data = encryption_service.encrypt_field(session_data_b64)
+                                
+                                if encrypted_data and encrypted_data.startswith(FieldEncryptionService.ENCRYPTION_PREFIX):
+                                    encrypted_b64 = encrypted_data[len(FieldEncryptionService.ENCRYPTION_PREFIX):]
+                                    encrypted_bytes = base64.b64decode(encrypted_b64.encode('utf-8'))
+                                    
+                                    # Write encrypted file
+                                    with open(encrypted_path, 'wb') as f:
+                                        f.write(encrypted_bytes)
+                                    
+                                    logger.debug(f"Re-encrypted session file from temp to: {encrypted_path}")
+                                else:
+                                    logger.warning(f"Failed to encrypt session data from temp file")
+                            else:
+                                logger.warning(f"Encryption service not available for re-encryption")
+                        except Exception as e:
+                            logger.error(f"Error re-encrypting temp session file: {e}", exc_info=True)
+                # If it's not a temp file and not already encrypted, encrypt it
+                elif session_file.exists() and not self.encryption_service.is_encrypted(session_file):
                     success = self.encryption_service.encrypt_session_file(session_file)
                     if success:
                         logger.debug(f"Encrypted session file: {session_file}")

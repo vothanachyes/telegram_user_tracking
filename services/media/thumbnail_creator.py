@@ -45,7 +45,7 @@ class ThumbnailCreator:
         self, 
         callback: Optional[Callable[[int, int], None]]
     ) -> Optional[Callable]:
-        """Create progress wrapper for Pyrogram download."""
+        """Create progress wrapper for Telethon download."""
         if not callback:
             return None
         

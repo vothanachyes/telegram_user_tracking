@@ -7,11 +7,10 @@ import os
 from typing import Optional, Callable, List
 
 try:
-    from pyrogram import Client
-    from pyrogram.types import Message as PyrogramMessage
-    PYROGRAM_AVAILABLE = True
+    from telethon import TelegramClient
+    TELETHON_AVAILABLE = True
 except ImportError:
-    PYROGRAM_AVAILABLE = False
+    TELETHON_AVAILABLE = False
 
 from database.models import MediaFile, Message
 from config.settings import settings
@@ -30,8 +29,8 @@ class MediaDownloader:
     
     async def download_message_media(
         self,
-        client: Client,
-        telegram_msg: 'PyrogramMessage',
+        client: TelegramClient,
+        telegram_msg: 'TelethonMessage',
         message: Message,
         user,
         progress_callback: Optional[Callable[[int, int], None]] = None
@@ -100,11 +99,12 @@ class MediaDownloader:
                 if media_file:
                     media_files.append(media_file)
             
-            # Save caption if present
-            if telegram_msg.caption:
+            # Save caption if present (Telethon uses 'message' attribute for text)
+            message_text = getattr(telegram_msg, 'message', None) or ""
+            if message_text:
                 caption_file = os.path.join(folder_path, "caption.txt")
                 with open(caption_file, "w", encoding="utf-8") as f:
-                    f.write(telegram_msg.caption)
+                    f.write(message_text)
             
         except Exception as e:
             logger.error(f"Error downloading message media: {e}")
@@ -113,8 +113,8 @@ class MediaDownloader:
     
     async def _download_photo(
         self,
-        client: Client,
-        telegram_msg: 'PyrogramMessage',
+        client: TelegramClient,
+        telegram_msg: 'TelethonMessage',
         folder_path: str,
         message: Message,
         progress_callback: Optional[Callable[[int, int], None]] = None
@@ -124,11 +124,11 @@ class MediaDownloader:
             file_name = f"photo_{message.message_id}.jpg"
             file_path = os.path.join(folder_path, file_name)
             
-            # Download
+            # Download (Telethon uses 'file' parameter instead of 'file_name')
             downloaded_path = await client.download_media(
-                telegram_msg.photo,
-                file_name=file_path,
-                progress=self.thumbnail_creator.create_progress_wrapper(progress_callback)
+                telegram_msg,
+                file=file_path,
+                progress_callback=self.thumbnail_creator.create_progress_wrapper(progress_callback) if progress_callback else None
             )
             
             if not downloaded_path:
@@ -156,8 +156,8 @@ class MediaDownloader:
     
     async def _download_video(
         self,
-        client: Client,
-        telegram_msg: 'PyrogramMessage',
+        client: TelegramClient,
+        telegram_msg: 'TelethonMessage',
         folder_path: str,
         message: Message,
         max_size_mb: int,
@@ -168,34 +168,44 @@ class MediaDownloader:
             video = telegram_msg.video
             
             # Check file size
-            if video.file_size > max_size_mb * 1024 * 1024:
-                logger.warning(f"Video too large: {video.file_size} bytes")
+            file_size = getattr(video, 'size', 0)
+            if file_size > max_size_mb * 1024 * 1024:
+                logger.warning(f"Video too large: {file_size} bytes")
                 return None
             
-            # Get file name
-            file_name = video.file_name or f"video_{message.message_id}.mp4"
+            # Get file name from document attributes
+            file_name = f"video_{message.message_id}.mp4"
+            if hasattr(video, 'attributes'):
+                for attr in video.attributes:
+                    if hasattr(attr, 'file_name'):
+                        file_name = attr.file_name
+                        break
+            
             file_name = sanitize_filename(file_name)
             file_path = os.path.join(folder_path, file_name)
             
-            # Download
+            # Download (Telethon uses 'file' parameter)
             downloaded_path = await client.download_media(
-                video,
-                file_name=file_path,
-                progress=self.thumbnail_creator.create_progress_wrapper(progress_callback)
+                telegram_msg,
+                file=file_path,
+                progress_callback=self.thumbnail_creator.create_progress_wrapper(progress_callback) if progress_callback else None
             )
             
             if not downloaded_path:
                 return None
             
-            file_size = os.path.getsize(downloaded_path)
+            actual_file_size = os.path.getsize(downloaded_path)
+            
+            # Get mime type
+            mime_type = getattr(video, 'mime_type', None) or "video/mp4"
             
             return MediaFile(
                 message_id=message.message_id,
                 file_path=downloaded_path,
                 file_name=file_name,
-                file_size_bytes=file_size,
+                file_size_bytes=actual_file_size,
                 file_type="video",
-                mime_type=video.mime_type or "video/mp4"
+                mime_type=mime_type
             )
             
         except Exception as e:
@@ -204,8 +214,8 @@ class MediaDownloader:
     
     async def _download_document(
         self,
-        client: Client,
-        telegram_msg: 'PyrogramMessage',
+        client: TelegramClient,
+        telegram_msg: 'TelethonMessage',
         folder_path: str,
         message: Message,
         max_size_mb: int,
@@ -216,39 +226,47 @@ class MediaDownloader:
             document = telegram_msg.document
             
             # Check file size
-            if document.file_size > max_size_mb * 1024 * 1024:
-                logger.warning(f"Document too large: {document.file_size} bytes")
+            file_size = getattr(document, 'size', 0)
+            if file_size > max_size_mb * 1024 * 1024:
+                logger.warning(f"Document too large: {file_size} bytes")
                 return None
             
-            # Get file name
-            file_name = document.file_name or f"document_{message.message_id}"
+            # Get file name from document attributes
+            file_name = f"document_{message.message_id}"
+            mime_type = getattr(document, 'mime_type', None) or "application/octet-stream"
+            if hasattr(document, 'attributes'):
+                for attr in document.attributes:
+                    if hasattr(attr, 'file_name'):
+                        file_name = attr.file_name
+                        break
+            
             file_name = sanitize_filename(file_name)
             file_path = os.path.join(folder_path, file_name)
             
-            # Download
+            # Download (Telethon uses 'file' parameter)
             downloaded_path = await client.download_media(
-                document,
-                file_name=file_path,
-                progress=self.thumbnail_creator.create_progress_wrapper(progress_callback)
+                telegram_msg,
+                file=file_path,
+                progress_callback=self.thumbnail_creator.create_progress_wrapper(progress_callback) if progress_callback else None
             )
             
             if not downloaded_path:
                 return None
             
-            file_size = os.path.getsize(downloaded_path)
+            actual_file_size = os.path.getsize(downloaded_path)
             
             # Create thumbnail if image
             thumbnail_path = None
-            if document.mime_type and document.mime_type.startswith("image/"):
+            if mime_type.startswith("image/"):
                 thumbnail_path = await self.thumbnail_creator.create_thumbnail(downloaded_path, folder_path)
             
             return MediaFile(
                 message_id=message.message_id,
                 file_path=downloaded_path,
                 file_name=file_name,
-                file_size_bytes=file_size,
+                file_size_bytes=actual_file_size,
                 file_type="document",
-                mime_type=document.mime_type,
+                mime_type=mime_type,
                 thumbnail_path=thumbnail_path
             )
             
@@ -258,8 +276,8 @@ class MediaDownloader:
     
     async def _download_audio(
         self,
-        client: Client,
-        telegram_msg: 'PyrogramMessage',
+        client: TelegramClient,
+        telegram_msg: 'TelethonMessage',
         folder_path: str,
         message: Message,
         max_size_mb: int,
@@ -270,38 +288,47 @@ class MediaDownloader:
             audio = telegram_msg.audio or telegram_msg.voice
             
             # Check file size
-            if audio.file_size > max_size_mb * 1024 * 1024:
-                logger.warning(f"Audio too large: {audio.file_size} bytes")
+            file_size = getattr(audio, 'size', 0)
+            if file_size > max_size_mb * 1024 * 1024:
+                logger.warning(f"Audio too large: {file_size} bytes")
                 return None
             
             # Get file name
+            file_name = f"audio_{message.message_id}.mp3"
+            mime_type = getattr(audio, 'mime_type', None) or "audio/mpeg"
+            
             if telegram_msg.audio:
-                file_name = audio.file_name or f"audio_{message.message_id}.mp3"
+                if hasattr(audio, 'attributes'):
+                    for attr in audio.attributes:
+                        if hasattr(attr, 'file_name'):
+                            file_name = attr.file_name
+                            break
             else:
                 file_name = f"voice_{message.message_id}.ogg"
+                mime_type = "audio/ogg"
             
             file_name = sanitize_filename(file_name)
             file_path = os.path.join(folder_path, file_name)
             
-            # Download
+            # Download (Telethon uses 'file' parameter)
             downloaded_path = await client.download_media(
-                audio,
-                file_name=file_path,
-                progress=self.thumbnail_creator.create_progress_wrapper(progress_callback)
+                telegram_msg,
+                file=file_path,
+                progress_callback=self.thumbnail_creator.create_progress_wrapper(progress_callback) if progress_callback else None
             )
             
             if not downloaded_path:
                 return None
             
-            file_size = os.path.getsize(downloaded_path)
+            actual_file_size = os.path.getsize(downloaded_path)
             
             return MediaFile(
                 message_id=message.message_id,
                 file_path=downloaded_path,
                 file_name=file_name,
-                file_size_bytes=file_size,
+                file_size_bytes=actual_file_size,
                 file_type="audio",
-                mime_type=audio.mime_type or "audio/mpeg"
+                mime_type=mime_type
             )
             
         except Exception as e:

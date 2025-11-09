@@ -6,11 +6,10 @@ import logging
 from typing import Optional, Callable, List
 
 try:
-    from pyrogram import Client
-    from pyrogram.types import Message as PyrogramMessage
-    PYROGRAM_AVAILABLE = True
+    from telethon import TelegramClient
+    TELETHON_AVAILABLE = True
 except ImportError:
-    PYROGRAM_AVAILABLE = False
+    TELETHON_AVAILABLE = False
 
 from database.db_manager import DatabaseManager
 from database.models import MediaFile, Message, TelegramUser
@@ -30,8 +29,8 @@ class MediaService:
     
     async def download_message_media(
         self,
-        client: Client,
-        telegram_msg: 'PyrogramMessage',
+        client: TelegramClient,
+        telegram_msg: 'TelethonMessage',
         message: Message,
         user: TelegramUser,
         progress_callback: Optional[Callable[[int, int], None]] = None

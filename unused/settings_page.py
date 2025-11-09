@@ -48,7 +48,7 @@ class SettingsPage(ft.Container):
         # Build UI with tabs
         super().__init__(
             content=self._build_tabs(),
-            padding=20,
+            padding=ft.padding.only(left=20, right=20, bottom=20, top=0),
             expand=True
         )
     
@@ -57,13 +57,12 @@ class SettingsPage(ft.Container):
         return ft.Column([
             ft.Row([
                 ft.Text(
-                    theme_manager.t("settings"),
-                    size=32,
+                    "Settings TEST CHANGED",
+                    size=theme_manager.font_size_page_title,
                     weight=ft.FontWeight.BOLD,
                     expand=True
                 ),
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            ft.Container(height=20),
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, spacing=0),
             ft.Tabs(
                 selected_index=0,
                 animation_duration=300,

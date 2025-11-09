@@ -41,10 +41,10 @@ class SplashScreen(ft.Container):
             content=ft.Column(
                 [
                     self.animated_container,
-                    ft.Container(height=20),
+                    theme_manager.spacing_container("lg"),
                     ft.Text(
                         settings.app_name,
-                        size=24,
+                        size=theme_manager.font_size_page_title,
                         weight=ft.FontWeight.BOLD,
                         text_align=ft.TextAlign.CENTER,
                     ),

@@ -31,30 +31,30 @@ class StatCard(ft.Container):
                     ),
                     bgcolor=self.color,
                     border_radius=theme_manager.corner_radius,
-                    padding=15,
+                    padding=theme_manager.padding_sm,
                     width=70,
                     height=70,
                     alignment=ft.alignment.center
                 ),
-                ft.Container(width=15),
+                theme_manager.spacing_container("md"),
                 ft.Column([
                     ft.Text(
                         title,
-                        size=14,
+                        size=theme_manager.font_size_body,
                         color=theme_manager.text_secondary_color
                     ),
                     ft.Text(
                         value,
-                        size=28,
+                        size=theme_manager.font_size_medium_number,
                         weight=ft.FontWeight.BOLD,
                         color=theme_manager.text_color
                     )
-                ], spacing=5, alignment=ft.MainAxisAlignment.CENTER)
+                ], spacing=theme_manager.spacing_xs, alignment=ft.MainAxisAlignment.CENTER)
             ], alignment=ft.MainAxisAlignment.START),
             bgcolor=theme_manager.surface_color,
             border=ft.border.all(1, theme_manager.border_color),
             border_radius=theme_manager.corner_radius,
-            padding=20,
+            padding=theme_manager.padding_lg,
             width=250
         )
     

@@ -6,6 +6,7 @@ import logging
 from typing import Optional, Tuple
 import flet as ft
 from ui.components import Sidebar, TopHeader
+from ui.components.gradient_background import GradientBackgroundService
 from ui.theme import theme_manager
 from services.connectivity_service import connectivity_service
 
@@ -28,6 +29,7 @@ class Router:
         self.current_page_id = "dashboard"
         self.sidebar: Optional[Sidebar] = None
         self.content_area: Optional[ft.Container] = None
+        self.gradient_service: Optional[GradientBackgroundService] = None
     
     def navigate_to(self, page_id: str):
         """
@@ -113,7 +115,7 @@ class Router:
         top_header.page = self.page
         
         # Main layout
-        main_layout = ft.Column([
+        main_layout_column = ft.Column([
             connectivity_banner,
             top_header,
             ft.Row([
@@ -126,7 +128,18 @@ class Router:
             )
         ], spacing=0, expand=True)
         
-        return main_layout, connectivity_banner
+        # Wrap in container with gradient background
+        gradient_container = ft.Container(
+            content=main_layout_column,
+            expand=True,
+            gradient=theme_manager.get_gradient_background(0)
+        )
+        
+        # Start gradient rotation service
+        self.gradient_service = GradientBackgroundService(self.page, gradient_container)
+        self.gradient_service.start()
+        
+        return gradient_container, connectivity_banner
     
     def update_connectivity_banner(self, is_connected: bool, banner: ft.Container):
         """

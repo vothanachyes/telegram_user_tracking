@@ -62,7 +62,7 @@ class GroupSelector:
         # Group info display
         self.group_info_text = ft.Text(
             "",
-            size=12,
+            size=theme_manager.font_size_small,
             color=theme_manager.text_secondary_color,
             visible=False
         )
@@ -73,13 +73,13 @@ class GroupSelector:
             self.group_dropdown,
             ft.Text(
                 theme_manager.t("enter_group_id_manually"),
-                size=12,
+                size=theme_manager.font_size_small,
                 color=theme_manager.text_secondary_color,
                 italic=True
             ),
             self.manual_entry_field,
             self.group_info_text,
-        ], spacing=10, tight=True)
+        ], spacing=theme_manager.spacing_sm, tight=True)
     
     def set_page(self, page: ft.Page):
         """Set the Flet page instance for updates."""

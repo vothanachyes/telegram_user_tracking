@@ -54,6 +54,7 @@ class ToastNotification:
         # Create positioned container for toasts
         # Use absolute positioning (left/top/right/bottom) instead of alignment
         # This prevents the container from expanding to fill the overlay
+        # The container itself doesn't block clicks - only toast cards inside do
         positioned_toast = ft.Container(
             content=self._toast_container,
             width=350,
@@ -105,9 +106,10 @@ class ToastNotification:
         """Get absolute positioning properties based on position."""
         # Use absolute positioning (left/top/right/bottom) to prevent expansion
         # This ensures the container only takes up space where toasts are
+        # Top position accounts for header height (45px) + spacing (10px) = 55px
         props = {}
         if "top" in self._position:
-            props["top"] = 10
+            props["top"] = 55  # Below header (45px) + spacing (10px)
         if "bottom" in self._position:
             props["bottom"] = 10
         if "right" in self._position:

@@ -21,7 +21,7 @@ class Sidebar(ft.Container):
         self.current_page = current_page
         
         super().__init__(
-            width=80,
+            width=65,
             bgcolor=theme_manager.surface_color,
             border=ft.border.only(right=ft.BorderSide(1, theme_manager.border_color)),
             padding=ft.padding.only(top=20, bottom=20),
@@ -63,13 +63,13 @@ class Sidebar(ft.Container):
         icon_button = ft.IconButton(
             icon=icon,
             icon_color=ft.Colors.WHITE if is_active else theme_manager.text_secondary_color,
-            icon_size=28,
+            icon_size=24,
             tooltip=tooltip,
             on_click=click_handler,
             style=ft.ButtonStyle(
                 bgcolor=theme_manager.primary_color if is_active else ft.Colors.TRANSPARENT,
                 shape=ft.RoundedRectangleBorder(radius=theme_manager.corner_radius),
-                padding=16  # Padding to center the icon
+                padding=12  # Padding to center the icon
             )
         )
         
@@ -77,8 +77,8 @@ class Sidebar(ft.Container):
         # Don't set bgcolor or on_click on Container to avoid blocking events
         return ft.Container(
             content=icon_button,
-            width=60,
-            height=60,
+            width=50,
+            height=50,
             alignment=ft.alignment.center,
             ink=False
         )
@@ -105,21 +105,21 @@ class Sidebar(ft.Container):
         icon_button = ft.IconButton(
             icon=ft.Icons.DOWNLOAD,
             icon_color=ft.Colors.WHITE,
-            icon_size=28,
+            icon_size=24,
             tooltip=theme_manager.t("fetch_data"),
             on_click=lambda e: self._handle_fetch_click(),
             style=ft.ButtonStyle(
                 bgcolor=ft.Colors.GREEN,
                 shape=ft.RoundedRectangleBorder(radius=theme_manager.corner_radius),
-                padding=16  # Padding to center the icon
+                padding=12  # Padding to center the icon
             )
         )
         
         # Wrap in Container for sizing only - IconButton handles clicks and tooltips
         return ft.Container(
             content=icon_button,
-            width=60,
-            height=60,
+            width=50,
+            height=50,
             alignment=ft.alignment.center,
             ink=False
         )

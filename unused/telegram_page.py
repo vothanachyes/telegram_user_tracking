@@ -58,15 +58,16 @@ class TelegramPage(ft.Container):
         
         super().__init__(
             content=ft.Column([
+                theme_manager.spacing_container("sm"),  # Spacing from header
                 ft.Text(
                     theme_manager.t("telegram"),
-                    size=32,
+                    size=theme_manager.font_size_page_title,
                     weight=ft.FontWeight.BOLD
                 ),
-                ft.Container(height=10),
+                theme_manager.spacing_container("sm"),
                 self.tabs,
-            ], spacing=10, expand=True),
-            padding=20,
+            ], spacing=theme_manager.spacing_sm, expand=True),
+            padding=theme_manager.padding_lg,
             expand=True
         )
     

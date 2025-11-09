@@ -37,6 +37,8 @@ class PageConfig:
             pass
         
         page.padding = 0
+        # Background will be handled by gradient container in router
+        # Keep background color as fallback
         page.bgcolor = theme_manager.background_color
         
         from ui.components.toast import toast
@@ -54,6 +56,8 @@ class PageConfig:
         """
         page.theme_mode = theme_manager.theme_mode
         page.theme = theme_manager.get_theme()
+        # Background will be handled by gradient container in router
+        # Keep background color as fallback
         page.bgcolor = theme_manager.background_color
         page.update()
 

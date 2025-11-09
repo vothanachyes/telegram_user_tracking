@@ -29,11 +29,16 @@ class GroupFetcher:
     
     async def fetch_group_info(
         self,
-        group_id: int
+        group_id: Optional[int] = None,
+        invite_link: Optional[str] = None
     ) -> Tuple[bool, Optional[TelegramGroup], Optional[str]]:
         """
         Fetch group information using temporary client (connect on demand).
         Returns (success, group, error_message)
+        
+        Args:
+            group_id: Group ID (optional if invite_link provided)
+            invite_link: Invite link URL (optional if group_id provided)
         """
         temp_client = None
         try:
@@ -50,7 +55,10 @@ class GroupFetcher:
             # Create group manager with temporary client
             temp_group_manager = GroupManager(self.db_manager, temp_client)
             
-            return await temp_group_manager.fetch_group_info(group_id)
+            return await temp_group_manager.fetch_group_info(
+                group_id=group_id,
+                invite_link=invite_link
+            )
         except Exception as e:
             logger.error(f"Error fetching group info: {e}")
             return False, None, str(e)
@@ -65,7 +73,8 @@ class GroupFetcher:
     async def fetch_and_validate_group(
         self,
         account_credential: TelegramCredential,
-        group_id: int
+        group_id: Optional[int] = None,
+        invite_link: Optional[str] = None
     ) -> Tuple[bool, Optional[TelegramGroup], Optional[str], bool]:
         """
         Fetch group info using specific account and validate access.
@@ -73,7 +82,8 @@ class GroupFetcher:
         
         Args:
             account_credential: TelegramCredential to use
-            group_id: Group ID to validate
+            group_id: Group ID to validate (optional if invite_link provided)
+            invite_link: Invite link URL to validate (optional if group_id provided)
             
         Returns:
             (success, group_info, error_message, has_access)
@@ -95,14 +105,25 @@ class GroupFetcher:
             temp_group_manager = GroupManager(self.db_manager, temp_client)
             
             # Fetch group info
-            success, group, error = await temp_group_manager.fetch_group_info(group_id)
+            success, group, error = await temp_group_manager.fetch_group_info(
+                group_id=group_id,
+                invite_link=invite_link
+            )
             
             if not success:
                 # Check for specific error types
                 error_lower = (error or "").lower()
                 
+                # Check if it's a channel invalid error (usually means account hasn't joined the group)
+                if "channel_invalid" in error_lower:
+                    return False, None, "not_member", False  # Account needs to join the group first
+                
+                # Check if it's a peer id invalid error (usually means no access)
+                if "peer id invalid" in error_lower:
+                    return False, None, "not_member", False  # Account doesn't have access
+                
                 # Check if it's a session/authorization error
-                if "unauthorized" in error_lower or "expired" in error_lower or "invalid" in error_lower:
+                if "unauthorized" in error_lower or "expired" in error_lower or ("invalid" in error_lower and "session" in error_lower):
                     return False, None, "Account session expired, please reconnect", False
                 
                 # Check if it's a permission error
@@ -123,6 +144,14 @@ class GroupFetcher:
             # Handle Pyrogram-specific exceptions
             error_str = str(e).lower()
             error_type = type(e).__name__
+            
+            # Check for channel invalid error (usually means account hasn't joined the group)
+            if "channel_invalid" in error_str:
+                return False, None, "not_member", False
+            
+            # Check for peer id invalid error (usually means no access)
+            if "peer id invalid" in error_str:
+                return False, None, "not_member", False
             
             # Check for specific Pyrogram error types
             if ChatNotFound and isinstance(e, ChatNotFound):

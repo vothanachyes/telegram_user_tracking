@@ -6,6 +6,7 @@ from database.managers.base import BaseDatabaseManager
 from database.managers.settings_manager import SettingsManager
 from database.managers.telegram_credential_manager import TelegramCredentialManager
 from database.managers.group_manager import GroupManager
+from database.managers.fetch_history_manager import FetchHistoryManager
 from database.managers.user_manager import UserManager
 from database.managers.message_manager import MessageManager
 from database.managers.media_manager import MediaManager
@@ -32,6 +33,7 @@ class DatabaseManager(BaseDatabaseManager):
         self._settings = SettingsManager(db_path)
         self._telegram_credential = TelegramCredentialManager(db_path)
         self._group = GroupManager(db_path)
+        self._fetch_history = FetchHistoryManager(db_path)
         self._user = UserManager(db_path)
         self._message = MessageManager(db_path)
         self._media = MediaManager(db_path)
@@ -87,6 +89,16 @@ class DatabaseManager(BaseDatabaseManager):
     
     def get_group_by_id(self, group_id):
         return self._group.get_group_by_id(group_id)
+    
+    # Fetch History
+    def save_fetch_history(self, history):
+        return self._fetch_history.save_fetch_history(history)
+    
+    def get_fetch_history_by_group(self, group_id):
+        return self._fetch_history.get_fetch_history_by_group(group_id)
+    
+    def get_all_fetch_history(self):
+        return self._fetch_history.get_all_fetch_history()
     
     # Users
     def save_user(self, user):

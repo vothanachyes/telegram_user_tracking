@@ -2,6 +2,8 @@
 App settings manager.
 """
 
+from datetime import datetime
+from typing import Optional
 from database.managers.base import BaseDatabaseManager, _safe_get_row_value, _parse_datetime
 from database.models.app_settings import AppSettings
 import logging
@@ -11,6 +13,26 @@ logger = logging.getLogger(__name__)
 
 class SettingsManager(BaseDatabaseManager):
     """Manages app settings operations."""
+    
+    def get_rate_limit_warning_last_seen(self) -> Optional[datetime]:
+        """Get the last seen timestamp for rate limit warning."""
+        settings = self.get_settings()
+        return settings.rate_limit_warning_last_seen
+    
+    def update_rate_limit_warning_last_seen(self, timestamp: datetime) -> bool:
+        """Update the last seen timestamp for rate limit warning."""
+        try:
+            with self.get_connection() as conn:
+                conn.execute("""
+                    UPDATE app_settings 
+                    SET rate_limit_warning_last_seen = ?
+                    WHERE id = 1
+                """, (timestamp,))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error updating rate_limit_warning_last_seen: {e}")
+            return False
     
     def get_settings(self) -> AppSettings:
         """Get application settings."""
@@ -37,6 +59,7 @@ class SettingsManager(BaseDatabaseManager):
                     reaction_fetch_delay=_safe_get_row_value(row, 'reaction_fetch_delay', 0.5),
                     pin_enabled=bool(_safe_get_row_value(row, 'pin_enabled', False)),
                     encrypted_pin=_safe_get_row_value(row, 'encrypted_pin', None),
+                    rate_limit_warning_last_seen=_parse_datetime(_safe_get_row_value(row, 'rate_limit_warning_last_seen')),
                     created_at=_parse_datetime(row['created_at']),
                     updated_at=_parse_datetime(row['updated_at'])
                 )
@@ -65,6 +88,7 @@ class SettingsManager(BaseDatabaseManager):
                         reaction_fetch_delay = ?,
                         pin_enabled = ?,
                         encrypted_pin = ?,
+                        rate_limit_warning_last_seen = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = 1
                 """, (
@@ -84,7 +108,8 @@ class SettingsManager(BaseDatabaseManager):
                     settings.track_reactions,
                     settings.reaction_fetch_delay,
                     settings.pin_enabled,
-                    settings.encrypted_pin
+                    settings.encrypted_pin,
+                    settings.rate_limit_warning_last_seen
                 ))
                 conn.commit()
                 return True

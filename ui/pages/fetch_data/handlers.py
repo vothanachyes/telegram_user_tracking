@@ -90,10 +90,13 @@ class FetchHandlers:
             self.group_selector.disable()
         
         # Initialize account list
-        if page and hasattr(page, 'run_task'):
-            page.run_task(self._initialize_accounts)
+        if page:
+            try:
+                page.run_task(self._initialize_accounts)
+            except Exception as ex:
+                logger.error(f"Error running initialize accounts task: {ex}", exc_info=True)
         else:
-            asyncio.create_task(self._initialize_accounts())
+            logger.warning("Page not available, cannot initialize accounts")
     
     async def _initialize_accounts(self):
         """Initialize account list."""

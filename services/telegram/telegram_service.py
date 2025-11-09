@@ -132,13 +132,18 @@ class TelegramService:
     
     async def fetch_group_info(
         self,
-        group_id: int
+        group_id: Optional[int] = None,
+        invite_link: Optional[str] = None
     ) -> Tuple[bool, Optional[TelegramGroup], Optional[str]]:
         """
         Fetch group information using temporary client (connect on demand).
         Returns (success, group, error_message)
+        
+        Args:
+            group_id: Group ID (optional if invite_link provided)
+            invite_link: Invite link URL (optional if group_id provided)
         """
-        return await self.group_fetcher.fetch_group_info(group_id)
+        return await self.group_fetcher.fetch_group_info(group_id=group_id, invite_link=invite_link)
     
     async def fetch_messages(
         self,
@@ -226,7 +231,8 @@ class TelegramService:
     async def fetch_and_validate_group(
         self,
         account_credential: TelegramCredential,
-        group_id: int
+        group_id: Optional[int] = None,
+        invite_link: Optional[str] = None
     ) -> Tuple[bool, Optional[TelegramGroup], Optional[str], bool]:
         """
         Fetch group info using specific account and validate access.
@@ -234,9 +240,14 @@ class TelegramService:
         
         Args:
             account_credential: TelegramCredential to use
-            group_id: Group ID to validate
+            group_id: Group ID to validate (optional if invite_link provided)
+            invite_link: Invite link URL to validate (optional if group_id provided)
             
         Returns:
             (success, group_info, error_message, has_access)
         """
-        return await self.group_fetcher.fetch_and_validate_group(account_credential, group_id)
+        return await self.group_fetcher.fetch_and_validate_group(
+            account_credential,
+            group_id=group_id,
+            invite_link=invite_link
+        )

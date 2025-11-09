@@ -29,6 +29,7 @@ class Sidebar(ft.Container):
                 controls=[
                     self._create_nav_button("dashboard", ft.Icons.DASHBOARD, theme_manager.t("dashboard")),
                     self._create_nav_button("telegram", ft.Icons.TELEGRAM, theme_manager.t("telegram")),
+                    self._create_nav_button("groups", ft.Icons.GROUP, theme_manager.t("groups")),
                     self._create_nav_button("user_dashboard", ft.Icons.PERSON_SEARCH, theme_manager.t("user_dashboard")),
                     self._create_nav_button("settings", ft.Icons.SETTINGS, theme_manager.t("settings")),
                     ft.Container(expand=True),  # Spacer
@@ -138,6 +139,7 @@ class Sidebar(ft.Container):
             self.content.controls = [
                 self._create_nav_button("dashboard", ft.Icons.DASHBOARD, theme_manager.t("dashboard")),
                 self._create_nav_button("telegram", ft.Icons.TELEGRAM, theme_manager.t("telegram")),
+                self._create_nav_button("groups", ft.Icons.GROUP, theme_manager.t("groups")),
                 self._create_nav_button("user_dashboard", ft.Icons.PERSON_SEARCH, theme_manager.t("user_dashboard")),
                 self._create_nav_button("settings", ft.Icons.SETTINGS, theme_manager.t("settings")),
                 ft.Container(expand=True),

@@ -3,7 +3,7 @@ Telegram groups manager.
 """
 
 from typing import Optional, List
-from database.managers.base import BaseDatabaseManager, _parse_datetime
+from database.managers.base import BaseDatabaseManager, _parse_datetime, _safe_get_row_value
 from database.models.telegram import TelegramGroup
 import logging
 
@@ -19,11 +19,12 @@ class GroupManager(BaseDatabaseManager):
             with self.get_connection() as conn:
                 cursor = conn.execute("""
                     INSERT INTO telegram_groups 
-                    (group_id, group_name, group_username, last_fetch_date, total_messages)
-                    VALUES (?, ?, ?, ?, ?)
+                    (group_id, group_name, group_username, group_photo_path, last_fetch_date, total_messages)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT(group_id) DO UPDATE SET
                         group_name = excluded.group_name,
                         group_username = excluded.group_username,
+                        group_photo_path = excluded.group_photo_path,
                         last_fetch_date = excluded.last_fetch_date,
                         total_messages = excluded.total_messages,
                         updated_at = CURRENT_TIMESTAMP
@@ -31,6 +32,7 @@ class GroupManager(BaseDatabaseManager):
                     group.group_id,
                     group.group_name,
                     group.group_username,
+                    group.group_photo_path,
                     group.last_fetch_date,
                     group.total_messages
                 ))
@@ -52,6 +54,7 @@ class GroupManager(BaseDatabaseManager):
                 group_id=row['group_id'],
                 group_name=row['group_name'],
                 group_username=row['group_username'],
+                group_photo_path=_safe_get_row_value(row, 'group_photo_path'),
                 last_fetch_date=_parse_datetime(row['last_fetch_date']),
                 total_messages=row['total_messages'],
                 created_at=_parse_datetime(row['created_at']),
@@ -72,6 +75,7 @@ class GroupManager(BaseDatabaseManager):
                     group_id=row['group_id'],
                     group_name=row['group_name'],
                     group_username=row['group_username'],
+                    group_photo_path=_safe_get_row_value(row, 'group_photo_path'),
                     last_fetch_date=_parse_datetime(row['last_fetch_date']),
                     total_messages=row['total_messages'],
                     created_at=_parse_datetime(row['created_at']),

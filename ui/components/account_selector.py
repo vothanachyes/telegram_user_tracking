@@ -205,11 +205,24 @@ class AccountSelector:
         """Handle refresh button click."""
         if self.on_refresh:
             import asyncio
+            
+            # Get page from event if not stored
+            page = self.page
+            if not page and e:
+                # Try to get page from event
+                if hasattr(e, 'page') and e.page:
+                    page = e.page
+                elif hasattr(e, 'control') and hasattr(e.control, 'page') and e.control.page:
+                    page = e.control.page
+            
             if asyncio.iscoroutinefunction(self.on_refresh):
-                if self.page and hasattr(self.page, 'run_task'):
-                    self.page.run_task(self.on_refresh)
+                if page:
+                    try:
+                        page.run_task(self.on_refresh)
+                    except Exception as ex:
+                        logger.error(f"Error running refresh task: {ex}", exc_info=True)
                 else:
-                    asyncio.create_task(self.on_refresh())
+                    logger.warning("Page not available, cannot run refresh task")
             else:
                 self.on_refresh()
     

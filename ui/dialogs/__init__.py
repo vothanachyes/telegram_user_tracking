@@ -8,6 +8,9 @@ from .fetch_data_dialog import FetchDataDialog
 from .telegram_auth_dialog import TelegramAuthDialog
 from .pin_dialog import PinEntryDialog, PinSetupDialog
 from .add_account_dialog import AddAccountDialog
+from .add_group_dialog import AddGroupDialog
+from .group_detail_dialog import GroupDetailDialog
+from .rate_limit_warning_dialog import RateLimitWarningDialog
 from .dialog import dialog_manager, DialogManager
 
 __all__ = [
@@ -18,6 +21,9 @@ __all__ = [
     'PinEntryDialog',
     'PinSetupDialog',
     'AddAccountDialog',
+    'AddGroupDialog',
+    'GroupDetailDialog',
+    'RateLimitWarningDialog',
     'dialog_manager',
     'DialogManager'
 ]

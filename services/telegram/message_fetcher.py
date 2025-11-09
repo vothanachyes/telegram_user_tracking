@@ -83,7 +83,26 @@ class MessageFetcher:
             
             temp_group_manager.save_group(group)
             
+            # Get account info (static copy to avoid losing reference if account deleted)
+            account_full_name = None
+            account_username = None
+            try:
+                me = await temp_client.get_me()
+                if me:
+                    account_full_name = f"{me.first_name or ''} {me.last_name or ''}".strip() or "Unknown"
+                    account_username = me.username
+            except Exception as e:
+                logger.warning(f"Could not get account info: {e}")
+            
             message_count = 0
+            unique_users = set()  # Track unique users in this fetch
+            media_count = 0  # Track media files in this fetch
+            sticker_count = 0
+            photo_count = 0
+            video_count = 0
+            document_count = 0
+            audio_count = 0
+            link_count = 0
             fetch_delay = settings.settings.fetch_delay_seconds
             
             async for telegram_msg in temp_client.get_chat_history(group_id):
@@ -99,6 +118,7 @@ class MessageFetcher:
                     
                     if telegram_msg.from_user:
                         await self.user_processor.process_user(telegram_msg.from_user)
+                        unique_users.add(telegram_msg.from_user.id)
                     
                     message = await self.message_processor.process_message(
                         telegram_msg,
@@ -109,6 +129,38 @@ class MessageFetcher:
                     if message:
                         self.db_manager.save_message(message)
                         message_count += 1
+                        
+                        # Count media files
+                        if message.has_media:
+                            media_files = self.db_manager.get_media_for_message(message.message_id)
+                            media_count += len(media_files) if media_files else 0
+                        
+                        # Count message types (avoid double counting)
+                        if message.has_sticker or (message.message_type and message.message_type == 'sticker'):
+                            sticker_count += 1
+                        if message.has_link:
+                            link_count += 1
+                        
+                        # Count media types (prioritize media_type, fallback to message_type)
+                        if message.media_type:
+                            if message.media_type == 'photo':
+                                photo_count += 1
+                            elif message.media_type == 'video':
+                                video_count += 1
+                            elif message.media_type == 'document':
+                                document_count += 1
+                            elif message.media_type == 'audio':
+                                audio_count += 1
+                        elif message.message_type and not message.has_sticker:
+                            # Fallback to message_type if media_type not set (skip if already counted as sticker)
+                            if message.message_type == 'photo':
+                                photo_count += 1
+                            elif message.message_type == 'video':
+                                video_count += 1
+                            elif message.message_type == 'document':
+                                document_count += 1
+                            elif message.message_type in ('audio', 'voice'):
+                                audio_count += 1
                         
                         if settings.settings.track_reactions:
                             await temp_reaction_processor.process_reactions(
@@ -136,6 +188,29 @@ class MessageFetcher:
             
             total_messages = self.db_manager.get_message_count(group_id)
             temp_group_manager.update_group_stats(group, total_messages)
+            
+            # Save fetch history with account info and summary
+            if start_date and end_date:
+                from database.models.telegram import GroupFetchHistory
+                account_phone = credential.phone_number if credential else None
+                fetch_history = GroupFetchHistory(
+                    group_id=group_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                    message_count=message_count,
+                    account_phone_number=account_phone,
+                    account_full_name=account_full_name,
+                    account_username=account_username,
+                    total_users_fetched=len(unique_users),
+                    total_media_fetched=media_count,
+                    total_stickers=sticker_count,
+                    total_photos=photo_count,
+                    total_videos=video_count,
+                    total_documents=document_count,
+                    total_audio=audio_count,
+                    total_links=link_count
+                )
+                self.db_manager.save_fetch_history(fetch_history)
             
             logger.info(f"Fetched {message_count} messages from group {group_id}")
             return True, message_count, None
@@ -197,7 +272,26 @@ class MessageFetcher:
             
             temp_group_manager.save_group(group)
             
+            # Get account info (static copy to avoid losing reference if account deleted)
+            account_full_name = None
+            account_username = None
+            try:
+                me = await temp_client.get_me()
+                if me:
+                    account_full_name = f"{me.first_name or ''} {me.last_name or ''}".strip() or "Unknown"
+                    account_username = me.username
+            except Exception as e:
+                logger.warning(f"Could not get account info: {e}")
+            
             message_count = 0
+            unique_users = set()  # Track unique users in this fetch
+            media_count = 0  # Track media files in this fetch
+            sticker_count = 0
+            photo_count = 0
+            video_count = 0
+            document_count = 0
+            audio_count = 0
+            link_count = 0
             fetch_delay = settings.settings.fetch_delay_seconds
             
             async for telegram_msg in temp_client.get_chat_history(group_id):
@@ -213,6 +307,7 @@ class MessageFetcher:
                     
                     if telegram_msg.from_user:
                         await self.user_processor.process_user(telegram_msg.from_user)
+                        unique_users.add(telegram_msg.from_user.id)
                     
                     message = await self.message_processor.process_message(
                         telegram_msg,
@@ -223,6 +318,38 @@ class MessageFetcher:
                     if message:
                         self.db_manager.save_message(message)
                         message_count += 1
+                        
+                        # Count media files
+                        if message.has_media:
+                            media_files = self.db_manager.get_media_for_message(message.message_id)
+                            media_count += len(media_files) if media_files else 0
+                        
+                        # Count message types (avoid double counting)
+                        if message.has_sticker or (message.message_type and message.message_type == 'sticker'):
+                            sticker_count += 1
+                        if message.has_link:
+                            link_count += 1
+                        
+                        # Count media types (prioritize media_type, fallback to message_type)
+                        if message.media_type:
+                            if message.media_type == 'photo':
+                                photo_count += 1
+                            elif message.media_type == 'video':
+                                video_count += 1
+                            elif message.media_type == 'document':
+                                document_count += 1
+                            elif message.media_type == 'audio':
+                                audio_count += 1
+                        elif message.message_type and not message.has_sticker:
+                            # Fallback to message_type if media_type not set (skip if already counted as sticker)
+                            if message.message_type == 'photo':
+                                photo_count += 1
+                            elif message.message_type == 'video':
+                                video_count += 1
+                            elif message.message_type == 'document':
+                                document_count += 1
+                            elif message.message_type in ('audio', 'voice'):
+                                audio_count += 1
                         
                         if settings.settings.track_reactions:
                             await temp_reaction_processor.process_reactions(
@@ -250,6 +377,28 @@ class MessageFetcher:
             
             total_messages = self.db_manager.get_message_count(group_id)
             temp_group_manager.update_group_stats(group, total_messages)
+            
+            # Save fetch history with account info and summary
+            if start_date and end_date:
+                from database.models.telegram import GroupFetchHistory
+                fetch_history = GroupFetchHistory(
+                    group_id=group_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                    message_count=message_count,
+                    account_phone_number=credential.phone_number,
+                    account_full_name=account_full_name,
+                    account_username=account_username,
+                    total_users_fetched=len(unique_users),
+                    total_media_fetched=media_count,
+                    total_stickers=sticker_count,
+                    total_photos=photo_count,
+                    total_videos=video_count,
+                    total_documents=document_count,
+                    total_audio=audio_count,
+                    total_links=link_count
+                )
+                self.db_manager.save_fetch_history(fetch_history)
             
             logger.info(f"Fetched {message_count} messages from group {group_id} using account {credential.phone_number}")
             return True, message_count, None

@@ -13,6 +13,8 @@ from ui.pages.fetch_data.view_model import FetchViewModel
 from ui.pages.fetch_data.handlers import FetchHandlers
 from ui.pages.fetch_data.progress_ui import ProgressUI
 from ui.pages.fetch_data.summary_ui import SummaryUI
+from ui.dialogs.rate_limit_warning_dialog import RateLimitWarningDialog
+from services.license_service import LicenseService
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,7 @@ class FetchDataPage(ft.Container):
         self.db_manager = db_manager
         self.telegram_service = telegram_service
         self.page: Optional[ft.Page] = None
+        self.license_service = LicenseService(db_manager)
         
         # Initialize view model and handlers
         self.view_model = FetchViewModel()
@@ -36,6 +39,9 @@ class FetchDataPage(ft.Container):
             telegram_service=telegram_service,
             view_model=self.view_model
         )
+        
+        # License warning banner
+        self.license_warning_banner = ft.Container(visible=False)
         
         # Initialize UI components
         self.progress_ui = ProgressUI(
@@ -65,10 +71,50 @@ class FetchDataPage(ft.Container):
         self.progress_ui.set_page(page)
         self.summary_ui.set_page(page)
         
+        # Update license warning
+        self._update_license_warning()
+        
         # Rebuild content to include initialized cards
         self.content = self._build_content()
         if page:
             page.update()
+    
+    def _update_license_warning(self):
+        """Update license warning banner."""
+        try:
+            # Check if selected group is new (not in database)
+            group_id = self.handlers.group_selector.get_selected_group_id()
+            is_new_group = False
+            if group_id:
+                existing_group = self.db_manager.get_group_by_id(group_id)
+                is_new_group = existing_group is None
+            
+            if is_new_group:
+                license_info = self.license_service.get_license_info()
+                current = license_info.get('current_groups', 0)
+                max_groups = license_info.get('max_groups', 0)
+                
+                if max_groups != -1:  # Not unlimited
+                    warning_text = theme_manager.t("new_group_warning") or "This group will be automatically saved when you start fetching."
+                    license_text = theme_manager.t("license_group_limit_warning") or f"You have {current}/{max_groups} groups. Your license allows up to {max_groups} groups."
+                    
+                    self.license_warning_banner.content = theme_manager.create_card(
+                        content=ft.Column([
+                            ft.Row([
+                                ft.Icon(ft.Icons.WARNING, color=ft.Colors.ORANGE, size=20),
+                                ft.Text(warning_text, size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.ORANGE, expand=True)
+                            ], spacing=10),
+                            ft.Text(license_text.format(current=current, max=max_groups), size=12, color=theme_manager.text_secondary_color)
+                        ], spacing=5)
+                    )
+                    self.license_warning_banner.visible = True
+                else:
+                    self.license_warning_banner.visible = False
+            else:
+                self.license_warning_banner.visible = False
+        except Exception as e:
+            logger.error(f"Error updating license warning: {e}")
+            self.license_warning_banner.visible = False
     
     def _build_content(self) -> ft.Column:
         """Build page content."""
@@ -105,6 +151,9 @@ class FetchDataPage(ft.Container):
             ),
             
             ft.Container(height=20),
+            
+            # License warning banner
+            self.license_warning_banner,
             
             # Input section
             ft.Column([
@@ -169,6 +218,25 @@ class FetchDataPage(ft.Container):
         if self.view_model.is_fetching:
             return
         
+        # Check and show rate limit warning if needed
+        if RateLimitWarningDialog.should_show(self.db_manager):
+            try:
+                dialog = RateLimitWarningDialog(
+                    self.db_manager,
+                    on_confirm=self._start_fetch_after_warning
+                )
+                dialog.page = self.page
+                if self.page:
+                    self.page.open(dialog)
+                    return
+            except Exception as ex:
+                logger.error(f"Error showing rate limit warning: {ex}")
+        
+        # Start fetch directly if no warning needed
+        self._start_fetch_after_warning()
+    
+    def _start_fetch_after_warning(self):
+        """Start fetch after rate limit warning is confirmed."""
         if self.page and hasattr(self.page, 'run_task'):
             self.page.run_task(self._fetch_async)
         else:

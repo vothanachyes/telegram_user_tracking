@@ -246,6 +246,92 @@ class BaseDatabaseManager:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_app_update_history_version ON app_update_history(version)")
                 logger.info("Created app_update_history table")
             
+            # Check if telegram_groups table has group_photo_path column
+            cursor = conn.execute("PRAGMA table_info(telegram_groups)")
+            group_columns = {row[1] for row in cursor.fetchall()}
+            
+            if 'group_photo_path' not in group_columns:
+                conn.execute("ALTER TABLE telegram_groups ADD COLUMN group_photo_path TEXT")
+                logger.info("Added group_photo_path column to telegram_groups table")
+            
+            # Check if group_fetch_history table exists
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='group_fetch_history'")
+            if not cursor.fetchone():
+                conn.execute("""
+                    CREATE TABLE group_fetch_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        group_id INTEGER NOT NULL,
+                        start_date TIMESTAMP NOT NULL,
+                        end_date TIMESTAMP NOT NULL,
+                        message_count INTEGER DEFAULT 0,
+                        account_phone_number TEXT,
+                        account_full_name TEXT,
+                        account_username TEXT,
+                        total_users_fetched INTEGER DEFAULT 0,
+                        total_media_fetched INTEGER DEFAULT 0,
+                        total_stickers INTEGER DEFAULT 0,
+                        total_photos INTEGER DEFAULT 0,
+                        total_videos INTEGER DEFAULT 0,
+                        total_documents INTEGER DEFAULT 0,
+                        total_audio INTEGER DEFAULT 0,
+                        total_links INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (group_id) REFERENCES telegram_groups(group_id)
+                    )
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_fetch_history_group_id ON group_fetch_history(group_id)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_fetch_history_dates ON group_fetch_history(start_date, end_date)")
+                logger.info("Created group_fetch_history table")
+            else:
+                # Check if new columns exist and add them if missing
+                cursor = conn.execute("PRAGMA table_info(group_fetch_history)")
+                history_columns = {row[1] for row in cursor.fetchall()}
+                
+                if 'account_full_name' not in history_columns:
+                    conn.execute("ALTER TABLE group_fetch_history ADD COLUMN account_full_name TEXT")
+                    logger.info("Added account_full_name column to group_fetch_history table")
+                
+                if 'account_username' not in history_columns:
+                    conn.execute("ALTER TABLE group_fetch_history ADD COLUMN account_username TEXT")
+                    logger.info("Added account_username column to group_fetch_history table")
+                
+                if 'total_users_fetched' not in history_columns:
+                    conn.execute("ALTER TABLE group_fetch_history ADD COLUMN total_users_fetched INTEGER DEFAULT 0")
+                    logger.info("Added total_users_fetched column to group_fetch_history table")
+                
+                if 'total_media_fetched' not in history_columns:
+                    conn.execute("ALTER TABLE group_fetch_history ADD COLUMN total_media_fetched INTEGER DEFAULT 0")
+                    logger.info("Added total_media_fetched column to group_fetch_history table")
+                
+                if 'total_stickers' not in history_columns:
+                    conn.execute("ALTER TABLE group_fetch_history ADD COLUMN total_stickers INTEGER DEFAULT 0")
+                    logger.info("Added total_stickers column to group_fetch_history table")
+                
+                if 'total_photos' not in history_columns:
+                    conn.execute("ALTER TABLE group_fetch_history ADD COLUMN total_photos INTEGER DEFAULT 0")
+                    logger.info("Added total_photos column to group_fetch_history table")
+                
+                if 'total_videos' not in history_columns:
+                    conn.execute("ALTER TABLE group_fetch_history ADD COLUMN total_videos INTEGER DEFAULT 0")
+                    logger.info("Added total_videos column to group_fetch_history table")
+                
+                if 'total_documents' not in history_columns:
+                    conn.execute("ALTER TABLE group_fetch_history ADD COLUMN total_documents INTEGER DEFAULT 0")
+                    logger.info("Added total_documents column to group_fetch_history table")
+                
+                if 'total_audio' not in history_columns:
+                    conn.execute("ALTER TABLE group_fetch_history ADD COLUMN total_audio INTEGER DEFAULT 0")
+                    logger.info("Added total_audio column to group_fetch_history table")
+                
+                if 'total_links' not in history_columns:
+                    conn.execute("ALTER TABLE group_fetch_history ADD COLUMN total_links INTEGER DEFAULT 0")
+                    logger.info("Added total_links column to group_fetch_history table")
+            
+            # Add rate_limit_warning_last_seen to app_settings if missing
+            if 'rate_limit_warning_last_seen' not in settings_columns:
+                conn.execute("ALTER TABLE app_settings ADD COLUMN rate_limit_warning_last_seen TIMESTAMP")
+                logger.info("Added rate_limit_warning_last_seen column to app_settings table")
+            
             # Create indexes if they don't exist
             conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_message_type ON messages(message_type)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_reactions_message_id ON reactions(message_id)")

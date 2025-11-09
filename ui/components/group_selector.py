@@ -8,6 +8,7 @@ from typing import Optional, Callable, List
 from datetime import datetime
 from database.models import TelegramGroup
 from ui.theme import theme_manager
+from utils.group_parser import parse_group_input
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +50,11 @@ class GroupSelector:
         )
         
         # Manual entry field
+        # Use TEXT keyboard type to allow negative numbers (NUMBER doesn't support minus sign)
         self.manual_entry_field = theme_manager.create_text_field(
             label=theme_manager.t("enter_group_id_manually"),
-            hint_text="e.g., -1001234567890",
-            keyboard_type=ft.KeyboardType.NUMBER,
+            hint_text="e.g., -1001234567890 or 1001234567890",
+            keyboard_type=ft.KeyboardType.TEXT,  # Changed from NUMBER to allow negative numbers
             on_submit=self._on_manual_entry_submit,
             on_change=self._on_manual_entry_change,
             expand=True if width is None else False,
@@ -229,14 +231,45 @@ class GroupSelector:
             return
         
         try:
-            group_id = int(value)
-            self.selected_group_id = group_id
-            self.clear_group_info()  # Clear info since it's a new group
+            # Use parser to support various formats (including "100..." conversion)
+            group_id, username, invite_link, error = parse_group_input(value)
             
-            if self.on_manual_entry:
-                self.on_manual_entry(group_id)
-        except ValueError:
-            logger.error(f"Invalid group ID format: {value}")
+            if error:
+                logger.error(f"Invalid group ID format: {value} - {error}")
+                if self.page:
+                    theme_manager.show_snackbar(
+                        self.page,
+                        theme_manager.t("invalid_group_id") + f": {error}",
+                        bgcolor=ft.Colors.RED
+                    )
+                return
+            
+            # Prefer group_id, but also support invite_link (though manual entry typically expects ID)
+            if group_id:
+                self.selected_group_id = group_id
+                self.manual_entry_field.value = str(group_id)  # Update field with parsed value
+                self.clear_group_info()  # Clear info since it's a new group
+                
+                if self.on_manual_entry:
+                    self.on_manual_entry(group_id)
+            elif invite_link:
+                # If user entered an invite link, show error (manual entry expects ID)
+                if self.page:
+                    theme_manager.show_snackbar(
+                        self.page,
+                        "Please enter a group ID, not an invite link. Use the Add Group dialog for invite links.",
+                        bgcolor=ft.Colors.ORANGE
+                    )
+            else:
+                logger.error(f"Could not parse group input: {value}")
+                if self.page:
+                    theme_manager.show_snackbar(
+                        self.page,
+                        theme_manager.t("invalid_group_id"),
+                        bgcolor=ft.Colors.RED
+                    )
+        except Exception as ex:
+            logger.error(f"Error parsing group ID: {ex}")
             if self.page:
                 theme_manager.show_snackbar(
                     self.page,

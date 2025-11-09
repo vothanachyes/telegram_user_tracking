@@ -28,6 +28,7 @@ class AppSettings:
     reaction_fetch_delay: float = 0.5
     pin_enabled: bool = False
     encrypted_pin: Optional[str] = None
+    rate_limit_warning_last_seen: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

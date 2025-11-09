@@ -10,6 +10,7 @@ from ui.pages.profile_page import ProfilePage
 from ui.pages.user_dashboard.page import UserDashboardPage
 from ui.pages.about.page import AboutPage
 from ui.pages.fetch_data.page import FetchDataPage
+from ui.pages.groups.page import GroupsPage
 
-__all__ = ['LoginPage', 'DashboardPage', 'SettingsPage', 'TelegramPage', 'ProfilePage', 'UserDashboardPage', 'AboutPage', 'FetchDataPage']
+__all__ = ['LoginPage', 'DashboardPage', 'SettingsPage', 'TelegramPage', 'ProfilePage', 'UserDashboardPage', 'AboutPage', 'FetchDataPage', 'GroupsPage']
 

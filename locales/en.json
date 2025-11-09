@@ -259,6 +259,18 @@
   "authenticating": "Authenticating...",
   "sending_otp": "Sending OTP code...",
   "account_added_successfully": "Account added successfully",
-  "authentication_failed": "Authentication failed. Please try again."
+  "authentication_failed": "Authentication failed. Please try again.",
+  "groups": "Groups",
+  "add_group": "Add Group",
+  "group_details": "Group Details",
+  "group_photo": "Group Photo",
+  "fetch_history": "Fetch History",
+  "date_range": "Date Range",
+  "sync_group": "Sync Group",
+  "group_added_successfully": "Group added successfully",
+  "rate_limit_warning_title": "Telegram Rate Limit Warning",
+  "rate_limit_warning_message": "Warning: Quickly fetching data from Telegram or excessive use may result in your account being blocked or disabled by Telegram. We recommend using a non-official account to avoid unexpected complaints from Telegram.",
+  "new_group_warning": "This group will be automatically saved when you start fetching.",
+  "license_group_limit_warning": "You have {current}/{max} groups. Your license allows up to {max} groups."
 }
 

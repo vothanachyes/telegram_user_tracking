@@ -15,7 +15,8 @@ from ui.pages import (
     ProfilePage,
     UserDashboardPage,
     AboutPage,
-    FetchDataPage
+    FetchDataPage,
+    GroupsPage
 )
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,8 @@ class PageFactory:
                 return self._create_settings_page()
             elif page_id == "profile":
                 return self._create_profile_page()
+            elif page_id == "groups":
+                return self._create_groups_page()
             elif page_id == "user_dashboard":
                 return self._create_user_dashboard_page()
             elif page_id == "about":
@@ -124,6 +127,15 @@ class PageFactory:
     def _create_fetch_data_page(self) -> FetchDataPage:
         """Create fetch data page."""
         page_content = FetchDataPage(
+            db_manager=self.db_manager,
+            telegram_service=self.telegram_service
+        )
+        page_content.set_page(self.page)
+        return page_content
+    
+    def _create_groups_page(self) -> GroupsPage:
+        """Create groups page."""
+        page_content = GroupsPage(
             db_manager=self.db_manager,
             telegram_service=self.telegram_service
         )

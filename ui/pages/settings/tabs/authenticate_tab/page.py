@@ -349,6 +349,10 @@ class AuthenticateTab:
         """Update the accounts list display."""
         self.view_model.update_accounts_list()
     
+    def _update_account_count(self):
+        """Update account count display."""
+        self.view_model._update_account_count()
+    
     def _handle_phone_change(self, e):
         """Handle phone number input change - remove leading zero."""
         AuthenticateTabUtils.handle_phone_change(self.phone_input, getattr(self, 'page', None))

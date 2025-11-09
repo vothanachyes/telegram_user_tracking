@@ -14,6 +14,7 @@ from database.managers.stats_manager import StatsManager
 from database.managers.auth_manager import AuthManager
 from database.managers.license_manager import LicenseManager
 from database.managers.account_activity_manager import AccountActivityManager
+from database.managers.update_manager import UpdateManager
 
 
 class DatabaseManager(BaseDatabaseManager):
@@ -39,6 +40,7 @@ class DatabaseManager(BaseDatabaseManager):
         self._auth = AuthManager(db_path)
         self._license = LicenseManager(db_path)
         self._account_activity = AccountActivityManager(db_path)
+        self._update = UpdateManager(db_path)
     
     # Delegate all methods to composed managers
     # App Settings
@@ -188,4 +190,14 @@ class DatabaseManager(BaseDatabaseManager):
     
     def get_activity_log(self, user_email, limit=10):
         return self._account_activity.get_activity_log(user_email, limit)
+    
+    # Update History
+    def record_update_installation(self, user_email, version, download_path=None):
+        return self._update.record_update_installation(user_email, version, download_path)
+    
+    def get_user_installed_versions(self, user_email):
+        return self._update.get_user_installed_versions(user_email)
+    
+    def has_user_installed_version(self, user_email, version):
+        return self._update.has_user_installed_version(user_email, version)
 

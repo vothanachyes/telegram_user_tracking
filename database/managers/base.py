@@ -229,6 +229,23 @@ class BaseDatabaseManager:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_user_license_cache_active ON user_license_cache(is_active)")
                 logger.info("Created user_license_cache table")
             
+            # Check if app_update_history table exists
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='app_update_history'")
+            if not cursor.fetchone():
+                conn.execute("""
+                    CREATE TABLE app_update_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_email TEXT NOT NULL,
+                        version TEXT NOT NULL,
+                        installed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        download_path TEXT,
+                        UNIQUE(user_email, version)
+                    )
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_app_update_history_email ON app_update_history(user_email)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_app_update_history_version ON app_update_history(version)")
+                logger.info("Created app_update_history table")
+            
             # Create indexes if they don't exist
             conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_message_type ON messages(message_type)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_reactions_message_id ON reactions(message_id)")

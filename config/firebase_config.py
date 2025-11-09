@@ -314,6 +314,35 @@ class FirebaseConfig:
         except Exception as e:
             logger.error(f"Error getting active devices: {e}")
             return []
+    
+    def get_app_update_info(self) -> Optional[dict]:
+        """
+        Get latest app update information from Firestore.
+        Returns update document if found, None otherwise.
+        """
+        if not self._initialized:
+            logger.error("Firebase not initialized")
+            return None
+        
+        if not self.db:
+            logger.error("Firestore database not available")
+            return None
+        
+        try:
+            from utils.constants import FIREBASE_APP_UPDATES_COLLECTION, FIREBASE_APP_UPDATES_DOCUMENT
+            
+            doc_ref = self.db.collection(FIREBASE_APP_UPDATES_COLLECTION).document(FIREBASE_APP_UPDATES_DOCUMENT)
+            doc = doc_ref.get()
+            
+            if doc.exists:
+                data = doc.to_dict()
+                logger.debug(f"App update info retrieved: version={data.get('version')}")
+                return data
+            logger.debug("No app update document found")
+            return None
+        except Exception as e:
+            logger.error(f"Error getting app update info: {e}", exc_info=True)
+            return None
 
 
 # Global Firebase config instance

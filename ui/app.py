@@ -10,7 +10,6 @@ from typing import Optional
 from ui.theme import theme_manager
 from ui.dialogs import dialog_manager
 from ui.pages import LoginPage
-from ui.dialogs.fetch_data_dialog import FetchDataDialog
 from database.db_manager import DatabaseManager
 from ui.initialization import PageConfig, ServiceInitializer
 from ui.navigation import Router, PageFactory
@@ -46,6 +45,10 @@ class TelegramUserTrackingApp:
         )
         
         self.router = Router(self.page, self.page_factory)
+        
+        # Initialize update service
+        self.update_service = None
+        self._init_update_service()
         
         # Build UI
         self._build_ui()
@@ -159,6 +162,9 @@ class TelegramUserTrackingApp:
         """Handle successful login."""
         self.is_logged_in = True
         
+        # Start update service
+        self._start_update_service()
+        
         # Check if PIN is enabled
         settings = self.db_manager.get_settings()
         if settings.pin_enabled and settings.encrypted_pin:
@@ -215,7 +221,7 @@ class TelegramUserTrackingApp:
         # No auto-connect on startup - connect on demand only
         # Create main layout using router
         main_layout, self.connectivity_banner = self.router.create_main_layout(
-            on_fetch_data=self._show_fetch_dialog
+            on_fetch_data=self._navigate_to_fetch_data
         )
         
         self.page.controls = [main_layout]
@@ -255,33 +261,16 @@ class TelegramUserTrackingApp:
         except Exception:
             pass  # Silently fail
         
+        # Stop update service
+        self._stop_update_service()
+        
         self.is_logged_in = False
         self._show_login()
     
-    def _show_fetch_dialog(self):
-        """Show fetch data dialog."""
-        if not self.page:
-            logger.error("No page reference available!")
-            return
-        
-        try:
-            dialog = FetchDataDialog(
-                db_manager=self.db_manager,
-                telegram_service=self.telegram_service,
-                on_fetch_complete=self._on_fetch_complete
-            )
-            
-            dialog.page = self.page
-            dialog.set_page(self.page)  # Initialize account list
-            
-            self.page.open(dialog)
-        except Exception as e:
-            logger.error(f"Error showing dialog: {e}", exc_info=True)
-            theme_manager.show_snackbar(
-                self.page,
-                f"Error opening dialog: {str(e)}",
-                bgcolor=ft.Colors.RED
-            )
+    def _navigate_to_fetch_data(self):
+        """Navigate to fetch data page."""
+        if self.router:
+            self.router.navigate_to("fetch_data")
     
     def _on_fetch_complete(self):
         """Handle fetch completion - refresh current page."""
@@ -351,6 +340,125 @@ class TelegramUserTrackingApp:
             message=theme_manager.t("contact_admin_to_upgrade"),
             actions=actions
         )
+    
+    def _init_update_service(self):
+        """Initialize update service."""
+        try:
+            from services.update_service import UpdateService
+            from services.auth_service import auth_service
+            
+            # Create callback to check if fetch is running
+            def is_fetch_running() -> bool:
+                """Check if fetch operation is currently running."""
+                try:
+                    if not self.router:
+                        return False
+                    
+                    # Get current page from router's content area
+                    content_area = getattr(self.router, 'content_area', None)
+                    if not content_area or not hasattr(content_area, 'content'):
+                        return False
+                    
+                    current_page = content_area.content
+                    if not current_page:
+                        return False
+                    
+                    # Check if it's a FetchDataPage
+                    from ui.pages.fetch_data_page import FetchDataPage
+                    if isinstance(current_page, FetchDataPage):
+                        # Check view model
+                        if hasattr(current_page, 'view_model'):
+                            return getattr(current_page.view_model, 'is_fetching', False)
+                    
+                    return False
+                except Exception as e:
+                    logger.error(f"Error checking fetch state: {e}")
+                    return False
+            
+            # Create callback for when update is available
+            def on_update_available(version: str, download_path: str):
+                """Handle when update becomes available."""
+                try:
+                    from ui.components.update_toast import show_update_toast
+                    
+                    def on_install():
+                        """Handle install button click."""
+                        if self.update_service:
+                            success = self.update_service.install_update()
+                            if success:
+                                logger.info(f"Update installer launched: {version}")
+                            else:
+                                logger.warning(f"Failed to launch update installer: {version}")
+                    
+                    def on_ignore():
+                        """Handle ignore button click."""
+                        logger.info(f"User ignored update: {version}")
+                    
+                    # Show update toast
+                    show_update_toast(
+                        page=self.page,
+                        version=version,
+                        download_path=download_path,
+                        on_install=on_install,
+                        on_ignore=on_ignore
+                    )
+                except Exception as e:
+                    logger.error(f"Error showing update toast: {e}", exc_info=True)
+            
+            # Initialize update service
+            self.update_service = UpdateService(
+                db_manager=self.db_manager,
+                page=self.page,
+                on_update_available=on_update_available,
+                is_fetch_running_callback=is_fetch_running
+            )
+            
+            logger.info("Update service initialized")
+        except Exception as e:
+            logger.error(f"Error initializing update service: {e}", exc_info=True)
+            self.update_service = None
+    
+    def _start_update_service(self):
+        """Start update service (synchronous wrapper)."""
+        if not self.update_service:
+            return
+        
+        import asyncio
+        
+        async def start_async():
+            """Start update service (async)."""
+            if self.update_service:
+                try:
+                    await self.update_service.start()
+                    logger.info("Update service started")
+                except Exception as e:
+                    logger.error(f"Error starting update service: {e}")
+        
+        if hasattr(self.page, 'run_task'):
+            self.page.run_task(start_async)
+        else:
+            asyncio.create_task(start_async())
+    
+    def _stop_update_service(self):
+        """Stop update service (synchronous wrapper)."""
+        if not self.update_service:
+            return
+        
+        import asyncio
+        
+        async def stop_async():
+            """Stop update service (async)."""
+            if self.update_service:
+                try:
+                    await self.update_service.stop()
+                    logger.info("Update service stopped")
+                except Exception as e:
+                    logger.error(f"Error stopping update service: {e}")
+        
+        if hasattr(self.page, 'run_task'):
+            self.page.run_task(stop_async)
+        else:
+            asyncio.create_task(stop_async())
 
 
 def main(page: ft.Page):

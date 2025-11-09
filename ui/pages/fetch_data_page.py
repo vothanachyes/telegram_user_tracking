@@ -56,10 +56,11 @@ class FetchDataPage(ft.Container):
             visible=False
         )
         
-        # Message cards (3-card carousel)
-        self.left_card = MessageCard(position="left")
-        self.center_card = MessageCard(position="center")
-        self.right_card = MessageCard(position="right")
+        # Message cards (3-card carousel) - will be initialized with db_manager and callbacks in set_page
+        self.left_card = None
+        self.center_card = None
+        self.right_card = None
+        self._pending_deleted_message = None  # Track if we're waiting for undelete action
         
         # Summary table (hidden initially)
         self.summary_table_container = ft.Container(
@@ -88,6 +89,31 @@ class FetchDataPage(ft.Container):
         """Set page reference and initialize handlers."""
         self.page = page
         self.handlers.set_page(page)
+        
+        # Initialize message cards with db_manager and callbacks
+        self.left_card = MessageCard(
+            position="left",
+            db_manager=self.db_manager,
+            on_undelete=self._on_undelete_callback,
+            page=page
+        )
+        self.center_card = MessageCard(
+            position="center",
+            db_manager=self.db_manager,
+            on_undelete=self._on_undelete_callback,
+            page=page
+        )
+        self.right_card = MessageCard(
+            position="right",
+            db_manager=self.db_manager,
+            on_undelete=self._on_undelete_callback,
+            page=page
+        )
+        
+        # Rebuild content to include initialized cards
+        self.content = self._build_content()
+        if page:
+            page.update()
     
     def _build_content(self) -> ft.Column:
         """Build page content."""
@@ -163,10 +189,10 @@ class FetchDataPage(ft.Container):
                 ),
                 ft.Container(height=10),
                 ft.Row([
-                    self.left_card,
-                    self.center_card,
-                    self.right_card,
-                ], spacing=20, alignment=ft.MainAxisAlignment.CENTER),
+                    self.left_card if self.left_card else MessageCard(position="left"),
+                    self.center_card if self.center_card else MessageCard(position="center"),
+                    self.right_card if self.right_card else MessageCard(position="right"),
+                ], spacing=theme_manager.spacing_md, expand=True),
             ], spacing=10),
             
             ft.Container(height=20),
@@ -296,13 +322,45 @@ class FetchDataPage(ft.Container):
     
     def _clear_cards(self):
         """Clear all message cards."""
-        self.left_card.update_message(None)
-        self.center_card.update_message(None)
-        self.right_card.update_message(None)
+        if self.left_card:
+            self.left_card.update_message(None)
+        if self.center_card:
+            self.center_card.update_message(None)
+        if self.right_card:
+            self.right_card.update_message(None)
+    
+    def _on_undelete_callback(self, message):
+        """Handle undelete callback from message card."""
+        if message is None:
+            # Timer expired, proceed to next message
+            self._pending_deleted_message = None
+            return
+        
+        # Message was undeleted successfully
+        self._pending_deleted_message = None
+        if self.page:
+            theme_manager.show_snackbar(
+                self.page,
+                "Message restored successfully",
+                bgcolor=ft.Colors.GREEN
+            )
     
     async def _update_cards_animated(self, message, user, error):
         """Update cards with animation."""
         try:
+            # Check message status if message exists
+            is_existing = False
+            is_deleted = False
+            if message and self.db_manager:
+                is_existing = self.db_manager.message_exists(
+                    message.message_id,
+                    message.group_id
+                )
+                is_deleted = self.db_manager.is_message_deleted(
+                    message.message_id,
+                    message.group_id
+                )
+            
             # After add_message, queue is: [previous_left, previous_center, new_message]
             # We want to show: left=previous_center, center=new_message, right=empty
             
@@ -310,21 +368,29 @@ class FetchDataPage(ft.Container):
             previous_center_msg = self.view_model.message_queue[1]
             if previous_center_msg:
                 # Update left card with previous center message
-                self.left_card.update_message(
-                    previous_center_msg,
-                    self.view_model.user_queue[1],
-                    self.view_model.error_queue[1]
-                )
-                self.left_card.update_position("left")
+                if self.left_card:
+                    self.left_card.update_message(
+                        previous_center_msg,
+                        self.view_model.user_queue[1],
+                        self.view_model.error_queue[1]
+                    )
+                    self.left_card.update_position("left")
                 
                 # Animate current center to left (if it exists)
-                if self.center_card.message:
+                if self.center_card and self.center_card.message:
                     self.center_card.update_position("left")
                     await asyncio.sleep(0.2)  # Wait for animation
             
             # Step 2: Show new message on right first
-            self.right_card.update_message(message, user, error)
-            self.right_card.update_position("right")
+            if self.right_card:
+                self.right_card.update_message(
+                    message,
+                    user,
+                    error,
+                    is_existing=is_existing,
+                    is_deleted=is_deleted
+                )
+                self.right_card.update_position("right")
             
             if self.page:
                 self.page.update()
@@ -332,15 +398,38 @@ class FetchDataPage(ft.Container):
             await asyncio.sleep(0.1)  # Brief pause
             
             # Step 3: Move right card to center
-            self.right_card.update_position("center")
+            if self.right_card:
+                self.right_card.update_position("center")
             
             # Step 4: Update center card to show new message
-            self.center_card.update_message(message, user, error)
-            self.center_card.update_position("center")
+            if self.center_card:
+                self.center_card.update_message(
+                    message,
+                    user,
+                    error,
+                    is_existing=is_existing,
+                    is_deleted=is_deleted
+                )
+                self.center_card.update_position("center")
+            
+            if self.page:
+                self.page.update()
+            
+            # If message is deleted, wait for user action (5 seconds)
+            # The card timer will handle the countdown and callback
+            if is_deleted and message:
+                self._pending_deleted_message = message
+                # Wait for undelete action or timeout (handled by card timer)
+                # The card will call _on_undelete_callback when timer expires or user clicks
+                await asyncio.sleep(5.5)  # Wait slightly longer than timer to ensure callback is processed
+                # If still pending, proceed (timer expired)
+                if self._pending_deleted_message == message:
+                    self._pending_deleted_message = None
             
             # Step 5: Clear right card for next message
-            self.right_card.update_message(None)
-            self.right_card.update_position("right")
+            if self.right_card:
+                self.right_card.update_message(None)
+                self.right_card.update_position("right")
             
             if self.page:
                 self.page.update()

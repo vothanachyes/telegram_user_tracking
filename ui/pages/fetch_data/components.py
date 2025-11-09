@@ -3,10 +3,12 @@ UI components for fetch data page.
 """
 
 import flet as ft
-from typing import Optional
+import asyncio
+from typing import Optional, Callable
 from datetime import datetime
 from ui.theme import theme_manager
 from database.models import Message, TelegramUser
+from database.db_manager import DatabaseManager
 from utils.helpers import format_datetime
 
 
@@ -19,16 +21,37 @@ class MessageCard(ft.Container):
         user: Optional[TelegramUser] = None,
         error: Optional[str] = None,
         position: str = "center",  # "left", "center", "right"
-        on_animation_complete: Optional[callable] = None
+        on_animation_complete: Optional[callable] = None,
+        db_manager: Optional[DatabaseManager] = None,
+        on_undelete: Optional[Callable] = None,
+        page: Optional[ft.Page] = None
     ):
         self.message = message
         self.user = user
         self.error = error
         self.position = position
         self.on_animation_complete = on_animation_complete
+        self.db_manager = db_manager
+        self.on_undelete = on_undelete
+        self.page = page
+        
+        # Status tracking
+        self.is_existing = False
+        self.is_deleted = False
+        self.undelete_timer: Optional[asyncio.Task] = None
+        self.undelete_button: Optional[ft.ElevatedButton] = None
+        self.timer_text: Optional[ft.Text] = None
+        self.timer_seconds = 5
+        
+        # Check message status if message and db_manager are provided
+        if self.message and self.db_manager:
+            self._check_message_status()
         
         # Calculate size and position based on position
         width, height, opacity, scale = self._get_position_props()
+        
+        # Set expand for responsive width
+        expand_value = width is None
         
         super().__init__(
             content=self._build_content(),
@@ -36,6 +59,7 @@ class MessageCard(ft.Container):
             height=height,
             opacity=opacity,
             scale=scale,
+            expand=expand_value,
             animate=ft.Animation(duration=300, curve=ft.AnimationCurve.EASE_IN_OUT),
             border_radius=theme_manager.corner_radius,
             padding=theme_manager.padding_md,
@@ -44,15 +68,30 @@ class MessageCard(ft.Container):
         )
     
     def _get_position_props(self) -> tuple:
-        """Get width, height, opacity, and scale based on position."""
+        """Get width, height, opacity, and scale based on position (responsive)."""
+        # Use None for width to allow expand=True for responsive design
         if self.position == "center":
-            return 500, 300, 1.0, 1.0
+            return None, 300, 1.0, 1.0
         elif self.position == "left":
-            return 300, 200, 0.6, 0.8
+            return None, 200, 0.6, 0.8
         elif self.position == "right":
-            return 300, 200, 0.6, 0.8
+            return None, 200, 0.6, 0.8
         else:
-            return 300, 200, 0.0, 0.8
+            return None, 200, 0.0, 0.8
+    
+    def _check_message_status(self):
+        """Check if message exists and is deleted."""
+        if not self.message or not self.db_manager:
+            return
+        
+        self.is_existing = self.db_manager.message_exists(
+            self.message.message_id,
+            self.message.group_id
+        )
+        self.is_deleted = self.db_manager.is_message_deleted(
+            self.message.message_id,
+            self.message.group_id
+        )
     
     def _build_content(self) -> ft.Column:
         """Build card content."""
@@ -104,8 +143,80 @@ class MessageCard(ft.Container):
         # Date
         date_str = format_datetime(self.message.date_sent, "%Y-%m-%d %H:%M") if self.message.date_sent else "N/A"
         
-        return ft.Column([
-            # Sender profile
+        # Build status badges/notes
+        status_badges = []
+        if self.is_existing:
+            status_badges.append(
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.INFO_OUTLINE, size=16, color=ft.Colors.BLUE),
+                        ft.Text(
+                            "Already in database",
+                            size=theme_manager.font_size_small,
+                            color=ft.Colors.BLUE
+                        )
+                    ], spacing=5, tight=True),
+                    padding=5,
+                    bgcolor=ft.Colors.BLUE_50 if theme_manager.theme == "light" else ft.Colors.BLUE_900,
+                    border_radius=5
+                )
+            )
+        
+        if self.is_deleted:
+            status_badges.append(
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.DELETE_OUTLINE, size=16, color=ft.Colors.RED),
+                        ft.Text(
+                            "Deleted",
+                            size=theme_manager.font_size_small,
+                            color=ft.Colors.RED
+                        )
+                    ], spacing=5, tight=True),
+                    padding=5,
+                    bgcolor=ft.Colors.RED_50 if theme_manager.theme == "light" else ft.Colors.RED_900,
+                    border_radius=5
+                )
+            )
+        
+        # Build undelete button if deleted
+        undelete_section = None
+        if self.is_deleted and self.on_undelete:
+            self.timer_text = ft.Text(
+                f"Undelete ({self.timer_seconds}s)",
+                size=theme_manager.font_size_small,
+                color=ft.Colors.WHITE,
+                weight=ft.FontWeight.BOLD
+            )
+            self.undelete_button = ft.ElevatedButton(
+                content=ft.Row([
+                    ft.Icon(ft.Icons.RESTORE, size=18),
+                    self.timer_text
+                ], spacing=5, tight=True),
+                on_click=self._on_undelete_click,
+                bgcolor=ft.Colors.GREEN,
+                color=ft.Colors.WHITE,
+                width=200
+            )
+            undelete_section = ft.Container(
+                content=ft.Column([
+                    self.undelete_button
+                ], spacing=5, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=10,
+                bgcolor=ft.Colors.GREEN_50 if theme_manager.theme == "light" else ft.Colors.GREEN_900,
+                border_radius=5
+            )
+        
+        content_items = []
+        
+        # Status badges at top
+        if status_badges:
+            content_items.append(
+                ft.Row(status_badges, spacing=5, wrap=True)
+            )
+        
+        # Sender profile
+        content_items.append(
             ft.Row([
                 ft.Icon(ft.Icons.PERSON, size=40, color=theme_manager.primary_color),
                 ft.Column([
@@ -113,22 +224,35 @@ class MessageCard(ft.Container):
                     ft.Text(sender_username, size=theme_manager.font_size_small, color=theme_manager.text_secondary_color),
                     ft.Text(f"📱 {sender_phone}", size=theme_manager.font_size_small, color=theme_manager.text_secondary_color),
                 ], spacing=theme_manager.spacing_xs, tight=True)
-            ], spacing=theme_manager.spacing_sm),
-            ft.Divider(),
-            # Message content
+            ], spacing=theme_manager.spacing_sm)
+        )
+        
+        content_items.append(ft.Divider())
+        
+        # Message content
+        content_items.append(
             ft.Text(
                 message_preview,
                 size=theme_manager.font_size_body,
                 max_lines=4,
                 overflow=ft.TextOverflow.ELLIPSIS
-            ),
-            # Media and date
+            )
+        )
+        
+        # Media and date
+        content_items.append(
             ft.Row([
                 ft.Text(media_indicator, size=theme_manager.font_size_small, color=theme_manager.text_secondary_color) if media_indicator else ft.Container(),
                 ft.Container(expand=True),
                 ft.Text(date_str, size=theme_manager.font_size_small, color=theme_manager.text_secondary_color),
             ], spacing=theme_manager.spacing_sm)
-        ], spacing=theme_manager.spacing_sm, tight=True, scroll=ft.ScrollMode.AUTO)
+        )
+        
+        # Undelete section if deleted
+        if undelete_section:
+            content_items.append(undelete_section)
+        
+        return ft.Column(content_items, spacing=theme_manager.spacing_sm, tight=True, scroll=ft.ScrollMode.AUTO)
     
     def _build_empty_content(self) -> ft.Column:
         """Build empty state content."""
@@ -145,19 +269,107 @@ class MessageCard(ft.Container):
         """Update card position with animation."""
         self.position = new_position
         width, height, opacity, scale = self._get_position_props()
-        self.width = width
+        # Use expand=True for responsive width instead of fixed width
+        if width is None:
+            self.expand = True
+            self.width = None
+        else:
+            self.expand = False
+            self.width = width
         self.height = height
         self.opacity = opacity
         self.scale = scale
         self.update()
     
-    def update_message(self, message: Optional[Message], user: Optional[TelegramUser] = None, error: Optional[str] = None):
+    def _on_undelete_click(self, e):
+        """Handle undelete button click."""
+        if self.undelete_timer:
+            self.undelete_timer.cancel()
+            self.undelete_timer = None
+        
+        if self.message and self.db_manager and self.on_undelete:
+            # Undelete the message
+            success = self.db_manager.undelete_message(
+                self.message.message_id,
+                self.message.group_id
+            )
+            if success:
+                self.is_deleted = False
+                # Call the callback to notify parent
+                self.on_undelete(self.message)
+    
+    async def _start_undelete_timer(self):
+        """Start 5-second timer for undelete action."""
+        if not self.is_deleted or not self.timer_text:
+            return
+        
+        for remaining in range(self.timer_seconds, 0, -1):
+            if self.timer_text:
+                self.timer_text.value = f"Undelete ({remaining}s)"
+                if self.page:
+                    try:
+                        self.page.update()
+                    except:
+                        pass
+            await asyncio.sleep(1)
+        
+        # Timer expired, proceed to next message
+        if self.on_undelete:
+            self.on_undelete(None)  # Pass None to indicate timeout
+    
+    def start_undelete_timer(self):
+        """Start the undelete timer (non-blocking)."""
+        if self.is_deleted and not self.undelete_timer:
+            if self.page and hasattr(self.page, 'run_task'):
+                self.undelete_timer = self.page.run_task(self._start_undelete_timer)
+            else:
+                self.undelete_timer = asyncio.create_task(self._start_undelete_timer())
+    
+    def update_message(
+        self,
+        message: Optional[Message],
+        user: Optional[TelegramUser] = None,
+        error: Optional[str] = None,
+        is_existing: Optional[bool] = None,
+        is_deleted: Optional[bool] = None
+    ):
         """Update card with new message data."""
+        # Cancel any existing timer
+        if self.undelete_timer:
+            self.undelete_timer.cancel()
+            self.undelete_timer = None
+        
         self.message = message
         self.user = user
         self.error = error
+        
+        # Update status if provided, otherwise check
+        if message and self.db_manager:
+            if is_existing is not None:
+                self.is_existing = is_existing
+            else:
+                self.is_existing = self.db_manager.message_exists(
+                    message.message_id,
+                    message.group_id
+                )
+            
+            if is_deleted is not None:
+                self.is_deleted = is_deleted
+            else:
+                self.is_deleted = self.db_manager.is_message_deleted(
+                    message.message_id,
+                    message.group_id
+                )
+        else:
+            self.is_existing = False
+            self.is_deleted = False
+        
         self.content = self._build_content()
         self.update()
+        
+        # Start timer if deleted
+        if self.is_deleted and self.on_undelete:
+            self.start_undelete_timer()
 
 
 class SummaryTable(ft.Container):

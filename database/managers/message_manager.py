@@ -169,4 +169,33 @@ class MessageManager(BaseDatabaseManager):
                 (message_id, group_id)
             )
             return cursor.fetchone()[0] > 0
+    
+    def message_exists(self, message_id: int, group_id: int) -> bool:
+        """Check if a message exists in the database."""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM messages WHERE message_id = ? AND group_id = ?",
+                (message_id, group_id)
+            )
+            return cursor.fetchone()[0] > 0
+    
+    def undelete_message(self, message_id: int, group_id: int) -> bool:
+        """Undelete (restore) a soft-deleted message."""
+        try:
+            with self.get_connection() as conn:
+                # Remove from deleted_messages table
+                conn.execute(
+                    "DELETE FROM deleted_messages WHERE message_id = ? AND group_id = ?",
+                    (message_id, group_id)
+                )
+                # Update is_deleted flag in messages table
+                conn.execute(
+                    "UPDATE messages SET is_deleted = 0 WHERE message_id = ? AND group_id = ?",
+                    (message_id, group_id)
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error undeleting message: {e}")
+            return False
 

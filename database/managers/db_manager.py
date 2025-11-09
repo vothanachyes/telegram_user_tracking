@@ -125,6 +125,12 @@ class DatabaseManager(BaseDatabaseManager):
     def is_message_deleted(self, message_id, group_id):
         return self._message.is_message_deleted(message_id, group_id)
     
+    def message_exists(self, message_id, group_id):
+        return self._message.message_exists(message_id, group_id)
+    
+    def undelete_message(self, message_id, group_id):
+        return self._message.undelete_message(message_id, group_id)
+    
     # Media
     def save_media_file(self, media):
         return self._media.save_media_file(media)

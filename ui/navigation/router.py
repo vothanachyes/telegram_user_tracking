@@ -9,6 +9,7 @@ from ui.components import Sidebar, TopHeader
 from ui.components.gradient_background import GradientBackgroundService
 from ui.theme import theme_manager
 from services.connectivity_service import connectivity_service
+from utils.helpers import safe_page_update
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +53,15 @@ class Router:
             if self.sidebar:
                 self.sidebar.set_current_page(page_id)
             
-            self.page.update()
-            logger.debug(f"Successfully navigated to page: {page_id}")
+            if not safe_page_update(self.page):
+                logger.debug(f"Page update failed (event loop may be closed) for page: {page_id}")
+            else:
+                logger.debug(f"Successfully navigated to page: {page_id}")
+        except RuntimeError as e:
+            if "Event loop is closed" in str(e):
+                logger.debug(f"Event loop closed while navigating to page '{page_id}'")
+            else:
+                logger.error(f"Error navigating to page '{page_id}': {e}", exc_info=True)
         except Exception as e:
             logger.error(f"Error navigating to page '{page_id}': {e}", exc_info=True)
     
@@ -65,7 +73,8 @@ class Router:
         """Refresh the current page content."""
         if self.content_area and self.current_page_id:
             self.content_area.content = self.page_factory.create_page(self.current_page_id)
-            self.page.update()
+            if not safe_page_update(self.page):
+                logger.debug("Page update failed (event loop may be closed) while refreshing current page")
     
     def create_main_layout(
         self,
@@ -160,8 +169,6 @@ class Router:
             banner.content.controls[0].name = ft.Icons.WIFI_OFF
             banner.content.controls[1].value = theme_manager.t("offline")
         
-        try:
-            self.page.update()
-        except Exception:
-            pass  # Page might not be ready
+        if not safe_page_update(self.page):
+            logger.debug("Page update failed (event loop may be closed) while updating connectivity banner")
 

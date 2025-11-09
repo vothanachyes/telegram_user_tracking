@@ -15,6 +15,12 @@ from utils.constants import (
 )
 from utils.validators import sanitize_username
 
+# Import flet only when needed to avoid circular dependencies
+try:
+    import flet as ft
+except ImportError:
+    ft = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -219,4 +225,38 @@ def get_telegram_user_link(username: Optional[str]) -> Optional[str]:
         return None
     
     return f"https://t.me/{clean_username}"
+
+
+def safe_page_update(page: Optional['ft.Page']) -> bool:
+    """
+    Safely update a Flet page, handling closed event loops gracefully.
+    
+    Args:
+        page: Flet page instance
+        
+    Returns:
+        True if update succeeded, False otherwise
+    """
+    if not page or ft is None:
+        return False
+    
+    try:
+        # Check if event loop is still running
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                return False
+        except RuntimeError:
+            # No event loop in current thread - this is okay, page.update() might still work
+            pass
+        
+        page.update()
+        return True
+    except RuntimeError as e:
+        if "Event loop is closed" in str(e):
+            return False
+        raise
+    except Exception:
+        return False
 

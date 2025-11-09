@@ -5,6 +5,7 @@ Sidebar navigation component.
 import flet as ft
 from typing import Callable, Optional
 from ui.theme import theme_manager
+from utils.helpers import safe_page_update
 
 
 class Sidebar(ft.Container):
@@ -148,12 +149,28 @@ class Sidebar(ft.Container):
             ]
             # Update through page if available, otherwise try self.update()
             if hasattr(self, 'page') and self.page:
-                self.page.update()
+                if not safe_page_update(self.page):
+                    # If page update failed (e.g., event loop closed), try self.update()
+                    try:
+                        self.update()
+                    except (AssertionError, AttributeError, RuntimeError):
+                        # Control not yet added to page or event loop closed, will update when added
+                        logger.debug("Could not update sidebar buttons: page or event loop unavailable")
             else:
-                self.update()
+                try:
+                    self.update()
+                except (AssertionError, AttributeError, RuntimeError):
+                    # Control not yet added to page, will update when added
+                    logger.debug("Could not update sidebar buttons: control not yet added to page")
         except (AssertionError, AttributeError) as e:
             # Control not yet added to page, will update when added
             logger.debug(f"Could not update sidebar buttons: {e}")
+        except RuntimeError as e:
+            # Event loop closed or other runtime error
+            if "Event loop is closed" in str(e):
+                logger.debug("Could not update sidebar buttons: event loop is closed")
+            else:
+                logger.error(f"Error updating sidebar buttons: {e}", exc_info=True)
         except Exception as e:
             logger.error(f"Error updating sidebar buttons: {e}", exc_info=True)
     

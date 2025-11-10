@@ -107,14 +107,14 @@ class ConfigureTab:
                             self.download_documents_cb,
                             self.download_audio_cb,
                         ], wrap=True),
-                    ], spacing=15)
+                    ], spacing=20)
                 ),
                 self.error_text,
                 ft.Row([
                     cancel_btn,
                     save_btn,
                 ], alignment=ft.MainAxisAlignment.END, spacing=10),
-            ], scroll=ft.ScrollMode.AUTO, spacing=15),
+            ], scroll=ft.ScrollMode.AUTO, spacing=20),
             padding=10,
             expand=True
         )

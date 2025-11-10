@@ -79,6 +79,7 @@ class AddGroupDialog(ft.AlertDialog):
         
         # Loading indicator
         self.loading_indicator = ft.ProgressRing(visible=False)
+        self._adding_group = False  # Flag to prevent multiple clicks
         
         super().__init__(
             modal=True,
@@ -375,6 +376,21 @@ class AddGroupDialog(ft.AlertDialog):
         if not self.preview_group or not self.selected_credential:
             return
         
+        # Prevent multiple clicks
+        if self._adding_group:
+            return
+        
+        self._adding_group = True
+        
+        # Get add button and show loading
+        add_button = self.actions[1] if len(self.actions) > 1 else None
+        if add_button:
+            add_button.disabled = True
+            # Show loading indicator
+            self.loading_indicator.visible = True
+            if self.page:
+                self.page.update()
+        
         try:
             # Check license limits
             can_add, error_msg = self.license_service.enforcer.can_add_group()
@@ -410,4 +426,12 @@ class AddGroupDialog(ft.AlertDialog):
                     f"Error adding group: {ex}",
                     bgcolor=ft.Colors.RED
                 )
+        finally:
+            # Re-enable button
+            self._adding_group = False
+            if add_button:
+                add_button.disabled = False
+            self.loading_indicator.visible = False
+            if self.page:
+                self.page.update()
 

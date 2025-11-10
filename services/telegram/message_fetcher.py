@@ -74,11 +74,12 @@ class MessageFetcher:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         progress_callback: Optional[Callable[[int, int], None]] = None,
-        message_callback: Optional[Callable[[Message], None]] = None
-    ) -> Tuple[bool, int, Optional[str]]:
+        message_callback: Optional[Callable[[Message], None]] = None,
+        delay_callback: Optional[Callable[[float, str], None]] = None
+    ) -> Tuple[bool, int, Optional[str], int]:
         """
         Fetch messages from a group using temporary client (connect on demand).
-        Returns (success, message_count, error_message)
+        Returns (success, message_count, error_message, skipped_count)
         """
         temp_client = None
         try:
@@ -144,7 +145,13 @@ class MessageFetcher:
             entity = await temp_client.get_entity(group_id)
             processed_count = 0
             skipped_count = 0
-            async for telegram_msg in temp_client.iter_messages(entity, reverse=True):
+            
+            # Use offset_date to start from start_date (more efficient than filtering all messages)
+            iter_kwargs = {"reverse": True}
+            if normalized_start_date:
+                iter_kwargs["offset_date"] = normalized_start_date
+            
+            async for telegram_msg in temp_client.iter_messages(entity, **iter_kwargs):
                 try:
                     processed_count += 1
                     
@@ -161,14 +168,18 @@ class MessageFetcher:
                             f"end_date={normalized_end_date}"
                         )
                     
-                    if normalized_start_date:
-                        if normalized_msg_date < normalized_start_date:
-                            logger.debug(f"Message {telegram_msg.id} before start_date, breaking")
-                            break
-                    
+                    # With reverse=True and offset_date, Telethon starts from start_date and goes forward
+                    # We still need to check end_date and break when exceeded
                     if normalized_end_date:
                         if normalized_msg_date > normalized_end_date:
-                            logger.debug(f"Message {telegram_msg.id} after end_date, skipping")
+                            logger.debug(f"Message {telegram_msg.id} after end_date, breaking")
+                            break
+                    
+                    # If we used offset_date, messages should already be >= start_date
+                    # But keep this check as a safety net (shouldn't be needed with offset_date)
+                    if normalized_start_date:
+                        if normalized_msg_date < normalized_start_date:
+                            logger.debug(f"Message {telegram_msg.id} before start_date, skipping (unexpected with offset_date)")
                             skipped_count += 1
                             continue
                     
@@ -236,11 +247,19 @@ class MessageFetcher:
                             progress_callback(message_count, -1)
                     
                     if fetch_delay > 0:
-                        await asyncio.sleep(fetch_delay)
+                        # Show countdown if callback provided
+                        if delay_callback:
+                            await delay_callback(fetch_delay, "Rate limit delay")
+                        else:
+                            await asyncio.sleep(fetch_delay)
                     
                 except FloodWaitError as e:
                     logger.warning(f"FloodWait: waiting {e.seconds} seconds")
-                    await asyncio.sleep(e.seconds)
+                    # Show countdown for flood wait
+                    if delay_callback:
+                        await delay_callback(e.seconds, "Flood wait")
+                    else:
+                        await asyncio.sleep(e.seconds)
                 except Exception as e:
                     logger.error(
                         f"Error processing message {telegram_msg.id}: {e}. "
@@ -280,12 +299,13 @@ class MessageFetcher:
                 )
                 self.db_manager.save_fetch_history(fetch_history)
             
-            logger.info(f"Fetched {message_count} messages from group {group_id}")
-            return True, message_count, None
+            logger.info(f"Fetched {message_count} messages from group {group_id} (processed: {processed_count}, skipped: {skipped_count})")
+            # Return (success, message_count, error_message, skipped_count)
+            return True, message_count, None, skipped_count
             
         except Exception as e:
             logger.error(f"Error fetching messages: {e}")
-            return False, 0, str(e)
+            return False, 0, str(e), 0
         finally:
             # Always disconnect temporary client
             if temp_client:
@@ -301,8 +321,9 @@ class MessageFetcher:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         progress_callback: Optional[Callable[[int, int], None]] = None,
-        message_callback: Optional[Callable[[Message], None]] = None
-    ) -> Tuple[bool, int, Optional[str]]:
+        message_callback: Optional[Callable[[Message], None]] = None,
+        delay_callback: Optional[Callable[[float, str], None]] = None
+    ) -> Tuple[bool, int, Optional[str], int]:
         """
         Fetch messages using a specific account (temporary client).
         Keeps current session connected.
@@ -381,7 +402,13 @@ class MessageFetcher:
             logger.debug(f"Entity: {entity}")
             processed_count = 0
             skipped_count = 0
-            async for telegram_msg in temp_client.iter_messages(entity, reverse=True):
+            
+            # Use offset_date to start from start_date (more efficient than filtering all messages)
+            iter_kwargs = {"reverse": True}
+            if normalized_start_date:
+                iter_kwargs["offset_date"] = normalized_start_date
+            
+            async for telegram_msg in temp_client.iter_messages(entity, **iter_kwargs):
                 try:
                     processed_count += 1
                     
@@ -398,14 +425,18 @@ class MessageFetcher:
                             f"end_date={normalized_end_date}"
                         )
                     
-                    if normalized_start_date:
-                        if normalized_msg_date < normalized_start_date:
-                            logger.debug(f"Message {telegram_msg.id} before start_date, breaking")
-                            break
-                    
+                    # With reverse=True and offset_date, Telethon starts from start_date and goes forward
+                    # We still need to check end_date and break when exceeded
                     if normalized_end_date:
                         if normalized_msg_date > normalized_end_date:
-                            logger.debug(f"Message {telegram_msg.id} after end_date, skipping")
+                            logger.debug(f"Message {telegram_msg.id} after end_date, breaking")
+                            break
+                    
+                    # If we used offset_date, messages should already be >= start_date
+                    # But keep this check as a safety net (shouldn't be needed with offset_date)
+                    if normalized_start_date:
+                        if normalized_msg_date < normalized_start_date:
+                            logger.debug(f"Message {telegram_msg.id} before start_date, skipping (unexpected with offset_date)")
                             skipped_count += 1
                             continue
                     
@@ -473,11 +504,19 @@ class MessageFetcher:
                             progress_callback(message_count, -1)
                     
                     if fetch_delay > 0:
-                        await asyncio.sleep(fetch_delay)
+                        # Show countdown if callback provided
+                        if delay_callback:
+                            await delay_callback(fetch_delay, "Rate limit delay")
+                        else:
+                            await asyncio.sleep(fetch_delay)
                     
                 except FloodWaitError as e:
                     logger.warning(f"FloodWait: waiting {e.seconds} seconds")
-                    await asyncio.sleep(e.seconds)
+                    # Show countdown for flood wait
+                    if delay_callback:
+                        await delay_callback(e.seconds, "Flood wait")
+                    else:
+                        await asyncio.sleep(e.seconds)
                 except Exception as e:
                     logger.error(
                         f"Error processing message {telegram_msg.id}: {e}. "
@@ -516,12 +555,13 @@ class MessageFetcher:
                 )
                 self.db_manager.save_fetch_history(fetch_history)
             
-            logger.info(f"Fetched {message_count} messages from group {group_id} using account {credential.phone_number}")
-            return True, message_count, None
+            logger.info(f"Fetched {message_count} messages from group {group_id} using account {credential.phone_number} (processed: {processed_count}, skipped: {skipped_count})")
+            # Return (success, message_count, error_message, skipped_count)
+            return True, message_count, None, skipped_count
             
         except Exception as e:
             logger.error(f"Error fetching messages with account: {e}")
-            return False, 0, str(e)
+            return False, 0, str(e), 0
         finally:
             # Clean up temporary client
             if temp_client:

@@ -29,6 +29,7 @@ class GroupsHandlers:
         self.db_manager = db_manager
         self.telegram_service = telegram_service
         self.view_model = view_model
+        self.groups_page = None  # Will be set by GroupsPage
     
     def set_page(self, page: ft.Page):
         """Set page reference."""
@@ -38,6 +39,17 @@ class GroupsHandlers:
         """Handle add group button click."""
         if not self.page:
             return
+        
+        # Prevent multiple clicks
+        if hasattr(self, '_adding_group') and self._adding_group:
+            return
+        
+        self._adding_group = True
+        # Disable button if it's accessible
+        if hasattr(e, 'control'):
+            e.control.disabled = True
+            if self.page:
+                self.page.update()
         
         try:
             dialog = AddGroupDialog(
@@ -57,6 +69,21 @@ class GroupsHandlers:
                     f"Error opening dialog: {ex}",
                     bgcolor=ft.Colors.RED
                 )
+        finally:
+            # Re-enable after a short delay
+            import asyncio
+            async def re_enable():
+                await asyncio.sleep(0.5)
+                self._adding_group = False
+                if hasattr(e, 'control'):
+                    e.control.disabled = False
+                if self.page:
+                    self.page.update()
+            
+            if self.page and hasattr(self.page, 'run_task'):
+                self.page.run_task(re_enable)
+            else:
+                asyncio.create_task(re_enable())
     
     def on_group_click(self, group: TelegramGroup):
         """Handle group card click."""
@@ -83,13 +110,24 @@ class GroupsHandlers:
     
     def on_refresh_click(self, e):
         """Handle refresh button click."""
-        self.view_model.load_groups()
-        if self.page:
-            self.page.update()
+        # Use the same refresh method as group added
+        if hasattr(self, 'groups_page') and self.groups_page:
+            self.groups_page.refresh_groups_list()
+        else:
+            # Fallback: update view model and page
+            self.view_model.load_groups()
+            if self.page:
+                self.page.update()
     
     def _on_group_added(self):
         """Handle group added callback."""
-        self.view_model.load_groups()
-        if self.page:
-            self.page.update()
+        # Refresh the groups list in the page
+        if hasattr(self, 'groups_page') and self.groups_page:
+            # Call the refresh method on the groups page
+            self.groups_page.refresh_groups_list()
+        else:
+            # Fallback: update view model and page
+            self.view_model.load_groups()
+            if self.page:
+                self.page.update()
 

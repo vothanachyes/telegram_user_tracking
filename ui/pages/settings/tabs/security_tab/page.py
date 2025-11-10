@@ -150,7 +150,7 @@ class SecurityTab:
     
     def build(self) -> ft.Container:
         """Build the security tab."""
-        # Privacy disclaimer card
+        # Privacy disclaimer card (always visible, not covered by auth)
         disclaimer_card = theme_manager.create_card(
             content=ft.Column([
                 ft.Row([
@@ -209,31 +209,62 @@ class SecurityTab:
             ], spacing=15)
         )
         
-        # Main content
-        main_content = ft.Column([
-            disclaimer_card,
+        # Protected content (covered by auth overlay)
+        protected_content = ft.Column([
             db_path_card,
             encryption_card,
             self.error_text,
             self.success_text
-        ], scroll=ft.ScrollMode.AUTO, spacing=15)
+        ], scroll=ft.ScrollMode.AUTO, spacing=15, expand=True)
         
-        # Create lock overlay container (we'll control its visibility)
+        # Create lock overlay container with visual blur effect
+        # Since Flet doesn't support native blur filters, we use a high-opacity
+        # overlay with a frosted glass effect to obscure the background
         self.lock_overlay_container = ft.Container(
-            content=self.lock_overlay,
+            content=ft.Stack([
+                # Frosted glass effect layer - high opacity overlay
+                # This creates a visual "blur" by making background less visible
+                ft.Container(
+                    expand=True,
+                    # Use high opacity to obscure background (creates blur-like effect)
+                    bgcolor=ft.Colors.with_opacity(0.92, ft.Colors.BLACK),
+                    # Add subtle gradient for depth
+                    gradient=ft.LinearGradient(
+                        begin=ft.alignment.top_left,
+                        end=ft.alignment.bottom_right,
+                        colors=[
+                            ft.Colors.with_opacity(0.95, ft.Colors.BLACK),
+                            ft.Colors.with_opacity(0.90, ft.Colors.BLACK),
+                            ft.Colors.with_opacity(0.92, ft.Colors.BLACK),
+                        ],
+                        stops=[0.0, 0.5, 1.0]
+                    )
+                ),
+                # Lock overlay content centered on top
+                ft.Container(
+                    content=self.lock_overlay,
+                    alignment=ft.alignment.center,
+                    expand=True
+                )
+            ]),
             expand=True,
-            bgcolor=ft.Colors.with_opacity(0.7, ft.Colors.BLACK),
             visible=not self._authenticated
         )
         
-        # Wrap with lock overlay (visibility controlled dynamically)
-        content = ft.Stack([
-            main_content,
+        # Stack for protected content with overlay
+        protected_stack = ft.Stack([
+            protected_content,
             self.lock_overlay_container
-        ])
+        ], expand=True)
+        
+        # Main content: disclaimer (always visible) + protected content (with overlay)
+        main_content = ft.Column([
+            disclaimer_card,
+            protected_stack
+        ], scroll=ft.ScrollMode.AUTO, spacing=15, expand=True)
         
         return ft.Container(
-            content=content,
+            content=main_content,
             padding=10,
             expand=True
         )

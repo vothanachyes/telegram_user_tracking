@@ -172,6 +172,13 @@ class AuthenticateTabViewModel:
             finally:
                 # Always reset flag, even on error
                 self.tab._refreshing_accounts = False
+                # Re-enable button and hide loading
+                if hasattr(self.tab, 'refresh_status_btn'):
+                    self.tab.refresh_status_btn.disabled = False
+                if hasattr(self.tab, 'refresh_loading'):
+                    self.tab.refresh_loading.visible = False
+                if hasattr(self.tab, 'page') and self.tab.page:
+                    self.tab.page.update()
         
         if hasattr(self.tab, 'page') and self.tab.page and hasattr(self.tab.page, 'run_task'):
             self.tab.page.run_task(_update_async)

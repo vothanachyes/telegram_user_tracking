@@ -135,8 +135,9 @@ class SessionEncryptionService:
             
             # Encrypt the data
             # Convert bytes to string for encryption (base64 encode first)
+            # Use urlsafe_b64encode to match what encrypt_field/decrypt_field use
             import base64
-            session_data_b64 = base64.b64encode(session_data).decode('utf-8')
+            session_data_b64 = base64.urlsafe_b64encode(session_data).decode('utf-8')
             encrypted_data = encryption_service.encrypt_field(session_data_b64)
             
             if not encrypted_data or not encrypted_data.startswith(FieldEncryptionService.ENCRYPTION_PREFIX):
@@ -144,8 +145,9 @@ class SessionEncryptionService:
                 return False
             
             # Remove prefix and decode
+            # Note: encrypt_field uses urlsafe_b64encode, so we need to use urlsafe_b64decode
             encrypted_b64 = encrypted_data[len(FieldEncryptionService.ENCRYPTION_PREFIX):]
-            encrypted_bytes = base64.b64decode(encrypted_b64.encode('utf-8'))
+            encrypted_bytes = base64.urlsafe_b64decode(encrypted_b64.encode('utf-8'))
             
             # Write encrypted file
             encrypted_path = self.get_encrypted_path(session_path)
@@ -166,17 +168,19 @@ class SessionEncryptionService:
             logger.error(f"Error encrypting session file {session_path}: {e}", exc_info=True)
             return False
     
-    def decrypt_session_file(self, encrypted_path: Path) -> Optional[Path]:
+    def decrypt_session_file(self, encrypted_path: Path, force: bool = False) -> Optional[Path]:
         """
         Decrypt a session file to a temporary file.
         
         Args:
             encrypted_path: Path to encrypted session file
+            force: If True, attempt decryption even if encryption is disabled
+                  (useful for decrypting existing encrypted files)
             
         Returns:
             Path to temporary decrypted file, or None if decryption failed
         """
-        if not self.is_encryption_enabled():
+        if not force and not self.is_encryption_enabled():
             logger.warning("Session encryption is not enabled")
             return None
         
@@ -195,8 +199,9 @@ class SessionEncryptionService:
                 encrypted_bytes = f.read()
             
             # Convert to base64 string for decryption
+            # Note: decrypt_field expects urlsafe_b64encoded data (it uses urlsafe_b64decode internally)
             import base64
-            encrypted_b64 = base64.b64encode(encrypted_bytes).decode('utf-8')
+            encrypted_b64 = base64.urlsafe_b64encode(encrypted_bytes).decode('utf-8')
             encrypted_data = f"{FieldEncryptionService.ENCRYPTION_PREFIX}{encrypted_b64}"
             
             # Decrypt
@@ -205,8 +210,34 @@ class SessionEncryptionService:
                 logger.error("Failed to decrypt session data")
                 return None
             
-            # Decode from base64
-            session_data = base64.b64decode(decrypted_b64.encode('utf-8'))
+            # The decrypted_b64 should be the original base64-encoded session data
+            # But decrypt_field might return it with extra whitespace or encoding issues
+            # Clean it up first
+            decrypted_b64 = decrypted_b64.strip()
+            
+            # Check if decrypt_field failed and returned the original encrypted data (with prefix)
+            if decrypted_b64.startswith(FieldEncryptionService.ENCRYPTION_PREFIX):
+                logger.error(f"decrypt_field failed - returned encrypted data with prefix. This means decryption failed.")
+                return None
+            
+            # Decode from base64 - use urlsafe_b64decode to match what we used when encrypting
+            try:
+                # Add padding if needed (base64 requires length to be multiple of 4)
+                missing_padding = len(decrypted_b64) % 4
+                if missing_padding:
+                    decrypted_b64 += '=' * (4 - missing_padding)
+                
+                # Use urlsafe_b64decode since we used urlsafe_b64encode when encrypting
+                session_data = base64.urlsafe_b64decode(decrypted_b64.encode('utf-8'))
+            except Exception as decode_error:
+                logger.error(f"Base64 decode error: {decode_error}. Decrypted length: {len(decrypted_b64)}, first 100 chars: {decrypted_b64[:100]}")
+                # Try without validation as fallback
+                try:
+                    session_data = base64.urlsafe_b64decode(decrypted_b64.encode('utf-8'))
+                    logger.warning("Base64 decode succeeded without validation (data may be corrupted)")
+                except Exception as e2:
+                    logger.error(f"Base64 decode failed even without validation: {e2}")
+                    return None
             
             # Write to temporary file in the same directory as encrypted file for permissions
             # This ensures SQLite can write to it (same directory, same permissions)

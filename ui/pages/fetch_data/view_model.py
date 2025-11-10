@@ -14,6 +14,7 @@ class FetchViewModel:
         self.is_fetching = False
         self.processed_count = 0
         self.error_count = 0
+        self.skipped_count = 0
         self.estimated_total = 0
         self.current_message: Optional[Message] = None
         self.current_user: Optional[TelegramUser] = None
@@ -32,6 +33,7 @@ class FetchViewModel:
         self.is_fetching = False
         self.processed_count = 0
         self.error_count = 0
+        self.skipped_count = 0
         self.estimated_total = 0
         self.current_message = None
         self.current_user = None
@@ -40,6 +42,10 @@ class FetchViewModel:
         self.message_queue = [None, None, None]
         self.user_queue = [None, None, None]
         self.error_queue = [None, None, None]
+    
+    def set_skipped_count(self, count: int):
+        """Set skipped message count."""
+        self.skipped_count = count
     
     def add_message(self, message: Message, user: Optional[TelegramUser] = None, error: Optional[str] = None):
         """Add a new message to the queue and update state."""

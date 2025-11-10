@@ -98,8 +98,14 @@ class AuthenticateTabComponents:
             ], spacing=10),
             ft.Divider(),
             ft.Row([
-                self.tab.add_account_btn,
-                self.tab.refresh_status_btn,
+                ft.Row([
+                    self.tab.add_account_btn,
+                    self.tab.add_account_loading,
+                ], spacing=5, tight=True),
+                ft.Row([
+                    self.tab.refresh_status_btn,
+                    self.tab.refresh_loading,
+                ], spacing=5, tight=True),
             ], spacing=10),
             self.tab.accounts_list,
             self.tab.error_text,

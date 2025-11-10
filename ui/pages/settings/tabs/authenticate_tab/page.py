@@ -188,6 +188,13 @@ class AuthenticateTab:
             on_click=self._handle_refresh_accounts,
             style="primary"
         )
+        # Loading indicator for refresh button
+        self.refresh_loading = ft.ProgressRing(
+            width=16,
+            height=16,
+            stroke_width=2,
+            visible=False
+        )
         self.accounts_section = self.components._build_accounts_section()
         
         # Navigation state
@@ -208,6 +215,14 @@ class AuthenticateTab:
             on_click=self._handle_add_account,
             style="primary"
         )
+        # Loading indicator for add account button
+        self.add_account_loading = ft.ProgressRing(
+            width=16,
+            height=16,
+            stroke_width=2,
+            visible=False
+        )
+        self._adding_account = False  # Flag to prevent multiple clicks
         
         # Content area container (will be set in build())
         self.content_area_container = None
@@ -255,18 +270,47 @@ class AuthenticateTab:
     
     def _handle_add_account(self, e):
         """Handle add account button click."""
+        # Prevent multiple clicks
+        if self._adding_account:
+            return
+        
         logger.info("=== _handle_add_account() in authenticate_tab called ===")
         logger.info(f"Event: {e}")
         logger.info(f"Handlers available: {self.handlers is not None}")
         logger.info(f"Has handle_add_account method: {self.handlers and hasattr(self.handlers, 'handle_add_account')}")
         
-        if self.handlers and hasattr(self.handlers, 'handle_add_account'):
-            logger.info("Calling handlers.handle_add_account()")
-            self.handlers.handle_add_account(e)
-            # Update account count after addition
-            self.view_model._update_account_count()
-        else:
-            logger.error("Handlers not available or handle_add_account method not found")
+        # Show loading and disable button
+        self._adding_account = True
+        self.add_account_btn.disabled = True
+        if hasattr(self, 'add_account_loading'):
+            self.add_account_loading.visible = True
+        if hasattr(self, 'page') and self.page:
+            self.page.update()
+        
+        try:
+            if self.handlers and hasattr(self.handlers, 'handle_add_account'):
+                logger.info("Calling handlers.handle_add_account()")
+                self.handlers.handle_add_account(e)
+                # Update account count after addition
+                self.view_model._update_account_count()
+            else:
+                logger.error("Handlers not available or handle_add_account method not found")
+        finally:
+            # Re-enable button after a short delay (dialog opens quickly)
+            import asyncio
+            async def re_enable():
+                await asyncio.sleep(0.5)  # Small delay to allow dialog to open
+                self._adding_account = False
+                self.add_account_btn.disabled = False
+                if hasattr(self, 'add_account_loading'):
+                    self.add_account_loading.visible = False
+                if hasattr(self, 'page') and self.page:
+                    self.page.update()
+            
+            if hasattr(self, 'page') and self.page and hasattr(self.page, 'run_task'):
+                self.page.run_task(re_enable)
+            else:
+                asyncio.create_task(re_enable())
     
     def update_settings(self, new_settings: AppSettings):
         """Update current settings."""
@@ -367,6 +411,17 @@ class AuthenticateTab:
     
     def _handle_refresh_accounts(self, e):
         """Handle refresh accounts button click."""
+        # Prevent multiple clicks
+        if self._refreshing_accounts:
+            return
+        
+        # Show loading and disable button
+        self.refresh_status_btn.disabled = True
+        if hasattr(self, 'refresh_loading'):
+            self.refresh_loading.visible = True
+        if hasattr(self, 'page') and self.page:
+            self.page.update()
+        
         self.update_accounts_list()
     
     def _handle_reconnect_account(self, credential):

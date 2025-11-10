@@ -47,10 +47,13 @@ class ClientUtils:
             return None
         
         try:
+            # Use stored session_path from credential if available
+            session_path = credential.session_string if credential.session_string else None
             client = self.client_manager.create_client(
                 credential.phone_number,
                 settings.telegram_api_id,
-                settings.telegram_api_hash
+                settings.telegram_api_hash,
+                session_path=session_path
             )
             
             if client:

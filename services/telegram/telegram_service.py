@@ -151,15 +151,20 @@ class TelegramService:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         progress_callback: Optional[Callable[[int, int], None]] = None,
-        message_callback: Optional[Callable[[Message], None]] = None
-    ) -> Tuple[bool, int, Optional[str]]:
+        message_callback: Optional[Callable[[Message], None]] = None,
+        delay_callback: Optional[Callable[[float, str], None]] = None
+    ) -> Tuple[bool, int, Optional[str], int]:
         """
         Fetch messages from a group using temporary client (connect on demand).
-        Returns (success, message_count, error_message)
+        Returns (success, message_count, error_message, skipped_count)
         """
-        return await self.message_fetcher.fetch_messages(
-            group_id, start_date, end_date, progress_callback, message_callback
+        result = await self.message_fetcher.fetch_messages(
+            group_id, start_date, end_date, progress_callback, message_callback, delay_callback
         )
+        # Handle both old (3-tuple) and new (4-tuple) return formats
+        if len(result) == 3:
+            return (*result, 0)  # Add skipped_count=0 for backward compatibility
+        return result
     
     async def check_account_status(
         self,
@@ -207,8 +212,9 @@ class TelegramService:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         progress_callback: Optional[Callable[[int, int], None]] = None,
-        message_callback: Optional[Callable[[Message], None]] = None
-    ) -> Tuple[bool, int, Optional[str]]:
+        message_callback: Optional[Callable[[Message], None]] = None,
+        delay_callback: Optional[Callable[[float, str], None]] = None
+    ) -> Tuple[bool, int, Optional[str], int]:
         """
         Fetch messages using a specific account (temporary client).
         Keeps current session connected.
@@ -220,13 +226,18 @@ class TelegramService:
             end_date: Optional end date
             progress_callback: Optional progress callback
             message_callback: Optional message callback
+            delay_callback: Optional delay callback (seconds, message) for countdown display
             
         Returns:
-            (success, message_count, error_message)
+            (success, message_count, error_message, skipped_count)
         """
-        return await self.message_fetcher.fetch_messages_with_account(
-            credential, group_id, start_date, end_date, progress_callback, message_callback
+        result = await self.message_fetcher.fetch_messages_with_account(
+            credential, group_id, start_date, end_date, progress_callback, message_callback, delay_callback
         )
+        # Handle both old (3-tuple) and new (4-tuple) return formats
+        if len(result) == 3:
+            return (*result, 0)  # Add skipped_count=0 for backward compatibility
+        return result
     
     async def fetch_and_validate_group(
         self,

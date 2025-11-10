@@ -75,7 +75,7 @@ class MessageProcessor:
                 message_type = "video"
                 media_count = 1
             # Check for video note (round video)
-            elif telegram_msg.round:
+            elif telegram_msg.video_note:
                 has_media = True
                 media_type = "video_note"
                 message_type = "video_note"

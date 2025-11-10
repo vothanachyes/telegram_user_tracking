@@ -20,6 +20,20 @@ class Sidebar(ft.Container):
         self.on_navigate = on_navigate
         self.on_fetch_data = on_fetch_data
         self.current_page = current_page
+        self._is_fetching = False
+        self._nav_buttons = []
+        
+        # Create navigation buttons and store references
+        self._nav_buttons = [
+            self._create_nav_button("dashboard", ft.Icons.DASHBOARD, theme_manager.t("dashboard")),
+            self._create_nav_button("telegram", ft.Icons.TELEGRAM, theme_manager.t("telegram")),
+            self._create_nav_button("groups", ft.Icons.GROUP, theme_manager.t("groups")),
+            self._create_nav_button("user_dashboard", ft.Icons.PERSON_SEARCH, theme_manager.t("user_dashboard")),
+            self._create_nav_button("settings", ft.Icons.SETTINGS, theme_manager.t("settings")),
+            ft.Container(expand=True),  # Spacer
+            self._create_fetch_button(),
+            self._create_nav_button("profile", ft.Icons.PERSON, theme_manager.t("profile")),
+        ]
         
         super().__init__(
             width=65,
@@ -27,16 +41,7 @@ class Sidebar(ft.Container):
             border=ft.border.only(right=ft.BorderSide(1, theme_manager.border_color)),
             padding=ft.padding.only(top=20, bottom=20),
             content=ft.Column(
-                controls=[
-                    self._create_nav_button("dashboard", ft.Icons.DASHBOARD, theme_manager.t("dashboard")),
-                    self._create_nav_button("telegram", ft.Icons.TELEGRAM, theme_manager.t("telegram")),
-                    self._create_nav_button("groups", ft.Icons.GROUP, theme_manager.t("groups")),
-                    self._create_nav_button("user_dashboard", ft.Icons.PERSON_SEARCH, theme_manager.t("user_dashboard")),
-                    self._create_nav_button("settings", ft.Icons.SETTINGS, theme_manager.t("settings")),
-                    ft.Container(expand=True),  # Spacer
-                    self._create_fetch_button(),
-                    self._create_nav_button("profile", ft.Icons.PERSON, theme_manager.t("profile")),
-                ],
+                controls=self._nav_buttons,
                 spacing=10,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER
             ),
@@ -56,6 +61,16 @@ class Sidebar(ft.Container):
         # Create a proper closure to capture page_id
         def make_click_handler(pid: str):
             def handler(e):
+                if self._is_fetching:
+                    # Block navigation during fetch
+                    if self.page:
+                        from ui.theme import theme_manager
+                        theme_manager.show_snackbar(
+                            self.page,
+                            "Cannot navigate while fetching data. Please wait for the fetch to complete or click Finish to stop.",
+                            bgcolor=ft.Colors.ORANGE
+                        )
+                    return
                 self._handle_click(pid)
             return handler
         
@@ -68,6 +83,7 @@ class Sidebar(ft.Container):
             icon_size=24,
             tooltip=tooltip,
             on_click=click_handler,
+            disabled=self._is_fetching,
             style=ft.ButtonStyle(
                 bgcolor=theme_manager.primary_color if is_active else ft.Colors.TRANSPARENT,
                 shape=ft.RoundedRectangleBorder(radius=theme_manager.corner_radius),
@@ -110,6 +126,7 @@ class Sidebar(ft.Container):
             icon_size=24,
             tooltip=theme_manager.t("fetch_data"),
             on_click=lambda e: self._handle_fetch_click(),
+            disabled=self._is_fetching,
             style=ft.ButtonStyle(
                 bgcolor=ft.Colors.GREEN,
                 shape=ft.RoundedRectangleBorder(radius=theme_manager.corner_radius),
@@ -131,13 +148,18 @@ class Sidebar(ft.Container):
         if self.on_fetch_data:
             self.on_fetch_data()
     
+    def set_fetching_state(self, is_fetching: bool):
+        """Enable/disable sidebar buttons based on fetching state."""
+        self._is_fetching = is_fetching
+        self._update_buttons()
+    
     def _update_buttons(self):
         """Update button styles based on current page."""
         import logging
         logger = logging.getLogger(__name__)
         try:
             # Recreate navigation buttons with updated active state
-            self.content.controls = [
+            self._nav_buttons = [
                 self._create_nav_button("dashboard", ft.Icons.DASHBOARD, theme_manager.t("dashboard")),
                 self._create_nav_button("telegram", ft.Icons.TELEGRAM, theme_manager.t("telegram")),
                 self._create_nav_button("groups", ft.Icons.GROUP, theme_manager.t("groups")),
@@ -147,6 +169,7 @@ class Sidebar(ft.Container):
                 self._create_fetch_button(),
                 self._create_nav_button("profile", ft.Icons.PERSON, theme_manager.t("profile")),
             ]
+            self.content.controls = self._nav_buttons
             # Update through page if available, otherwise try self.update()
             if hasattr(self, 'page') and self.page:
                 if not safe_page_update(self.page):

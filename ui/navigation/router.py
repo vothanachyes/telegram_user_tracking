@@ -31,6 +31,11 @@ class Router:
         self.sidebar: Optional[Sidebar] = None
         self.content_area: Optional[ft.Container] = None
         self.gradient_service: Optional[GradientBackgroundService] = None
+        self._current_page_instance: Optional[ft.Control] = None
+        # Store router reference in page for access
+        if not hasattr(page, 'data') or page.data is None:
+            page.data = {}
+        page.data['router'] = self
     
     def navigate_to(self, page_id: str):
         """
@@ -40,6 +45,22 @@ class Router:
             page_id: ID of the page to navigate to
         """
         try:
+            # Check if current page is fetching (block navigation)
+            if self._current_page_instance:
+                # Check if it's a FetchDataPage and if it's fetching
+                from ui.pages.fetch_data.page import FetchDataPage
+                if isinstance(self._current_page_instance, FetchDataPage):
+                    if hasattr(self._current_page_instance, 'view_model') and self._current_page_instance.view_model.is_fetching:
+                        # Block navigation - show message
+                        if self.page:
+                            theme_manager.show_snackbar(
+                                self.page,
+                                "Cannot navigate while fetching data. Please wait for the fetch to complete or click Finish to stop.",
+                                bgcolor=ft.Colors.ORANGE
+                            )
+                        logger.debug("Navigation blocked: fetch in progress")
+                        return
+            
             logger.debug(f"Navigating to page: {page_id}")
             self.current_page_id = page_id
             
@@ -47,7 +68,10 @@ class Router:
                 logger.error("content_area not found, cannot navigate")
                 return
             
-            self.content_area.content = self.page_factory.create_page(page_id)
+            # Create new page instance
+            new_page = self.page_factory.create_page(page_id)
+            self._current_page_instance = new_page
+            self.content_area.content = new_page
             
             # Update sidebar to reflect new current page
             if self.sidebar:
@@ -72,7 +96,9 @@ class Router:
     def refresh_current_page(self):
         """Refresh the current page content."""
         if self.content_area and self.current_page_id:
-            self.content_area.content = self.page_factory.create_page(self.current_page_id)
+            new_page = self.page_factory.create_page(self.current_page_id)
+            self._current_page_instance = new_page
+            self.content_area.content = new_page
             if not safe_page_update(self.page):
                 logger.debug("Page update failed (event loop may be closed) while refreshing current page")
     
@@ -98,8 +124,10 @@ class Router:
         self.sidebar.page = self.page
         
         # Create main content area
+        initial_page = self.page_factory.create_page(self.current_page_id)
+        self._current_page_instance = initial_page
         self.content_area = ft.Container(
-            content=self.page_factory.create_page(self.current_page_id),
+            content=initial_page,
             expand=True,
             bgcolor=theme_manager.background_color
         )

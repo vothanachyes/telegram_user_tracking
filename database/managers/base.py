@@ -40,6 +40,20 @@ def _parse_datetime(dt_value: Any) -> Optional[datetime]:
         return dt_value
     
     if isinstance(dt_value, str):
+        # First try ISO format with timezone (e.g., "2025-11-08 06:39:47+00:00" or "2025-11-08T06:39:47+00:00")
+        try:
+            # Check if string contains timezone info (ends with +HH:MM, -HH:MM, or Z)
+            has_timezone = ('+' in dt_value and ':' in dt_value.split('+')[-1]) or \
+                          ('-' in dt_value and len(dt_value.split('-')) > 3) or \
+                          dt_value.endswith('Z')
+            
+            if has_timezone:
+                # Replace space between date and time with 'T' if present, and handle 'Z' suffix
+                iso_str = dt_value.replace(' ', 'T', 1).replace('Z', '+00:00')
+                return datetime.fromisoformat(iso_str)
+        except (ValueError, TypeError):
+            pass
+        
         # Try common SQLite timestamp formats
         formats = [
             "%Y-%m-%d %H:%M:%S.%f",  # With microseconds

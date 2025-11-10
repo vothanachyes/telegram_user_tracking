@@ -47,6 +47,21 @@ class ProgressUI:
             visible=False
         )
         
+        self.stats_text = ft.Text(
+            "",
+            size=12,
+            color=theme_manager.text_secondary_color,
+            visible=False
+        )
+        
+        self.delay_countdown_text = ft.Text(
+            "",
+            size=12,
+            color=ft.Colors.ORANGE,
+            visible=False,
+            weight=ft.FontWeight.BOLD
+        )
+        
         # Message cards (3-card carousel)
         self.left_card: Optional[MessageCard] = None
         self.center_card: Optional[MessageCard] = None
@@ -120,7 +135,7 @@ class ProgressUI:
             )
     
     async def update_cards_animated(self, message, user, error):
-        """Update cards with animation."""
+        """Update cards with animation - smoother with right card appearing during center saving."""
         try:
             # Check message status if message exists
             is_existing = False
@@ -138,24 +153,7 @@ class ProgressUI:
             # After add_message, queue is: [previous_left, previous_center, new_message]
             # We want to show: left=previous_center, center=new_message, right=empty
             
-            # Step 1: If there was a previous center message, move it to left
-            previous_center_msg = self.view_model.message_queue[1]
-            if previous_center_msg:
-                # Update left card with previous center message
-                if self.left_card:
-                    self.left_card.update_message(
-                        previous_center_msg,
-                        self.view_model.user_queue[1],
-                        self.view_model.error_queue[1]
-                    )
-                    self.left_card.update_position("left")
-                
-                # Animate current center to left (if it exists)
-                if self.center_card and self.center_card.message:
-                    self.center_card.update_position("left")
-                    await asyncio.sleep(0.2)  # Wait for animation
-            
-            # Step 2: Show new message on right first
+            # Step 1: Show new message on right first (appears while center is still showing previous)
             if self.right_card:
                 self.right_card.update_message(
                     message,
@@ -165,17 +163,35 @@ class ProgressUI:
                     is_deleted=is_deleted
                 )
                 self.right_card.update_position("right")
+                if self.page:
+                    self.page.update()
             
-            if self.page:
-                self.page.update()
+            await asyncio.sleep(0.1)  # Brief pause for right card to appear
             
-            await asyncio.sleep(0.1)  # Brief pause
+            # Step 2: Move current center to left (if exists) - happens simultaneously with right card
+            if self.center_card and self.center_card.message:
+                # Update left card with current center message
+                if self.left_card:
+                    self.left_card.update_message(
+                        self.center_card.message,
+                        self.center_card.user,
+                        self.center_card.error
+                    )
+                # Animate center card to left position
+                self.center_card.update_position("left")
+                if self.page:
+                    self.page.update()
             
-            # Step 3: Move right card to center
+            await asyncio.sleep(0.2)  # Wait for left animation
+            
+            # Step 3: Move right card to center (animated) - smoother transition
             if self.right_card:
                 self.right_card.update_position("center")
+                if self.page:
+                    self.page.update()
+                await asyncio.sleep(0.2)  # Wait for animation
             
-            # Step 4: Update center card to show new message
+            # Step 4: Update center card to show new message (sync with right card)
             if self.center_card:
                 self.center_card.update_message(
                     message,
@@ -185,6 +201,11 @@ class ProgressUI:
                     is_deleted=is_deleted
                 )
                 self.center_card.update_position("center")
+            
+            # Step 5: Clear right card for next message
+            if self.right_card:
+                self.right_card.update_message(None)
+                self.right_card.update_position("right")
             
             if self.page:
                 self.page.update()
@@ -200,7 +221,7 @@ class ProgressUI:
                 if self._pending_deleted_message == message:
                     self._pending_deleted_message = None
             
-            # Step 5: Clear right card for next message
+            # Clear right card again after deleted message handling
             if self.right_card:
                 self.right_card.update_message(None)
                 self.right_card.update_position("right")
@@ -212,8 +233,8 @@ class ProgressUI:
             logger.error(f"Error updating cards: {ex}")
     
     async def handle_error_delay(self):
-        """Handle 1.5 second delay for error messages."""
-        await asyncio.sleep(1.5)
+        """Handle 1.5 second delay for error messages with countdown."""
+        await self.show_delay_countdown(1.5, "Error delay")
     
     def get_cards_row(self) -> ft.Row:
         """Get the row containing message cards."""
@@ -227,7 +248,55 @@ class ProgressUI:
         """Get the column containing progress UI elements."""
         return ft.Column([
             self.estimated_count_text,
+            self.stats_text,
+            self.delay_countdown_text,
             self.progress_bar,
             self.progress_text,
         ], spacing=10)
+    
+    async def show_delay_countdown(self, seconds: float, message: str = "Waiting"):
+        """Show countdown timer for delay."""
+        self.delay_countdown_text.visible = True
+        remaining = seconds
+        
+        while remaining > 0:
+            self.delay_countdown_text.value = f"{message}: {remaining:.1f}s"
+            if self.page:
+                try:
+                    self.page.update()
+                except:
+                    pass
+            await asyncio.sleep(0.1)  # Update every 0.1 seconds for smooth countdown
+            remaining -= 0.1
+        
+        self.delay_countdown_text.visible = False
+        self.delay_countdown_text.value = ""
+        if self.page:
+            try:
+                self.page.update()
+            except:
+                pass
+    
+    def hide_delay_countdown(self):
+        """Hide delay countdown."""
+        self.delay_countdown_text.visible = False
+        self.delay_countdown_text.value = ""
+    
+    def update_stats(self, estimated: int = 0, fetched: int = 0, errors: int = 0, skipped: int = 0):
+        """Update statistics display."""
+        stats_parts = []
+        if estimated > 0:
+            stats_parts.append(f"Estimated: {estimated}")
+        if fetched > 0:
+            stats_parts.append(f"Fetched: {fetched}")
+        if errors > 0:
+            stats_parts.append(f"Errors: {errors}")
+        if skipped > 0:
+            stats_parts.append(f"Skipped: {skipped}")
+        
+        if stats_parts:
+            self.stats_text.value = " | ".join(stats_parts)
+            self.stats_text.visible = True
+        else:
+            self.stats_text.visible = False
 

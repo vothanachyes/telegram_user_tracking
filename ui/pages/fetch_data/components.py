@@ -69,15 +69,17 @@ class MessageCard(ft.Container):
     
     def _get_position_props(self) -> tuple:
         """Get width, height, opacity, and scale based on position (responsive)."""
+        # Use fixed height to prevent flickering - all cards same height
+        FIXED_HEIGHT = 300
         # Use None for width to allow expand=True for responsive design
         if self.position == "center":
-            return None, 300, 1.0, 1.0
+            return None, FIXED_HEIGHT, 1.0, 1.0
         elif self.position == "left":
-            return None, 200, 0.6, 0.8
+            return None, FIXED_HEIGHT, 0.6, 0.8
         elif self.position == "right":
-            return None, 200, 0.6, 0.8
+            return None, FIXED_HEIGHT, 0.6, 0.8
         else:
-            return None, 200, 0.0, 0.8
+            return None, FIXED_HEIGHT, 0.0, 0.8
     
     def _check_message_status(self):
         """Check if message exists and is deleted."""
@@ -157,7 +159,7 @@ class MessageCard(ft.Container):
                         )
                     ], spacing=5, tight=True),
                     padding=5,
-                    bgcolor=ft.Colors.BLUE_50 if theme_manager.theme == "light" else ft.Colors.BLUE_900,
+                    bgcolor=ft.Colors.BLUE_50 if not theme_manager.is_dark else ft.Colors.BLUE_900,
                     border_radius=5
                 )
             )
@@ -174,7 +176,7 @@ class MessageCard(ft.Container):
                         )
                     ], spacing=5, tight=True),
                     padding=5,
-                    bgcolor=ft.Colors.RED_50 if theme_manager.theme == "light" else ft.Colors.RED_900,
+                    bgcolor=ft.Colors.RED_50 if not theme_manager.is_dark else ft.Colors.RED_900,
                     border_radius=5
                 )
             )
@@ -203,7 +205,7 @@ class MessageCard(ft.Container):
                     self.undelete_button
                 ], spacing=5, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=10,
-                bgcolor=ft.Colors.GREEN_50 if theme_manager.theme == "light" else ft.Colors.GREEN_900,
+                bgcolor=ft.Colors.GREEN_50 if not theme_manager.is_dark else ft.Colors.GREEN_900,
                 border_radius=5
             )
         
@@ -279,7 +281,14 @@ class MessageCard(ft.Container):
         self.height = height
         self.opacity = opacity
         self.scale = scale
-        self.update()
+        # Ensure animation is enabled
+        if not self.animate:
+            self.animate = ft.Animation(duration=300, curve=ft.AnimationCurve.EASE_IN_OUT)
+        # Update the card
+        if self.page:
+            self.update()
+        else:
+            self.update()
     
     def _on_undelete_click(self, e):
         """Handle undelete button click."""

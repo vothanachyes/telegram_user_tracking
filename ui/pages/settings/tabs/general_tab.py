@@ -30,7 +30,8 @@ class GeneralTab:
         self.language_dropdown = theme_manager.create_dropdown(
             label=theme_manager.t("language"),
             options=["English", "ភាសាខ្មែរ"],
-            value="English" if self.current_settings.language == "en" else "ភាសាខ្មែរ"
+            value="English" if self.current_settings.language == "en" else "ភាសាខ្មែរ",
+            width=180
         )
         
         self.corner_radius_slider = ft.Slider(
@@ -73,14 +74,14 @@ class GeneralTab:
                         self.language_dropdown,
                         ft.Text(theme_manager.t("corner_radius"), size=14),
                         self.corner_radius_slider,
-                    ], spacing=15)
+                    ], spacing=20)
                 ),
                 self.error_text,
                 ft.Row([
                     cancel_btn,
                     save_btn,
                 ], alignment=ft.MainAxisAlignment.END, spacing=10),
-            ], scroll=ft.ScrollMode.AUTO, spacing=15),
+            ], scroll=ft.ScrollMode.AUTO, spacing=20),
             padding=10,
             expand=True
         )

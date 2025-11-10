@@ -49,12 +49,12 @@ class FetchHandlers:
         
         # Date fields
         today = datetime.now()
-        last_month = today - timedelta(days=30)
+        five_days_ago = today - timedelta(days=5)
         
         self.start_date_field = ft.TextField(
             label=theme_manager.t("start_date"),
             hint_text="YYYY-MM-DD",
-            value=last_month.strftime("%Y-%m-%d"),
+            value=five_days_ago.strftime("%Y-%m-%d"),
             border_radius=theme_manager.corner_radius,
             expand=True
         )
@@ -249,16 +249,22 @@ class FetchHandlers:
                 return False, theme_manager.t("connection_error") + " (Timeout)"
             return False, error_msg
     
-    async def start_fetch(self, on_progress: Optional[Callable] = None, on_message: Optional[Callable] = None) -> Tuple[bool, int, Optional[str]]:
+    async def start_fetch(
+        self, 
+        on_progress: Optional[Callable] = None, 
+        on_message: Optional[Callable] = None,
+        on_delay: Optional[Callable] = None
+    ) -> Tuple[bool, int, Optional[str], int]:
         """
         Start fetching messages.
         
         Args:
             on_progress: Optional progress callback (current, total)
             on_message: Optional message callback (message, user, error)
+            on_delay: Optional delay callback (seconds, message) for countdown display
         
         Returns:
-            (success, message_count, error_message)
+            (success, message_count, error_message, skipped_count)
         """
         # Validate inputs
         is_valid, error_msg = self._validate_inputs()
@@ -313,33 +319,45 @@ class FetchHandlers:
             
             # Fetch messages
             if self.selected_credential:
-                success, message_count, error = await self.telegram_service.fetch_messages_with_account(
+                result = await self.telegram_service.fetch_messages_with_account(
                     credential=self.selected_credential,
                     group_id=group_id,
                     start_date=start_date,
                     end_date=end_date,
                     progress_callback=on_progress,
-                    message_callback=message_callback
+                    message_callback=message_callback,
+                    delay_callback=on_delay
                 )
             else:
-                success, message_count, error = await self.telegram_service.fetch_messages(
+                result = await self.telegram_service.fetch_messages(
                     group_id=group_id,
                     start_date=start_date,
                     end_date=end_date,
                     progress_callback=on_progress,
-                    message_callback=message_callback
+                    message_callback=message_callback,
+                    delay_callback=on_delay
                 )
+            
+            # Handle both old (3-tuple) and new (4-tuple) return formats
+            if len(result) == 3:
+                success, message_count, error = result
+                skipped_count = 0
+            else:
+                success, message_count, error, skipped_count = result
+            
+            # Update view model with skipped count
+            self.view_model.set_skipped_count(skipped_count)
             
             # Refresh group selector with updated last_fetch_date after successful fetch
             if success:
                 groups = self.db_manager.get_all_groups()
                 self.group_selector.refresh_selected_group_info(groups)
             
-            return success, message_count, error
+            return success, message_count, error, skipped_count
             
         except Exception as e:
             logger.error(f"Error in fetch: {e}")
-            return False, 0, str(e)
+            return False, 0, str(e), 0
         finally:
             # Re-enable inputs
             self.account_selector.enable()

@@ -40,6 +40,8 @@ class GroupsPage(ft.Container):
             telegram_service=telegram_service,
             view_model=self.view_model
         )
+        # Pass reference to this page for refresh callback
+        self.handlers.groups_page = self
         
         # Build UI
         super().__init__(
@@ -55,6 +57,9 @@ class GroupsPage(ft.Container):
     
     def _build_content(self) -> ft.Column:
         """Build page content."""
+        # Store reference to groups list container for updates
+        self.groups_list_container = self.components.build_group_list(self.view_model.get_all_groups())
+        
         return ft.Column([
             # Header
             ft.Row([
@@ -82,9 +87,31 @@ class GroupsPage(ft.Container):
             ft.Container(height=20),
             
             # Groups list
-            self.components.build_group_list(self.view_model.get_all_groups())
+            self.groups_list_container
             
         ], spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+    
+    def refresh_groups_list(self):
+        """Refresh the groups list UI."""
+        # Reload groups from database
+        self.view_model.load_groups()
+        
+        # Rebuild the groups list
+        new_groups_list = self.components.build_group_list(self.view_model.get_all_groups())
+        
+        # Find and replace the groups list in the content
+        if hasattr(self, 'content') and isinstance(self.content, ft.Column):
+            # Find the groups list container in the content
+            for i, control in enumerate(self.content.controls):
+                if control == self.groups_list_container:
+                    # Replace with new list
+                    self.content.controls[i] = new_groups_list
+                    self.groups_list_container = new_groups_list
+                    break
+        
+        # Update the page
+        if self.page:
+            self.page.update()
     
     def _on_group_click(self, group):
         """Handle group click."""

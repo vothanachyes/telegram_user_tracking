@@ -51,10 +51,13 @@ class AccountStatusChecker:
         
         try:
             # Create temporary client to check status
+            # Use stored session_path from credential if available
+            session_path = credential.session_string if credential.session_string else None
             temp_client = self.client_manager.create_client(
                 credential.phone_number,
                 settings.telegram_api_id,
-                settings.telegram_api_hash
+                settings.telegram_api_hash,
+                session_path=session_path
             )
             
             if not temp_client:

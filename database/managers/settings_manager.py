@@ -88,7 +88,7 @@ class SettingsManager(BaseDatabaseManager):
                     db_path=_safe_get_row_value(row, 'db_path', None),
                     encryption_enabled=bool(_safe_get_row_value(row, 'encryption_enabled', False)),
                     encryption_key_hash=_safe_get_row_value(row, 'encryption_key_hash', None),
-                    session_encryption_enabled=bool(_safe_get_row_value(row, 'session_encryption_enabled', True)),
+                    session_encryption_enabled=bool(_safe_get_row_value(row, 'session_encryption_enabled', False)),
                     created_at=_parse_datetime(row['created_at']),
                     updated_at=_parse_datetime(row['updated_at'])
                 )

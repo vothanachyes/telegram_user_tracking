@@ -77,14 +77,6 @@ class ClientManager:
                     except Exception as e:
                         logger.warning(f"Could not delete temporary session file {temp_name}.session: {e}")
                 
-                # Clean up encrypted session files (.session.enc)
-                temp_file_enc = self._session_path / f"{temp_name}.session.enc"
-                if temp_file_enc.exists():
-                    try:
-                        temp_file_enc.unlink()
-                        logger.debug(f"Cleaned up temporary encrypted session file: {temp_name}.session.enc")
-                    except Exception as e:
-                        logger.warning(f"Could not delete temporary encrypted session file {temp_name}.session.enc: {e}")
                 
                 # Also check without extension (legacy)
                 temp_file_no_ext = self._session_path / temp_name
@@ -109,7 +101,8 @@ class ClientManager:
         self,
         phone: str,
         api_id: str,
-        api_hash: str
+        api_hash: str,
+        session_path: Optional[str] = None
     ) -> Optional[TelegramClient]:
         """
         Create Telethon client with encrypted session support.
@@ -118,6 +111,8 @@ class ClientManager:
             phone: Phone number
             api_id: Telegram API ID
             api_hash: Telegram API hash
+            session_path: Optional session file path (from credential.session_string).
+                         If provided, uses this path; otherwise constructs from phone number.
             
         Returns:
             TelegramClient instance or None if failed
@@ -127,46 +122,28 @@ class ClientManager:
             return None
         
         try:
-            session_name = f"session_{phone.replace('+', '')}"
-            session_file = self._session_path / session_name
+            # Use provided session path or construct from phone number
+            if session_path:
+                # Use the stored session path
+                session_file = Path(session_path)
+                # If path has .session.enc extension, convert to .session (legacy support)
+                if session_file.name.endswith('.session.enc'):
+                    session_file = session_file.with_suffix('').with_suffix('.session')
+                    logger.debug(f"Converted .session.enc path to .session: {session_file}")
+                logger.debug(f"Using stored session path: {session_file}")
+            else:
+                # Construct path from phone number
+                session_name = f"session_{phone.replace('+', '')}"
+                session_file = self._session_path / session_name
+                logger.debug(f"Constructed session path from phone: {session_file}")
             
-            # Check if session encryption is enabled
-            try:
-                from config.settings import settings
-                from services.telegram.sessions import EncryptedSQLiteSession
-                
-                if settings.is_session_encryption_enabled():
-                    # Use encrypted session
-                    db_manager = settings.db_manager
-                    session = EncryptedSQLiteSession(str(session_file), db_manager)
-                    client = TelegramClient(
-                        session,
-                        int(api_id),
-                        api_hash
-                    )
-                    logger.debug(f"Created client with encrypted session: {session_file}")
-                else:
-                    # Use regular session
-                    client = TelegramClient(
-                        str(session_file),
-                        int(api_id),
-                        api_hash
-                    )
-            except ImportError:
-                # Encrypted session not available, use regular session
-                client = TelegramClient(
-                    str(session_file),
-                    int(api_id),
-                    api_hash
-                )
-            except Exception as e:
-                logger.warning(f"Error creating encrypted session, falling back to regular: {e}")
-                # Fallback to regular session
-                client = TelegramClient(
-                    str(session_file),
-                    int(api_id),
-                    api_hash
-                )
+            # Use regular Telethon session (Telethon handles its own encryption internally)
+            client = TelegramClient(
+                str(session_file),
+                int(api_id),
+                api_hash
+            )
+            logger.debug(f"Created client with session: {session_file}")
             
             return client
         except Exception as e:
@@ -349,42 +326,12 @@ class ClientManager:
             session_name = "qr_login_temp"
             session_file = self._session_path / session_name
             
-            # Check if session encryption is enabled
-            try:
-                from config.settings import settings
-                from services.telegram.sessions import EncryptedSQLiteSession
-                
-                if settings.is_session_encryption_enabled():
-                    # Use encrypted session for QR login
-                    db_manager = settings.db_manager
-                    session = EncryptedSQLiteSession(str(session_file), db_manager)
-                    client = TelegramClient(
-                        session,
-                        int(api_id),
-                        api_hash
-                    )
-                else:
-                    # Use regular session
-                    client = TelegramClient(
-                        str(session_file),
-                        int(api_id),
-                        api_hash
-                    )
-            except ImportError:
-                # Encrypted session not available, use regular session
-                client = TelegramClient(
-                    str(session_file),
-                    int(api_id),
-                    api_hash
-                )
-            except Exception as e:
-                logger.warning(f"Error creating encrypted session for QR login, falling back to regular: {e}")
-                # Fallback to regular session
-                client = TelegramClient(
-                    str(session_file),
-                    int(api_id),
-                    api_hash
-                )
+            # Use regular Telethon session (Telethon handles its own encryption internally)
+            client = TelegramClient(
+                str(session_file),
+                int(api_id),
+                api_hash
+            )
             
             await client.connect()
             
@@ -425,18 +372,8 @@ class ClientManager:
                 # Update session file name to match phone number
                 if phone_number:
                     new_session_name = f"session_{phone_number.replace('+', '')}"
-                    # Telethon session files have .session extension
-                    # Check if encryption is enabled to determine final extension
-                    try:
-                        from config.settings import settings
-                        use_encryption = settings.is_session_encryption_enabled()
-                    except Exception:
-                        use_encryption = False
-                    
                     new_session_file = self._session_path / f"{new_session_name}.session"
-                    new_session_file_enc = self._session_path / f"{new_session_name}.session.enc"
                     old_session_file = self._session_path / f"{session_name}.session"
-                    old_session_file_enc = self._session_path / f"{session_name}.session.enc"
                     
                     # Ensure session is saved
                     try:
@@ -452,16 +389,9 @@ class ClientManager:
                     rename_success = False
                     actual_session_path = old_session_file  # Default to old path if rename fails
                     
-                    # Check for encrypted session file first, then unencrypted
-                    old_file_to_rename = None
-                    new_file_path = None
-                    
-                    if use_encryption and old_session_file_enc.exists():
-                        old_file_to_rename = old_session_file_enc
-                        new_file_path = new_session_file_enc
-                    elif old_session_file.exists():
-                        old_file_to_rename = old_session_file
-                        new_file_path = new_session_file if not use_encryption else new_session_file_enc
+                    # Use regular .session file
+                    old_file_to_rename = old_session_file if old_session_file.exists() else None
+                    new_file_path = new_session_file
                     
                     if old_file_to_rename and old_file_to_rename.exists():
                         try:
@@ -602,10 +532,13 @@ class ClientManager:
             if not settings.has_telegram_credentials:
                 return False, "Telegram API credentials not configured", None
             
+            # Use stored session_path from credential if available
+            session_path = credential.session_string if credential.session_string else None
             client = self.create_client(
                 credential.phone_number,
                 api_id,
-                api_hash
+                api_hash,
+                session_path=session_path
             )
             
             if not client:

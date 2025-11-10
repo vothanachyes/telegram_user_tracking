@@ -366,9 +366,9 @@ class BaseDatabaseManager:
                 conn.execute("ALTER TABLE app_settings ADD COLUMN encryption_key_hash TEXT")
                 logger.info("Added encryption_key_hash column to app_settings table")
             
-            # Add session_encryption_enabled to app_settings if missing
+            # Add session_encryption_enabled to app_settings if missing (default: False - disabled)
             if 'session_encryption_enabled' not in settings_columns:
-                conn.execute("ALTER TABLE app_settings ADD COLUMN session_encryption_enabled BOOLEAN NOT NULL DEFAULT 1")
+                conn.execute("ALTER TABLE app_settings ADD COLUMN session_encryption_enabled BOOLEAN NOT NULL DEFAULT 0")
                 logger.info("Added session_encryption_enabled column to app_settings table")
             
             # Create indexes if they don't exist

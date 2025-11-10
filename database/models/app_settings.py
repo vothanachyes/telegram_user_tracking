@@ -32,7 +32,7 @@ class AppSettings:
     db_path: Optional[str] = None  # Custom database path (None = use default)
     encryption_enabled: bool = False  # Database encryption enabled
     encryption_key_hash: Optional[str] = None  # Hash of encryption key (encrypted with DPAPI)
-    session_encryption_enabled: bool = True  # Session file encryption enabled (default: True)
+    session_encryption_enabled: bool = False  # Session file encryption disabled (reverted - using Telethon's built-in encryption)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

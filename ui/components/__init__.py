@@ -11,6 +11,7 @@ from ui.components.filter_bar import FilterBar
 from ui.components.stat_cards_grid import StatCardsGrid
 from ui.components.user_search_dropdown import UserSearchDropdown
 from ui.components.file_picker_manager import FilePickerManager
+from ui.components.modern_tabs import ModernTabs
 
 __all__ = [
     'Sidebar',
@@ -21,6 +22,7 @@ __all__ = [
     'FilterBar',
     'StatCardsGrid',
     'UserSearchDropdown',
-    'FilePickerManager'
+    'FilePickerManager',
+    'ModernTabs'
 ]
 

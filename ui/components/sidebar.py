@@ -29,6 +29,7 @@ class Sidebar(ft.Container):
             self._create_nav_button("telegram", ft.Icons.TELEGRAM, theme_manager.t("telegram")),
             self._create_nav_button("groups", ft.Icons.GROUP, theme_manager.t("groups")),
             self._create_nav_button("user_dashboard", ft.Icons.PERSON_SEARCH, theme_manager.t("user_dashboard")),
+            self._create_nav_button("reports", ft.Icons.ASSESSMENT, theme_manager.t("reports")),
             self._create_nav_button("settings", ft.Icons.SETTINGS, theme_manager.t("settings")),
             ft.Container(expand=True),  # Spacer
             self._create_fetch_button(),
@@ -61,16 +62,7 @@ class Sidebar(ft.Container):
         # Create a proper closure to capture page_id
         def make_click_handler(pid: str):
             def handler(e):
-                if self._is_fetching:
-                    # Block navigation during fetch
-                    if self.page:
-                        from ui.theme import theme_manager
-                        theme_manager.show_snackbar(
-                            self.page,
-                            "Cannot navigate while fetching data. Please wait for the fetch to complete or click Finish to stop.",
-                            bgcolor=ft.Colors.ORANGE
-                        )
-                    return
+                # Navigation is always allowed - fetch continues in background
                 self._handle_click(pid)
             return handler
         
@@ -83,7 +75,7 @@ class Sidebar(ft.Container):
             icon_size=24,
             tooltip=tooltip,
             on_click=click_handler,
-            disabled=self._is_fetching,
+            disabled=False,  # Navigation always allowed
             style=ft.ButtonStyle(
                 bgcolor=theme_manager.primary_color if is_active else ft.Colors.TRANSPARENT,
                 shape=ft.RoundedRectangleBorder(radius=theme_manager.corner_radius),
@@ -126,7 +118,7 @@ class Sidebar(ft.Container):
             icon_size=24,
             tooltip=theme_manager.t("fetch_data"),
             on_click=lambda e: self._handle_fetch_click(),
-            disabled=self._is_fetching,
+            disabled=False,  # Allow clicking fetch button even during fetch
             style=ft.ButtonStyle(
                 bgcolor=ft.Colors.GREEN,
                 shape=ft.RoundedRectangleBorder(radius=theme_manager.corner_radius),
@@ -164,6 +156,7 @@ class Sidebar(ft.Container):
                 self._create_nav_button("telegram", ft.Icons.TELEGRAM, theme_manager.t("telegram")),
                 self._create_nav_button("groups", ft.Icons.GROUP, theme_manager.t("groups")),
                 self._create_nav_button("user_dashboard", ft.Icons.PERSON_SEARCH, theme_manager.t("user_dashboard")),
+                self._create_nav_button("reports", ft.Icons.ASSESSMENT, theme_manager.t("reports")),
                 self._create_nav_button("settings", ft.Icons.SETTINGS, theme_manager.t("settings")),
                 ft.Container(expand=True),
                 self._create_fetch_button(),

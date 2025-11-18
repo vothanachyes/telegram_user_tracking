@@ -30,11 +30,13 @@ class DataTable(ft.Container):
         self.filtered_rows = rows
         self.on_row_click = on_row_click
         self.page_size = page_size
+        self.initial_page_size = page_size
         self.current_page = 0
         self.column_alignments = column_alignments or ["left"] * len(columns)
         self.row_metadata = row_metadata or []
         
         # Initialize filtering with search callback
+        # Note: Tag filtering will be enabled by the parent component if needed
         self.filtering = TableFiltering(
             searchable=searchable,
             on_clear_filters=on_clear_filters,

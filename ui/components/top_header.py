@@ -3,11 +3,13 @@ Top header component with greeting and About navigation.
 """
 
 import flet as ft
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 from ui.theme import theme_manager
 from services.auth_service import auth_service
+from services.fetch_state_manager import fetch_state_manager
 
 
 class TopHeader(ft.Container):
@@ -27,6 +29,34 @@ class TopHeader(ft.Container):
             content=ft.Icon(ft.Icons.PERSON, size=theme_manager.font_size_body, color=theme_manager.text_color),
             radius=16,
             bgcolor=ft.Colors.TRANSPARENT
+        )
+        
+        # Fetch indicator (shows when fetching)
+        # Use secondary color (which is a Color constant) with opacity for dark mode,
+        # or use a semi-transparent blue for light mode
+        if theme_manager.is_dark:
+            # Dark mode: use secondary color (sky blue) with opacity
+            primary_color_with_opacity = ft.Colors.with_opacity(0.2, ft.Colors.CYAN_700)
+        else:
+            # Light mode: use primary-like color with opacity
+            primary_color_with_opacity = ft.Colors.with_opacity(0.2, ft.Colors.BLUE_700)
+        
+        self.fetch_indicator = ft.Container(
+            content=ft.Row([
+                ft.ProgressRing(width=12, height=12, stroke_width=2),
+                ft.Text(
+                    "",
+                    size=12,
+                    color=theme_manager.text_color,
+                    weight=ft.FontWeight.BOLD
+                )
+            ], spacing=5, tight=True),
+            visible=False,
+            padding=ft.padding.symmetric(horizontal=8, vertical=4),
+            border_radius=theme_manager.corner_radius,
+            bgcolor=primary_color_with_opacity,
+            on_click=lambda e: self.on_navigate("fetch_data"),
+            tooltip="Click to view fetch progress"
         )
         
         # About button
@@ -55,6 +85,7 @@ class TopHeader(ft.Container):
                 on_tap=lambda e: self.on_navigate("dashboard")
             ),
             ft.Container(expand=True),  # Spacer
+            self.fetch_indicator,
             self.about_button
         ], 
         alignment=ft.MainAxisAlignment.START,
@@ -120,4 +151,42 @@ class TopHeader(ft.Container):
         self.greeting_text.value = self._get_greeting()
         if hasattr(self, 'page') and self.page:
             self.page.update()
+    
+    def update_fetch_indicator(self):
+        """Update fetch indicator visibility and text."""
+        if fetch_state_manager.is_fetching:
+            count = fetch_state_manager.processed_count
+            indicator_text = self.fetch_indicator.content.controls[1]
+            indicator_text.value = theme_manager.t("fetching_indicator").format(count=count) or f"Fetching: {count} messages"
+            self.fetch_indicator.visible = True
+        else:
+            self.fetch_indicator.visible = False
+        
+        if hasattr(self, 'page') and self.page:
+            try:
+                self.page.update()
+            except:
+                pass
+    
+    async def start_fetch_indicator_updates(self):
+        """Start periodic updates for fetch indicator (async coroutine for page.run_task)."""
+        # Check if already running using a flag
+        if hasattr(self, '_fetch_updates_running') and self._fetch_updates_running:
+            return  # Already running
+        
+        self._fetch_updates_running = True
+        
+        try:
+            # Periodically update fetch indicator
+            while True:
+                try:
+                    await asyncio.sleep(0.5)  # Update every 0.5 seconds
+                    if hasattr(self, 'page') and self.page:
+                        self.update_fetch_indicator()
+                except asyncio.CancelledError:
+                    break
+                except Exception:
+                    pass
+        finally:
+            self._fetch_updates_running = False
 

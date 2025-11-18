@@ -115,7 +115,11 @@ class TableBuilders:
     
     @staticmethod
     def _create_cell_content(cell_value: Any, cell_meta: Dict[str, Any], column_index: int) -> ft.Control:
-        """Create cell content based on metadata (for links, icons, etc.)."""
+        """Create cell content based on metadata (for links, icons, custom widgets, etc.)."""
+        # Check if this is a custom widget cell
+        if cell_meta.get('custom_widget'):
+            return cell_meta['custom_widget']
+        
         # Check if this is a link cell
         if cell_meta.get('link'):
             link_url = cell_meta['link']

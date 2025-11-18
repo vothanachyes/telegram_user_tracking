@@ -6,6 +6,8 @@ from typing import Optional, List
 from datetime import datetime
 from database.managers.base import BaseDatabaseManager, _safe_get_row_value, _parse_datetime
 from database.models.message import Message
+from database.managers.tag_manager import TagManager
+from utils.tag_extractor import TagExtractor
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,8 +16,13 @@ logger = logging.getLogger(__name__)
 class MessageManager(BaseDatabaseManager):
     """Manages messages operations."""
     
+    def __init__(self, db_path: str = "./data/app.db"):
+        """Initialize message manager."""
+        super().__init__(db_path)
+        self._tag_manager = TagManager(db_path)
+    
     def save_message(self, message: Message) -> Optional[int]:
-        """Save a message."""
+        """Save a message and its tags."""
         try:
             encryption_service = self.get_encryption_service()
             
@@ -59,7 +66,28 @@ class MessageManager(BaseDatabaseManager):
                     message.sticker_emoji
                 ))
                 conn.commit()
-                return cursor.lastrowid
+                message_db_id = cursor.lastrowid
+                
+                # Extract and save tags (don't fail message save if tag save fails)
+                try:
+                    # Decrypt content and caption for tag extraction
+                    decrypted_content = encryption_service.decrypt_field(encrypted_content) if encryption_service else encrypted_content
+                    decrypted_caption = encryption_service.decrypt_field(encrypted_caption) if encryption_service else encrypted_caption
+                    
+                    tags = TagExtractor.extract_tags_from_content_and_caption(decrypted_content, decrypted_caption)
+                    if tags:
+                        self._tag_manager.save_tags(
+                            message.message_id,
+                            message.group_id,
+                            message.user_id,
+                            tags,
+                            message.date_sent
+                        )
+                except Exception as tag_error:
+                    logger.warning(f"Error saving tags for message {message.message_id}: {tag_error}")
+                    # Don't fail message save if tag save fails
+                
+                return message_db_id
         except Exception as e:
             logger.error(f"Error saving message: {e}")
             return None
@@ -72,11 +100,55 @@ class MessageManager(BaseDatabaseManager):
         end_date: Optional[datetime] = None,
         include_deleted: bool = False,
         limit: Optional[int] = None,
-        offset: int = 0
+        offset: int = 0,
+        tags: Optional[List[str]] = None
     ) -> List[Message]:
-        """Get messages with filters."""
-        query = "SELECT * FROM messages WHERE 1=1"
-        params = []
+        """
+        Get messages with filters.
+        
+        Args:
+            group_id: Filter by group ID
+            user_id: Filter by user ID
+            start_date: Filter by start date
+            end_date: Filter by end date
+            include_deleted: Include soft-deleted messages
+            limit: Maximum number of results
+            offset: Offset for pagination
+            tags: List of tags to filter by (normalized, without # prefix)
+        """
+        # If tags are specified, we need to join with message_tags table
+        if tags and len(tags) > 0:
+            # Filter by tags - get messages that have ALL specified tags
+            # We use a subquery approach to ensure all tags are present
+            normalized_tags = [t.strip().lower() for t in tags if t and t.strip()]
+            
+            if normalized_tags:
+                # For each tag, we need to ensure the message has it
+                # We'll use multiple JOINs or a subquery approach
+                query = """
+                    SELECT DISTINCT m.* FROM messages m
+                    WHERE 1=1
+                """
+                params = []
+                
+                # Add a condition for each tag using EXISTS subqueries
+                for tag in normalized_tags:
+                    query += f"""
+                        AND EXISTS (
+                            SELECT 1 FROM message_tags mt
+                            WHERE mt.message_id = m.message_id
+                            AND mt.group_id = m.group_id
+                            AND mt.tag = ?
+                        )
+                    """
+                    params.append(tag)
+            else:
+                # No valid tags, fall back to regular query
+                query = "SELECT * FROM messages WHERE 1=1"
+                params = []
+        else:
+            query = "SELECT * FROM messages WHERE 1=1"
+            params = []
         
         if group_id:
             query += " AND group_id = ?"
@@ -161,7 +233,7 @@ class MessageManager(BaseDatabaseManager):
             return cursor.fetchone()[0]
     
     def soft_delete_message(self, message_id: int, group_id: int) -> bool:
-        """Soft delete a message."""
+        """Soft delete a message and its tags."""
         try:
             with self.get_connection() as conn:
                 conn.execute(
@@ -173,6 +245,14 @@ class MessageManager(BaseDatabaseManager):
                     VALUES (?, ?)
                 """, (message_id, group_id))
                 conn.commit()
+                
+                # Delete associated tags
+                try:
+                    self._tag_manager.delete_tags_for_message(message_id, group_id)
+                except Exception as tag_error:
+                    logger.warning(f"Error deleting tags for message {message_id}: {tag_error}")
+                    # Don't fail message deletion if tag deletion fails
+                
                 return True
         except Exception as e:
             logger.error(f"Error soft deleting message: {e}")
@@ -215,4 +295,39 @@ class MessageManager(BaseDatabaseManager):
         except Exception as e:
             logger.error(f"Error undeleting message: {e}")
             return False
+    
+    def get_messages_by_tags(
+        self,
+        tags: List[str],
+        group_id: Optional[int] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        include_deleted: bool = False,
+        limit: Optional[int] = None,
+        offset: int = 0
+    ) -> List[Message]:
+        """
+        Filter messages by multiple tags.
+        
+        Args:
+            tags: List of tags to filter by (normalized, without # prefix)
+            group_id: Optional group ID to filter by
+            start_date: Optional start date filter
+            end_date: Optional end date filter
+            include_deleted: Include soft-deleted messages
+            limit: Maximum number of results
+            offset: Offset for pagination
+            
+        Returns:
+            List of messages that contain all specified tags
+        """
+        return self.get_messages(
+            group_id=group_id,
+            start_date=start_date,
+            end_date=end_date,
+            include_deleted=include_deleted,
+            limit=limit,
+            offset=offset,
+            tags=tags
+        )
 

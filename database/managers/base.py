@@ -385,6 +385,32 @@ class BaseDatabaseManager:
                 conn.execute("ALTER TABLE app_settings ADD COLUMN session_encryption_enabled BOOLEAN NOT NULL DEFAULT 0")
                 logger.info("Added session_encryption_enabled column to app_settings table")
             
+            # Check if message_tags table exists
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='message_tags'")
+            if not cursor.fetchone():
+                conn.execute("""
+                    CREATE TABLE message_tags (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        message_id INTEGER NOT NULL,
+                        group_id INTEGER NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        tag TEXT NOT NULL,
+                        date_sent TIMESTAMP NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(message_id, group_id, tag),
+                        FOREIGN KEY (message_id, group_id) REFERENCES messages(message_id, group_id),
+                        FOREIGN KEY (user_id) REFERENCES telegram_users(user_id)
+                    )
+                """)
+                # Create indexes for message_tags
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_message_tags_tag ON message_tags(tag)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_message_tags_group_id ON message_tags(group_id)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_message_tags_user_id ON message_tags(user_id)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_message_tags_date_sent ON message_tags(date_sent)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_message_tags_group_tag ON message_tags(group_id, tag)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_message_tags_user_group_tag ON message_tags(user_id, group_id, tag)")
+                logger.info("Created message_tags table")
+            
             # Create indexes if they don't exist
             conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_message_type ON messages(message_type)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_reactions_message_id ON reactions(message_id)")

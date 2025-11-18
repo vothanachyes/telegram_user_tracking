@@ -2,7 +2,7 @@
 Statistics manager.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 from database.managers.base import BaseDatabaseManager, _parse_datetime
 import logging
@@ -173,4 +173,92 @@ class StatsManager(BaseDatabaseManager):
                 GROUP BY msg_type
             """, params)
             return {row[0]: row[1] for row in cursor.fetchall()}
+    
+    def get_top_active_users_by_group(
+        self,
+        group_id: int,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Get top active users in a group sorted by message count."""
+        encryption_service = self.get_encryption_service()
+        
+        with self.get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT 
+                    u.user_id,
+                    u.username,
+                    u.first_name,
+                    u.last_name,
+                    u.full_name,
+                    u.phone,
+                    u.profile_photo_path,
+                    COUNT(m.message_id) as message_count
+                FROM telegram_users u
+                INNER JOIN messages m ON u.user_id = m.user_id
+                WHERE m.group_id = ? AND m.is_deleted = 0 AND u.is_deleted = 0
+                GROUP BY u.user_id
+                ORDER BY message_count DESC
+                LIMIT ?
+            """, (group_id, limit))
+            
+            results = []
+            for row in cursor.fetchall():
+                # Decrypt sensitive fields
+                username = encryption_service.decrypt_field(row['username']) if encryption_service else row['username']
+                first_name = encryption_service.decrypt_field(row['first_name']) if encryption_service else row['first_name']
+                last_name = encryption_service.decrypt_field(row['last_name']) if encryption_service else row['last_name']
+                full_name = encryption_service.decrypt_field(row['full_name']) if encryption_service else row['full_name']
+                phone = encryption_service.decrypt_field(row['phone']) if encryption_service else row['phone']
+                
+                results.append({
+                    'user_id': row['user_id'],
+                    'username': username,
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'full_name': full_name,
+                    'phone': phone,
+                    'profile_photo_path': row['profile_photo_path'],
+                    'message_count': row['message_count']
+                })
+            
+            return results
+    
+    def get_group_summaries(self) -> List[Dict[str, Any]]:
+        """Get summary statistics for all groups."""
+        with self.get_connection() as conn:
+            # Get all groups with their statistics
+            cursor = conn.execute("""
+                SELECT 
+                    g.group_id,
+                    g.group_name,
+                    g.group_photo_path,
+                    g.last_fetch_date,
+                    COUNT(DISTINCT m.message_id) as total_messages,
+                    COUNT(DISTINCT m.user_id) as active_members,
+                    COUNT(DISTINCT u.user_id) as total_members,
+                    COUNT(DISTINCT fh.id) as export_history_count,
+                    MAX(fh.end_date) as last_export_date
+                FROM telegram_groups g
+                LEFT JOIN messages m ON g.group_id = m.group_id AND m.is_deleted = 0
+                LEFT JOIN telegram_users u ON u.user_id = m.user_id AND u.is_deleted = 0
+                LEFT JOIN group_fetch_history fh ON g.group_id = fh.group_id
+                GROUP BY g.group_id, g.group_name, g.group_photo_path, g.last_fetch_date
+                ORDER BY g.group_name
+            """)
+            
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    'group_id': row['group_id'],
+                    'group_name': row['group_name'],
+                    'group_photo_path': row['group_photo_path'],
+                    'last_fetch_date': _parse_datetime(row['last_fetch_date']),
+                    'total_messages': row['total_messages'] or 0,
+                    'active_members': row['active_members'] or 0,
+                    'total_members': row['total_members'] or 0,
+                    'export_history_count': row['export_history_count'] or 0,
+                    'last_export_date': _parse_datetime(row['last_export_date'])
+                })
+            
+            return results
 

@@ -42,3 +42,15 @@ class Reaction:
     reacted_at: Optional[datetime] = None  # When reaction was made (uses message date_sent as proxy)
     created_at: Optional[datetime] = None
 
+
+@dataclass
+class MessageTag:
+    """Message tag model."""
+    id: Optional[int] = None
+    message_id: int = 0
+    group_id: int = 0
+    user_id: int = 0
+    tag: str = ""  # Normalized tag without #
+    date_sent: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+

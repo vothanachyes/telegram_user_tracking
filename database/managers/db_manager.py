@@ -16,6 +16,7 @@ from database.managers.auth_manager import AuthManager
 from database.managers.license_manager import LicenseManager
 from database.managers.account_activity_manager import AccountActivityManager
 from database.managers.update_manager import UpdateManager
+from database.managers.tag_manager import TagManager
 
 
 class DatabaseManager(BaseDatabaseManager):
@@ -43,6 +44,7 @@ class DatabaseManager(BaseDatabaseManager):
         self._license = LicenseManager(db_path)
         self._account_activity = AccountActivityManager(db_path)
         self._update = UpdateManager(db_path)
+        self._tag = TagManager(db_path)
     
     # Delegate all methods to composed managers
     # App Settings
@@ -124,9 +126,9 @@ class DatabaseManager(BaseDatabaseManager):
         return self._message.save_message(message)
     
     def get_messages(self, group_id=None, user_id=None, start_date=None, end_date=None,
-                     include_deleted=False, limit=None, offset=0):
+                     include_deleted=False, limit=None, offset=0, tags=None):
         return self._message.get_messages(group_id, user_id, start_date, end_date,
-                                         include_deleted, limit, offset)
+                                         include_deleted, limit, offset, tags)
     
     def get_message_count(self, group_id=None, user_id=None, include_deleted=False):
         return self._message.get_message_count(group_id, user_id, include_deleted)
@@ -167,6 +169,11 @@ class DatabaseManager(BaseDatabaseManager):
         return self._reaction.delete_reaction(reaction_id)
     
     # Statistics
+    def get_top_active_users_by_group(self, group_id, limit=10):
+        return self._stats.get_top_active_users_by_group(group_id, limit)
+    
+    def get_group_summaries(self):
+        return self._stats.get_group_summaries()
     def get_dashboard_stats(self):
         return self._stats.get_dashboard_stats()
     
@@ -221,4 +228,14 @@ class DatabaseManager(BaseDatabaseManager):
     
     def has_user_installed_version(self, user_email, version):
         return self._update.has_user_installed_version(user_email, version)
+    
+    # Tags
+    def get_tag_suggestions(self, prefix, group_id=None, limit=10):
+        return self._tag.get_tag_suggestions(prefix, group_id, limit)
+    
+    def get_all_tags_for_group(self, group_id):
+        return self._tag.get_all_tags_for_group(group_id)
+    
+    def get_tag_counts_by_group(self, group_id):
+        return self._tag.get_tag_counts_by_group(group_id)
 

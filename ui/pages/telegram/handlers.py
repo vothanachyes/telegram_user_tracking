@@ -84,7 +84,9 @@ class TelegramHandlers:
             return
         
         messages = self.view_model.get_messages(
-            group_id=self.messages_tab.get_selected_group()
+            group_id=self.messages_tab.get_selected_group(),
+            start_date=self.messages_tab.filters_bar.get_start_date(),
+            end_date=self.messages_tab.filters_bar.get_end_date()
         )
         if not messages:
             theme_manager.show_snackbar(
@@ -120,7 +122,9 @@ class TelegramHandlers:
             return
         
         messages = self.view_model.get_messages(
-            group_id=self.messages_tab.get_selected_group()
+            group_id=self.messages_tab.get_selected_group(),
+            start_date=self.messages_tab.filters_bar.get_start_date(),
+            end_date=self.messages_tab.filters_bar.get_end_date()
         )
         if not messages:
             theme_manager.show_snackbar(
@@ -225,7 +229,9 @@ class TelegramHandlers:
         
         try:
             messages = self.view_model.get_messages(
-                group_id=self.messages_tab.get_selected_group()
+                group_id=self.messages_tab.get_selected_group(),
+                start_date=self.messages_tab.filters_bar.get_start_date(),
+                end_date=self.messages_tab.filters_bar.get_end_date()
             )
             
             if self.export_service.export_messages_to_excel(messages, e.path):
@@ -254,7 +260,9 @@ class TelegramHandlers:
         
         try:
             messages = self.view_model.get_messages(
-                group_id=self.messages_tab.get_selected_group()
+                group_id=self.messages_tab.get_selected_group(),
+                start_date=self.messages_tab.filters_bar.get_start_date(),
+                end_date=self.messages_tab.filters_bar.get_end_date()
             )
             
             if self.export_service.export_messages_to_pdf(messages, e.path):

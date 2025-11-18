@@ -10,6 +10,7 @@ from datetime import datetime
 from ui.theme import theme_manager
 from database.db_manager import DatabaseManager
 from services.telegram import TelegramService
+from services.fetch_state_manager import fetch_state_manager
 from ui.pages.fetch_data.view_model import FetchViewModel
 from ui.pages.fetch_data.handlers import FetchHandlers
 from ui.pages.fetch_data.progress_ui import ProgressUI
@@ -83,6 +84,28 @@ class FetchDataPage(ft.Container):
         self.progress_ui.set_page(page)
         self.summary_ui.set_page(page)
         
+        # Sync local view_model with global state if fetch is in progress
+        if fetch_state_manager.is_fetching:
+            global_state = fetch_state_manager.get_state()
+            self.view_model.is_fetching = global_state['is_fetching']
+            self.view_model.processed_count = global_state['processed_count']
+            self.view_model.error_count = global_state['error_count']
+            self.view_model.skipped_count = global_state['skipped_count']
+            self.view_model.estimated_total = global_state['estimated_total']
+            
+            # Show progress UI if fetch is in progress
+            if global_state['processed_count'] > 0:
+                self.progress_ui.show_progress()
+                self.progress_ui.update_progress_text(
+                    f"{theme_manager.t('messages_fetched') or 'Messages fetched'}: {global_state['processed_count']}"
+                )
+                self.progress_ui.update_stats(
+                    estimated=global_state['estimated_total'],
+                    fetched=global_state['processed_count'],
+                    errors=global_state['error_count'],
+                    skipped=global_state['skipped_count']
+                )
+        
         # Update license warning
         self._update_license_warning()
         
@@ -136,7 +159,7 @@ class FetchDataPage(ft.Container):
             on_click=self._on_start_fetch,
             bgcolor=theme_manager.primary_color,
             color=ft.Colors.WHITE,
-            disabled=self.view_model.is_fetching
+            disabled=fetch_state_manager.is_fetching or self.view_model.is_fetching
         )
         return self.start_button
     
@@ -211,49 +234,49 @@ class FetchDataPage(ft.Container):
             
             ft.Container(height=20),
             
-            # Progress section
-            self.progress_ui.get_progress_column(),
-            
-            ft.Container(height=20),
-            
-            # Animated message cards section
-            ft.Column([
-                ft.Text(
-                    "Messages",
-                    size=18,
-                    weight=ft.FontWeight.BOLD
-                ),
-                ft.Container(height=10),
-                self.progress_ui.get_cards_row(),
-            ], spacing=10),
-            
-            ft.Container(height=20),
-            
-            # Summary table
-            self.summary_ui.summary_table_container,
-            
+        # Progress section
+        self.progress_ui.get_progress_column(),
+        
+        ft.Container(height=20),
+        
+        # Animated message cards section
+        ft.Column([
+            ft.Text(
+                "Messages",
+                size=18,
+                weight=ft.FontWeight.BOLD
+            ),
             ft.Container(height=10),
-            
-            # Action buttons
+            self.progress_ui.get_cards_row(),
+        ], spacing=10),
+        
+        ft.Container(height=20),
+        
+        # Summary table
+        self.summary_ui.summary_table_container,
+        
+        ft.Container(height=10),
+        
+        # Action buttons
+        ft.Row([
             ft.Row([
-                ft.Row([
-                    self._create_start_button(),
-                    ft.ElevatedButton(
-                        theme_manager.t("configure") or "Configure",
-                        icon=ft.Icons.SETTINGS,
-                        on_click=self._on_configure_click,
-                        bgcolor=theme_manager.surface_color,
-                        color=theme_manager.text_color,
-                    ),
-                    ft.ProgressRing(
-                        width=20,
-                        height=20,
-                        stroke_width=2,
-                        visible=self.view_model.is_fetching
-                    ),
-                ], spacing=5, tight=True),
-                self.summary_ui.finish_button,
-            ], spacing=10),
+                self._create_start_button(),
+                ft.ElevatedButton(
+                    theme_manager.t("configure") or "Configure",
+                    icon=ft.Icons.SETTINGS,
+                    on_click=self._on_configure_click,
+                    bgcolor=theme_manager.surface_color,
+                    color=theme_manager.text_color,
+                ),
+                ft.ProgressRing(
+                    width=20,
+                    height=20,
+                    stroke_width=2,
+                    visible=fetch_state_manager.is_fetching or self.view_model.is_fetching
+                ),
+            ], spacing=5, tight=True),
+            self.summary_ui.finish_button,
+        ], spacing=10),
             
         ], spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
     
@@ -279,7 +302,7 @@ class FetchDataPage(ft.Container):
     def _on_start_fetch(self, e):
         """Handle start fetch button click."""
         # Prevent multiple clicks
-        if self.view_model.is_fetching:
+        if fetch_state_manager.is_fetching or self.view_model.is_fetching:
             return
         
         # Reset stop flag
@@ -318,9 +341,24 @@ class FetchDataPage(ft.Container):
     
     async def _fetch_async(self):
         """Async fetch method."""
-        # Reset view model
+        # Get group info for global state
+        group_id = self.handlers.group_selector.get_selected_group_id()
+        group_name = None
+        if group_id:
+            group = self.db_manager.get_group_by_id(group_id)
+            if group:
+                group_name = group.group_name
+        
+        # Start global fetch state
+        fetch_state_manager.start_fetch(group_id=group_id, group_name=group_name)
+        
+        # Reset local view model (keep UI-specific state separate)
         self.view_model.reset()
         self._is_fetch_stopped = False
+        
+        # Sync local view_model with global state
+        self.view_model.is_fetching = True
+        self.view_model.estimated_total = 0
         
         # Show progress
         self.progress_ui.show_progress()
@@ -340,6 +378,8 @@ class FetchDataPage(ft.Container):
         # Estimate message count (quick scan - sample first 100 messages in range)
         estimated_count = await self._estimate_message_count()
         self.view_model.estimated_total = estimated_count
+        fetch_state_manager.update_progress(estimated_total=estimated_count)
+        
         if estimated_count > 0:
             self.progress_ui.estimated_count_text.value = f"Estimated messages in range: {estimated_count} (exact total not available)"
             self.progress_ui.estimated_count_text.visible = True
@@ -357,6 +397,12 @@ class FetchDataPage(ft.Container):
         def on_progress(current: int, total: int):
             # Update last update time for timeout monitoring
             self._last_update_time = datetime.now()
+            
+            # Update global state
+            fetch_state_manager.update_progress(processed_count=current)
+            
+            # Sync local view_model
+            self.view_model.processed_count = current
             
             self.progress_ui.update_progress_text(
                 f"{theme_manager.t('messages_fetched') or 'Messages fetched'}: {current}"
@@ -387,6 +433,17 @@ class FetchDataPage(ft.Container):
                 
                 # Add to view model
                 self.view_model.add_message(message, user, error)
+                
+                # Update global state
+                if error:
+                    fetch_state_manager.increment_error()
+                else:
+                    fetch_state_manager.increment_processed()
+                
+                # Sync local view_model with global state
+                global_state = fetch_state_manager.get_state()
+                self.view_model.processed_count = global_state['processed_count']
+                self.view_model.error_count = global_state['error_count']
                 
                 # Update stats in real-time
                 self.progress_ui.update_stats(
@@ -455,6 +512,13 @@ class FetchDataPage(ft.Container):
         else:
             success, message_count, error, skipped_count = result
         
+        # Update global state with skipped count
+        fetch_state_manager.update_progress(skipped_count=skipped_count)
+        self.view_model.skipped_count = skipped_count
+        
+        # Stop global fetch state
+        fetch_state_manager.stop_fetch()
+        
         # Update UI after fetch
         if success:
             # Build stats text
@@ -506,13 +570,16 @@ class FetchDataPage(ft.Container):
             self.start_button.disabled = False
             self._update_start_button_style()
         
+        # Update global state
+        fetch_state_manager.stop_fetch()
+        
         if self.page:
             self.page.update()
     
     async def _monitor_timeout(self):
         """Monitor for timeout (30 seconds without update)."""
         try:
-            while self.view_model.is_fetching and not self._is_fetch_stopped:
+            while fetch_state_manager.is_fetching and not self._is_fetch_stopped:
                 await asyncio.sleep(1)  # Check every second
                 
                 if self._last_update_time:
@@ -522,6 +589,7 @@ class FetchDataPage(ft.Container):
                         logger.warning("Fetch timeout: No update for 30 seconds")
                         self._is_fetch_stopped = True
                         self.view_model.is_fetching = False
+                        fetch_state_manager.stop_fetch()
                         
                         # Cancel fetch task if running
                         if self._fetch_task and not self._fetch_task.done():
@@ -607,6 +675,8 @@ class FetchDataPage(ft.Container):
         # Stop any ongoing fetch
         self._is_fetch_stopped = True
         self.view_model.is_fetching = False
+        fetch_state_manager.stop_fetch()
+        fetch_state_manager.reset()
         
         # Cancel tasks
         if self._fetch_task and not self._fetch_task.done():

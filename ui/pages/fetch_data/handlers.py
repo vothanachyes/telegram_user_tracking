@@ -299,7 +299,7 @@ class FetchHandlers:
         self.start_date_field.disabled = True
         self.end_date_field.disabled = True
         
-        # Set fetching state
+        # Set fetching state (global state is set by FetchDataPage)
         self.view_model.is_fetching = True
         
         try:
@@ -347,6 +347,7 @@ class FetchHandlers:
             
             # Update view model with skipped count
             self.view_model.set_skipped_count(skipped_count)
+            # Global state is updated by FetchDataPage
             
             # Refresh group selector with updated last_fetch_date after successful fetch
             if success:

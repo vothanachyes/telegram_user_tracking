@@ -18,14 +18,16 @@ class TelegramViewModel:
         group_id: Optional[int],
         start_date: Optional[datetime],
         end_date: Optional[datetime],
-        limit: int = 100
+        limit: int = 100,
+        tags: Optional[List[str]] = None
     ) -> List:
         """Get messages with filters."""
         return self.db_manager.get_messages(
             group_id=group_id,
             start_date=start_date,
             end_date=end_date,
-            limit=limit
+            limit=limit,
+            tags=tags
         )
     
     def get_users_by_group(self, group_id: int) -> List:

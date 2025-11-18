@@ -3,12 +3,15 @@ Dashboard page with statistics and activity feed.
 """
 
 import flet as ft
+import asyncio
+from typing import Optional
 from datetime import datetime
 from ui.theme import theme_manager
-from ui.components import StatCard
+from ui.components import StatCard, DataTable
 from database.db_manager import DatabaseManager
 from utils.constants import format_bytes
 from ui.pages.dashboard.sample_data import SampleDataGenerator
+from utils.helpers import format_datetime, get_telegram_user_link
 
 
 class DashboardPage(ft.Container):
@@ -16,6 +19,7 @@ class DashboardPage(ft.Container):
     
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
+        self.page: Optional[ft.Page] = None
         self.sample_data_generator = SampleDataGenerator(db_manager)
         
         # Generate sample data if database is empty
@@ -23,6 +27,22 @@ class DashboardPage(ft.Container):
         
         # Check if we're showing sample data
         self.is_sample_data = self.sample_data_generator.is_sample_data()
+        
+        # Get groups and set default selected group
+        groups = self.db_manager.get_all_groups()
+        self.selected_group_id = groups[0].group_id if groups else None
+        self.selected_group_name = groups[0].group_name if groups else None
+        
+        # Create group dropdown
+        group_options = [f"{g.group_name} ({g.group_id})" for g in groups]
+        default_group_value = group_options[0] if group_options else None
+        self.group_dropdown = theme_manager.create_dropdown(
+            label=theme_manager.t("select_group"),
+            options=group_options if group_options else ["No groups"],
+            value=default_group_value,
+            on_change=self._on_group_selected,
+            width=250
+        )
         
         # Create stat cards
         stats = self.db_manager.get_dashboard_stats()
@@ -52,10 +72,10 @@ class DashboardPage(ft.Container):
                 icon=ft.Icons.STORAGE,
                 color=ft.Colors.ORANGE
             ),
-        ], spacing=theme_manager.spacing_md, wrap=True)
+        ], spacing=theme_manager.spacing_sm, wrap=True, run_spacing=theme_manager.spacing_sm)
         
         # Monthly stats
-        self.monthly_stats = theme_manager.create_card(
+        self.monthly_stats = self._create_modern_card(
             content=ft.Column([
                 ft.Text(
                     theme_manager.t("statistics"),
@@ -94,7 +114,7 @@ class DashboardPage(ft.Container):
         )
         
         # Recent activity
-        self.recent_activity = theme_manager.create_card(
+        self.recent_activity = self._create_modern_card(
             content=ft.Column([
                 ft.Row([
                     ft.Text(
@@ -114,6 +134,33 @@ class DashboardPage(ft.Container):
             ], spacing=theme_manager.spacing_sm)
         )
         
+        # Top 10 active users table
+        self.active_users_table = self._create_active_users_table()
+        self.active_users_card = self._create_modern_card(
+            content=ft.Column([
+                ft.Row([
+                    ft.Text(
+                        theme_manager.t("top_active_users"),
+                        size=theme_manager.font_size_section_title,
+                        weight=ft.FontWeight.BOLD
+                    ),
+                    ft.Container(expand=True),
+                    ft.ElevatedButton(
+                        text=theme_manager.t("all"),
+                        icon=ft.Icons.ARROW_FORWARD,
+                        on_click=self._navigate_to_reports,
+                        disabled=self.selected_group_id is None
+                    ),
+                ]),
+                ft.Divider(),
+                ft.Container(
+                    content=self.active_users_table,
+                    height=400,
+                    width=None
+                ),
+            ], spacing=theme_manager.spacing_sm)
+        )
+        
         # Build layout
         super().__init__(
             content=ft.Column([
@@ -124,18 +171,129 @@ class DashboardPage(ft.Container):
                         weight=ft.FontWeight.BOLD
                     ),
                     ft.Container(expand=True),
+                    self.group_dropdown,
                     self._create_sample_data_badge() if self.is_sample_data else ft.Container(),
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, spacing=0),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, spacing=10),
                 self.stat_cards,
-                theme_manager.spacing_container("lg"),
+                theme_manager.spacing_container("md"),
                 ft.Row([
                     self.monthly_stats,
                     self.recent_activity,
                 ], spacing=theme_manager.spacing_md, expand=True),
-            ], scroll=ft.ScrollMode.AUTO, spacing=theme_manager.spacing_sm),
+                theme_manager.spacing_container("md"),
+                self.active_users_card,
+            ], scroll=ft.ScrollMode.AUTO, spacing=theme_manager.spacing_md),
             padding=theme_manager.padding_lg,
             expand=True
         )
+        
+        # Load initial data
+        self._refresh_active_users()
+        
+        # Trigger animations after page is mounted
+        self._animation_initialized = False
+    
+    def _create_modern_card(self, content: ft.Control) -> ft.Container:
+        """Create a modernized card with shadows, animations, and hover effects."""
+        default_shadow = ft.BoxShadow(
+            spread_radius=1,
+            blur_radius=8,
+            color=ft.Colors.BLACK12 if not theme_manager.is_dark else ft.Colors.BLACK38,
+            offset=ft.Offset(0, 2),
+        )
+        
+        hover_shadow = ft.BoxShadow(
+            spread_radius=2,
+            blur_radius=15,
+            color=ft.Colors.BLACK26 if not theme_manager.is_dark else ft.Colors.BLACK54,
+            offset=ft.Offset(0, 4),
+        )
+        
+        card = ft.Container(
+            content=content,
+            bgcolor=theme_manager.surface_color,
+            border=ft.border.all(1, theme_manager.border_color),
+            border_radius=theme_manager.corner_radius,
+            padding=theme_manager.padding_md,
+            shadow=[default_shadow],
+            animate=ft.Animation(duration=300, curve=ft.AnimationCurve.EASE_IN_OUT),
+            animate_opacity=ft.Animation(duration=400, curve=ft.AnimationCurve.EASE_OUT),
+            animate_scale=ft.Animation(duration=300, curve=ft.AnimationCurve.EASE_IN_OUT),
+            opacity=0,
+            scale=1.0,
+            on_hover=lambda e: self._on_card_hover(e, card, default_shadow, hover_shadow)
+        )
+        
+        return card
+    
+    def _on_card_hover(self, e: ft.ControlEvent, card: ft.Container, default_shadow: ft.BoxShadow, hover_shadow: ft.BoxShadow):
+        """Handle card hover events."""
+        is_hovered = e.data == "true"
+        
+        if is_hovered:
+            card.scale = 1.01
+            card.shadow = [hover_shadow]
+        else:
+            card.scale = 1.0
+            card.shadow = [default_shadow]
+        
+        if self.page:
+            self.page.update()
+        else:
+            card.update()
+    
+    async def _animate_dashboard(self):
+        """Animate dashboard components with staggered delays."""
+        if self._animation_initialized:
+            return
+        
+        self._animation_initialized = True
+        
+        # Animate stat cards with staggered delay (100ms between each)
+        for idx, card in enumerate(self.stat_cards.controls):
+            await asyncio.sleep(0.1 * idx)  # 100ms delay between each card
+            if hasattr(card, '_animate_in'):
+                card._animate_in()
+        
+        # Animate monthly stats after stat cards (400ms total delay)
+        await asyncio.sleep(0.1)
+        self.monthly_stats.opacity = 1
+        if self.page:
+            self.page.update()
+        
+        # Animate recent activity (100ms after monthly stats)
+        await asyncio.sleep(0.1)
+        self.recent_activity.opacity = 1
+        if self.page:
+            self.page.update()
+        
+        # Animate active users card (100ms after recent activity)
+        await asyncio.sleep(0.1)
+        self.active_users_card.opacity = 1
+        if self.page:
+            self.page.update()
+    
+    def set_page(self, page: ft.Page):
+        """Set page reference and trigger animations."""
+        self.page = page
+        
+        # Set page reference for stat cards
+        for card in self.stat_cards.controls:
+            card.page = page
+        
+        # Trigger animations after a longer delay to ensure controls are added to page tree
+        if page and hasattr(page, 'run_task'):
+            async def start_animations():
+                await asyncio.sleep(0.3)  # Longer delay to ensure page tree is built
+                await self._animate_dashboard()
+            
+            page.run_task(start_animations)
+        elif page:
+            async def start_animations():
+                await asyncio.sleep(0.3)  # Longer delay to ensure page tree is built
+                await self._animate_dashboard()
+            
+            asyncio.create_task(start_animations())
     
     def _get_recent_messages(self) -> ft.Column:
         """Get recent messages list."""
@@ -213,7 +371,91 @@ class DashboardPage(ft.Container):
         activity_content = self.recent_activity.content
         activity_content.controls[2] = self._get_recent_messages()
         
+        # Update active users
+        self._refresh_active_users()
+        
         self.update()
+    
+    
+    def _on_group_selected(self, e):
+        """Handle group selection."""
+        if e.control.value and e.control.value != "No groups":
+            group_str = e.control.value
+            self.selected_group_id = int(group_str.split("(")[-1].strip(")"))
+            groups = self.db_manager.get_all_groups()
+            for group in groups:
+                if group.group_id == self.selected_group_id:
+                    self.selected_group_name = group.group_name
+                    break
+        else:
+            self.selected_group_id = None
+            self.selected_group_name = None
+        
+        # Update active users table
+        self._refresh_active_users()
+        
+        # Update All button
+        if hasattr(self, 'active_users_card'):
+            content = self.active_users_card.content
+            all_btn = content.controls[0].controls[2]
+            all_btn.disabled = self.selected_group_id is None
+        
+        if self.page:
+            self.page.update()
+    
+    def _create_active_users_table(self) -> DataTable:
+        """Create top 10 active users table."""
+        return DataTable(
+            columns=["No", "Username", "Full Name", "Phone", "Messages"],
+            rows=[],
+            on_row_click=None,
+            page_size=10,
+            column_alignments=["center", "center", "left", "center", "center"],
+            row_metadata=[],
+            searchable=False
+        )
+    
+    def _refresh_active_users(self):
+        """Refresh active users table."""
+        if not self.selected_group_id:
+            self.active_users_table.refresh([], [])
+            return
+        
+        users = self.db_manager.get_top_active_users_by_group(self.selected_group_id, limit=10)
+        
+        rows = []
+        row_metadata = []
+        for idx, user in enumerate(users, 1):
+            username = user.get('username') or "-"
+            full_name = user.get('full_name') or "-"
+            phone = user.get('phone') or "-"
+            message_count = user.get('message_count', 0)
+            user_link = get_telegram_user_link(user.get('username'))
+            
+            rows.append([
+                idx,
+                username,
+                full_name,
+                phone,
+                str(message_count),
+            ])
+            
+            row_meta = {
+                'cells': {}
+            }
+            if user_link and user.get('username'):
+                row_meta['cells'][1] = {'link': user_link}
+                row_meta['cells'][2] = {'link': user_link}
+            row_metadata.append(row_meta)
+        
+        self.active_users_table.refresh(rows, row_metadata)
+    
+    def _navigate_to_reports(self, e):
+        """Navigate to reports page."""
+        if self.page and hasattr(self.page, 'data') and self.page.data:
+            router = self.page.data.get('router')
+            if router:
+                router.navigate_to("reports")
     
     def _create_sample_data_badge(self) -> ft.Container:
         """Create a badge indicating sample data."""

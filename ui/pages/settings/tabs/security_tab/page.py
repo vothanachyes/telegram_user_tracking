@@ -4,6 +4,8 @@ Security settings tab component.
 
 import flet as ft
 import logging
+import json
+import platform
 from typing import Callable, Optional
 from pathlib import Path
 from database.models import AppSettings
@@ -85,6 +87,29 @@ class SecurityTab:
             style="primary"
         )
         self.change_path_btn.disabled = True  # Disabled until authenticated
+        
+        # PIN recovery JSON field (masked)
+        self.pin_recovery_json_field = theme_manager.create_text_field(
+            label=theme_manager.t("pin_recovery_data") or "PIN Recovery Data",
+            value="",
+            read_only=True,
+            password=True,
+            multiline=True,
+            min_lines=5,
+            max_lines=8
+        )
+        
+        # Copy PIN recovery data button
+        self.copy_pin_recovery_btn = theme_manager.create_button(
+            text=theme_manager.t("copy_pin_recovery_data") or "Copy to Clipboard",
+            icon=ft.Icons.COPY,
+            on_click=self._copy_pin_recovery_data,
+            style="secondary"
+        )
+        self.copy_pin_recovery_btn.disabled = True  # Disabled until authenticated
+        
+        # Store full JSON data for copying
+        self._pin_recovery_json_data = None
         
         # Error text
         self.error_text = ft.Text("", color=ft.Colors.RED, visible=False)
@@ -209,13 +234,50 @@ class SecurityTab:
             ], spacing=15)
         )
         
+        # PIN Recovery section (only show if PIN is enabled)
+        pin_recovery_card = None
+        if self.current_settings.pin_enabled and self.current_settings.encrypted_pin:
+            masked_json = self._get_masked_json()
+            self.pin_recovery_json_field.value = masked_json
+            
+            pin_recovery_card = theme_manager.create_card(
+                content=ft.Column([
+                    ft.Text(
+                        theme_manager.t("pin_recovery") or "PIN Recovery",
+                        size=18,
+                        weight=ft.FontWeight.BOLD
+                    ),
+                    ft.Divider(),
+                    ft.Text(
+                        theme_manager.t("pin_recovery_info") or "Export device information and encrypted PIN for PIN recovery",
+                        size=12,
+                        color=theme_manager.text_secondary_color
+                    ),
+                    self.pin_recovery_json_field,
+                    ft.Row([
+                        self.copy_pin_recovery_btn
+                    ], alignment=ft.MainAxisAlignment.END)
+                ], spacing=15)
+            )
+        
         # Protected content (covered by auth overlay)
-        protected_content = ft.Column([
+        protected_content_items = [
             db_path_card,
             encryption_card,
             self.error_text,
             self.success_text
-        ], scroll=ft.ScrollMode.AUTO, spacing=15, expand=True)
+        ]
+        
+        # Add PIN recovery card if available
+        if pin_recovery_card:
+            protected_content_items.insert(2, pin_recovery_card)  # Insert after encryption_card
+        
+        protected_content = ft.Column(
+            protected_content_items,
+            scroll=ft.ScrollMode.AUTO,
+            spacing=15,
+            expand=True
+        )
         
         # Create lock overlay container with visual blur effect
         # Since Flet doesn't support native blur filters, we use a high-opacity
@@ -284,6 +346,8 @@ class SecurityTab:
             self.change_key_btn.disabled = not self._authenticated
         if hasattr(self, 'change_path_btn'):
             self.change_path_btn.disabled = not self._authenticated
+        if hasattr(self, 'copy_pin_recovery_btn'):
+            self.copy_pin_recovery_btn.disabled = not self._authenticated
         
         # Update the page
         if hasattr(self, 'page') and self.page:
@@ -441,6 +505,15 @@ class SecurityTab:
         current_db_path = new_settings.db_path or DATABASE_PATH
         self.db_path_field.value = current_db_path
         self.encryption_switch.value = new_settings.encryption_enabled
+        
+        # Update PIN recovery field if PIN is enabled
+        if hasattr(self, 'pin_recovery_json_field'):
+            if new_settings.pin_enabled and new_settings.encrypted_pin:
+                masked_json = self._get_masked_json()
+                self.pin_recovery_json_field.value = masked_json
+            else:
+                self.pin_recovery_json_field.value = ""
+        
         if hasattr(self, 'page') and self.page:
             self.page.update()
     
@@ -459,4 +532,59 @@ class SecurityTab:
         self.error_text.visible = False
         if hasattr(self, 'page') and self.page:
             self.page.update()
+    
+    def _get_pin_recovery_data(self) -> dict:
+        """Generate JSON with device info and encrypted PIN."""
+        return {
+            "hostname": platform.node(),
+            "machine": platform.machine(),
+            "system": platform.system(),
+            "encrypted_pin": self.current_settings.encrypted_pin or ""
+        }
+    
+    def _get_masked_json(self) -> str:
+        """Return JSON with values masked using asterisks."""
+        data = self._get_pin_recovery_data()
+        
+        # Store full data for copying
+        self._pin_recovery_json_data = json.dumps(data, indent=2)
+        
+        # Create masked version
+        masked_data = {
+            "hostname": "*" * len(str(data["hostname"])) if data["hostname"] else "",
+            "machine": "*" * len(str(data["machine"])) if data["machine"] else "",
+            "system": "*" * len(str(data["system"])) if data["system"] else "",
+            "encrypted_pin": "*" * len(str(data["encrypted_pin"])) if data["encrypted_pin"] else ""
+        }
+        
+        return json.dumps(masked_data, indent=2)
+    
+    def _copy_pin_recovery_data(self, e):
+        """Copy full PIN recovery JSON to clipboard."""
+        if not self._authenticated:
+            self._authenticate(e)
+            return
+        
+        # Check if PIN is enabled
+        if not self.current_settings.pin_enabled or not self.current_settings.encrypted_pin:
+            self._show_error(theme_manager.t("pin_recovery_not_available") or "PIN recovery is only available when PIN is enabled")
+            return
+        
+        # Get full JSON data
+        if not self._pin_recovery_json_data:
+            data = self._get_pin_recovery_data()
+            self._pin_recovery_json_data = json.dumps(data, indent=2)
+        
+        # Copy to clipboard
+        if self.page:
+            try:
+                self.page.set_clipboard(self._pin_recovery_json_data)
+                theme_manager.show_snackbar(
+                    self.page,
+                    theme_manager.t("pin_recovery_data_copied") or "PIN recovery data copied to clipboard",
+                    bgcolor=ft.Colors.GREEN
+                )
+            except Exception as ex:
+                logger.error(f"Failed to copy PIN recovery data to clipboard: {ex}")
+                self._show_error("Failed to copy to clipboard")
 

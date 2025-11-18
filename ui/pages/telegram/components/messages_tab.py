@@ -73,12 +73,18 @@ class MessagesTabComponent:
         search_field = self.messages_table.search_field
         clear_filter_btn = self.messages_table.clear_filter_button
         
+        # Create search field container with tag autocomplete
+        search_container = ft.Column([
+            search_field if search_field else ft.Container(),
+            self.messages_table.filtering.tag_autocomplete_container if hasattr(self.messages_table.filtering, 'tag_autocomplete_container') and self.messages_table.filtering.tag_autocomplete_container else ft.Container()
+        ], spacing=0, tight=True) if search_field else ft.Container()
+        
         container = ft.Container(
             content=ft.Column([
                 # Filters row
                 ft.Row([
                     clear_filter_btn if clear_filter_btn else ft.Container(),
-                    search_field if search_field else ft.Container(),
+                    search_container,
                     self.filters_bar.build(),
                     self.refresh_btn,
                     self.export_menu,
@@ -110,11 +116,17 @@ class MessagesTabComponent:
             self.messages_table.update_filter_state(self._has_filters())
             return
         
+        # Get tag query if tag filtering is active
+        tag_query = None
+        if hasattr(self.messages_table.filtering, 'tag_query') and self.messages_table.filtering.tag_query:
+            tag_query = [self.messages_table.filtering.tag_query]
+        
         messages = self.view_model.get_messages(
             group_id=group_id,
             start_date=self.filters_bar.get_start_date(),
             end_date=self.filters_bar.get_end_date(),
-            limit=100
+            limit=100,
+            tags=tag_query
         )
         
         rows = []
@@ -173,7 +185,8 @@ class MessagesTabComponent:
         """Create messages data table."""
         column_alignments = ["center", "center", "center", "left", "center", "center", "center", "center"]
         
-        return DataTable(
+        # Create table with tag filtering enabled
+        table = DataTable(
             columns=["No", "User", "Phone", "Message", "Date", "Media", "Type", "Link"],
             rows=[],
             on_row_click=self.on_message_click,
@@ -183,6 +196,18 @@ class MessagesTabComponent:
             on_clear_filters=self.clear_filters,
             has_filters=self._has_filters()
         )
+        
+        # Enable tag filtering
+        table.filtering.enable_tag_filtering = True
+        table.filtering.get_tag_suggestions = self.view_model.db_manager.get_tag_suggestions
+        table.filtering.on_tag_query_change = self._on_tag_query_change
+        table.filtering.group_id = self.filters_bar.get_selected_group()
+        
+        # Setup tag autocomplete if not already set up
+        if not hasattr(table.filtering, 'tag_autocomplete') or table.filtering.tag_autocomplete is None:
+            table.filtering._setup_tag_autocomplete()
+        
+        return table
     
     def _has_filters(self) -> bool:
         """Check if any filters are active."""
@@ -195,6 +220,9 @@ class MessagesTabComponent:
     
     def _on_group_change(self, group_id: Optional[int]):
         """Handle group change."""
+        # Update tag autocomplete group ID
+        if hasattr(self.messages_table, 'filtering') and self.messages_table.filtering:
+            self.messages_table.filtering.set_group_id(group_id)
         if self.on_refresh:
             self.on_refresh()
     
@@ -207,4 +235,10 @@ class MessagesTabComponent:
         """Handle refresh button click."""
         if self.on_refresh:
             self.on_refresh()
+    
+    def _on_tag_query_change(self, tag: Optional[str]):
+        """Handle tag query change - refresh messages with tag filter."""
+        # Always refresh when tag changes (including clearing to None)
+        # This is safe because reset() won't call this callback
+        self.refresh_messages()
 

@@ -45,22 +45,7 @@ class Router:
             page_id: ID of the page to navigate to
         """
         try:
-            # Check if current page is fetching (block navigation)
-            if self._current_page_instance:
-                # Check if it's a FetchDataPage and if it's fetching
-                from ui.pages.fetch_data.page import FetchDataPage
-                if isinstance(self._current_page_instance, FetchDataPage):
-                    if hasattr(self._current_page_instance, 'view_model') and self._current_page_instance.view_model.is_fetching:
-                        # Block navigation - show message
-                        if self.page:
-                            theme_manager.show_snackbar(
-                                self.page,
-                                "Cannot navigate while fetching data. Please wait for the fetch to complete or click Finish to stop.",
-                                bgcolor=ft.Colors.ORANGE
-                            )
-                        logger.debug("Navigation blocked: fetch in progress")
-                        return
-            
+            # Navigation is always allowed - fetch continues in background
             logger.debug(f"Navigating to page: {page_id}")
             self.current_page_id = page_id
             
@@ -150,6 +135,16 @@ class Router:
         # Top header
         top_header = TopHeader(on_navigate=self.navigate_to)
         top_header.page = self.page
+        # Start fetch indicator updates
+        if self.page and hasattr(self.page, 'run_task'):
+            self.page.run_task(top_header.start_fetch_indicator_updates)
+        else:
+            import asyncio
+            # Store task reference to prevent multiple instances
+            if not hasattr(top_header, '_fetch_update_task') or top_header._fetch_update_task.done():
+                top_header._fetch_update_task = asyncio.create_task(top_header.start_fetch_indicator_updates())
+        # Initial update
+        top_header.update_fetch_indicator()
         
         # Main layout
         main_layout_column = ft.Column([

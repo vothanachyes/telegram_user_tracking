@@ -16,7 +16,8 @@ from ui.pages import (
     UserDashboardPage,
     AboutPage,
     FetchDataPage,
-    GroupsPage
+    GroupsPage,
+    ReportsPage
 )
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,8 @@ class PageFactory:
                 return self._create_about_page()
             elif page_id == "fetch_data":
                 return self._create_fetch_data_page()
+            elif page_id == "reports":
+                return self._create_reports_page()
             else:
                 return self._create_error_page(f"Page '{page_id}' not found")
         except Exception as e:
@@ -85,7 +88,7 @@ class PageFactory:
     def _create_dashboard_page(self) -> DashboardPage:
         """Create dashboard page."""
         page_content = DashboardPage(self.db_manager)
-        page_content.page = self.page
+        page_content.set_page(self.page)
         return page_content
     
     def _create_telegram_page(self) -> TelegramPage:
@@ -138,6 +141,15 @@ class PageFactory:
         page_content = GroupsPage(
             db_manager=self.db_manager,
             telegram_service=self.telegram_service
+        )
+        page_content.set_page(self.page)
+        return page_content
+    
+    def _create_reports_page(self) -> ReportsPage:
+        """Create reports page."""
+        page_content = ReportsPage(
+            db_manager=self.db_manager,
+            on_navigate=None  # Can be extended later if needed
         )
         page_content.set_page(self.page)
         return page_content

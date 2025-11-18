@@ -11,6 +11,7 @@ from .add_account_dialog import AddAccountDialog
 from .add_group_dialog import AddGroupDialog
 from .group_detail_dialog import GroupDetailDialog
 from .rate_limit_warning_dialog import RateLimitWarningDialog
+from .active_users_dialog import ActiveUsersDialog
 from .dialog import dialog_manager, DialogManager
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     'AddGroupDialog',
     'GroupDetailDialog',
     'RateLimitWarningDialog',
+    'ActiveUsersDialog',
     'dialog_manager',
     'DialogManager'
 ]

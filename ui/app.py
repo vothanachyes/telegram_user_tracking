@@ -13,6 +13,7 @@ from ui.pages import LoginPage
 from database.db_manager import DatabaseManager
 from ui.initialization import PageConfig, ServiceInitializer
 from ui.navigation import Router, PageFactory
+from services.fetch_state_manager import fetch_state_manager
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,9 @@ class TelegramUserTrackingApp:
         
         # Configure page
         PageConfig.configure_page(self.page)
+        
+        # Set up window close handler
+        self._setup_window_close_handler()
         
         # Initialize router and page factory
         self.page_factory = PageFactory(
@@ -179,9 +183,9 @@ class TelegramUserTrackingApp:
         """Show PIN entry dialog after login."""
         from ui.dialogs.pin_dialog import PinEntryDialog
         from utils.pin_validator import verify_pin
-        from config.settings import settings as app_settings
         
-        settings = app_settings.load_settings()
+        # Get settings from database (includes PIN fields)
+        settings = self.db_manager.get_settings()
         
         def on_pin_submit(pin: str):
             """Handle PIN submission."""
@@ -211,10 +215,17 @@ class TelegramUserTrackingApp:
             on_cancel=on_pin_cancel,
             allow_cancel=True
         )
+        pin_dialog.page = self.page
         
-        self.page.dialog = pin_dialog
-        pin_dialog.open = True
-        self.page.update()
+        # Use page.open() as per repo rules
+        try:
+            self.page.open(pin_dialog)
+        except Exception as e:
+            logger.error(f"page.open() failed: {e}")
+            # Fallback to old pattern if page.open() fails
+            self.page.dialog = pin_dialog
+            pin_dialog.open = True
+            self.page.update()
     
     def _show_main_app(self):
         """Show main application."""
@@ -459,6 +470,78 @@ class TelegramUserTrackingApp:
             self.page.run_task(stop_async)
         else:
             asyncio.create_task(stop_async())
+    
+    def _setup_window_close_handler(self):
+        """Set up handler for window close event."""
+        try:
+            # Flet window close event handling
+            if hasattr(self.page.window, 'on_event'):
+                def handle_window_event(e):
+                    """Handle window events."""
+                    # Check if it's a close event
+                    if hasattr(e, 'data') and e.data == "close":
+                        self._handle_window_close()
+                    elif str(e).lower().find("close") >= 0:
+                        self._handle_window_close()
+                
+                self.page.window.on_event = handle_window_event
+            else:
+                # Fallback: Use page's window close handler if available
+                if hasattr(self.page.window, 'on_close'):
+                    def handle_close():
+                        """Handle window close."""
+                        self._handle_window_close()
+                    
+                    self.page.window.on_close = handle_close
+        except Exception as e:
+            logger.debug(f"Could not set up window close handler: {e}")
+            # Try alternative approach using page events
+            try:
+                if hasattr(self.page, 'on_window_event'):
+                    def handle_window_event(e):
+                        if "close" in str(e).lower():
+                            self._handle_window_close()
+                    self.page.on_window_event = handle_window_event
+            except Exception:
+                pass
+    
+    def _handle_window_close(self):
+        """Handle window close attempt."""
+        # Check if fetch is in progress
+        if fetch_state_manager.is_fetching:
+            # Show confirmation dialog
+            from ui.dialogs.dialog import DialogManager
+            
+            def on_confirm(e):
+                """User confirmed - stop fetch and close."""
+                fetch_state_manager.stop_fetch()
+                # Allow window to close
+                try:
+                    if hasattr(self.page.window, 'close'):
+                        self.page.window.close()
+                except Exception:
+                    pass
+            
+            def on_cancel(e):
+                """User cancelled - prevent close."""
+                # Do nothing, window stays open
+                pass
+            
+            DialogManager.show_confirmation_dialog(
+                page=self.page,
+                title=theme_manager.t("close_app_during_fetch_title") or "Close Application?",
+                message=theme_manager.t("close_app_during_fetch_message") or "Are you sure to close app? Fetching data.",
+                on_confirm=on_confirm,
+                on_cancel=on_cancel,
+                confirm_text=theme_manager.t("yes") or "Yes",
+                cancel_text=theme_manager.t("no") or "No"
+            )
+            
+            # Prevent default close behavior
+            return False
+        else:
+            # No fetch in progress, allow close
+            return True
 
 
 def main(page: ft.Page):

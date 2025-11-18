@@ -72,24 +72,24 @@ INSERT OR REPLACE INTO messages (
     sticker_emoji, is_deleted, created_at, updated_at
 ) VALUES 
 -- Group 1: Tech Developers Community (8 messages)
-(1, 1001, -1001234567890, 123456789, 'Hey everyone! Check out this new Python library: https://github.com/example/awesome-lib', NULL, '2024-01-15 10:30:00', 0, NULL, 0, 'https://t.me/techdevs/1001', 'text', 0, 1, NULL, 0, '2024-01-15 10:30:00', '2024-01-15 10:30:00'),
-(2, 1002, -1001234567890, 234567890, NULL, 'Screenshot of the new UI design', '2024-01-15 11:00:00', 1, 'photo', 1, 'https://t.me/techdevs/1002', 'photo', 0, 0, NULL, 0, '2024-01-15 11:00:00', '2024-01-15 11:00:00'),
+(1, 1001, -1001234567890, 123456789, 'Hey everyone! Check out this new Python library: https://github.com/example/awesome-lib #python #library #opensource', NULL, '2024-01-15 10:30:00', 0, NULL, 0, 'https://t.me/techdevs/1001', 'text', 0, 1, NULL, 0, '2024-01-15 10:30:00', '2024-01-15 10:30:00'),
+(2, 1002, -1001234567890, 234567890, NULL, 'Screenshot of the new UI design #design #ui #ux', '2024-01-15 11:00:00', 1, 'photo', 1, 'https://t.me/techdevs/1002', 'photo', 0, 0, NULL, 0, '2024-01-15 11:00:00', '2024-01-15 11:00:00'),
 (3, 1003, -1001234567890, 345678901, NULL, NULL, '2024-01-15 11:30:00', 1, 'video', 1, 'https://t.me/techdevs/1003', 'video', 0, 0, NULL, 0, '2024-01-15 11:30:00', '2024-01-15 11:30:00'),
 (4, 1004, -1001234567890, 123456789, NULL, NULL, '2024-01-15 12:00:00', 0, NULL, 0, 'https://t.me/techdevs/1004', 'sticker', 1, 0, '👍', 0, '2024-01-15 12:00:00', '2024-01-15 12:00:00'),
-(5, 1005, -1001234567890, 234567890, 'Here is the project documentation PDF', NULL, '2024-01-15 13:00:00', 1, 'document', 1, 'https://t.me/techdevs/1005', 'document', 0, 0, NULL, 0, '2024-01-15 13:00:00', '2024-01-15 13:00:00'),
+(5, 1005, -1001234567890, 234567890, 'Here is the project documentation PDF #documentation #project', NULL, '2024-01-15 13:00:00', 1, 'document', 1, 'https://t.me/techdevs/1005', 'document', 0, 0, NULL, 0, '2024-01-15 13:00:00', '2024-01-15 13:00:00'),
 (6, 1006, -1001234567890, 345678901, NULL, NULL, '2024-01-15 14:00:00', 1, 'audio', 1, 'https://t.me/techdevs/1006', 'audio', 0, 0, NULL, 0, '2024-01-15 14:00:00', '2024-01-15 14:00:00'),
-(7, 1007, -1001234567890, 123456789, 'Great work team! 🎉 Visit our website: https://example.com for more info', NULL, '2024-01-15 15:00:00', 0, NULL, 0, 'https://t.me/techdevs/1007', 'text', 0, 1, NULL, 0, '2024-01-15 15:00:00', '2024-01-15 15:00:00'),
+(7, 1007, -1001234567890, 123456789, 'Great work team! 🎉 Visit our website: https://example.com for more info #team #success #celebration', NULL, '2024-01-15 15:00:00', 0, NULL, 0, 'https://t.me/techdevs/1007', 'text', 0, 1, NULL, 0, '2024-01-15 15:00:00', '2024-01-15 15:00:00'),
 (8, 1008, -1001234567890, 234567890, NULL, NULL, '2024-01-15 16:00:00', 0, NULL, 0, 'https://t.me/techdevs/1008', 'sticker', 1, 0, '🔥', 0, '2024-01-15 16:00:00', '2024-01-15 16:00:00'),
 
 -- Group 2: Marketing Team (5 messages)
-(9, 2001, -1001234567891, 456789012, 'New campaign launch next week! Check the details: https://campaign.example.com', NULL, '2024-01-16 09:00:00', 0, NULL, 0, 'https://t.me/marketing_team/2001', 'text', 0, 1, NULL, 0, '2024-01-16 09:00:00', '2024-01-16 09:00:00'),
-(10, 2002, -1001234567891, 234567890, NULL, 'Campaign banner design', '2024-01-16 10:00:00', 1, 'photo', 1, 'https://t.me/marketing_team/2002', 'photo', 0, 0, NULL, 0, '2024-01-16 10:00:00', '2024-01-16 10:00:00'),
+(9, 2001, -1001234567891, 456789012, 'New campaign launch next week! Check the details: https://campaign.example.com #campaign #launch #marketing', NULL, '2024-01-16 09:00:00', 0, NULL, 0, 'https://t.me/marketing_team/2001', 'text', 0, 1, NULL, 0, '2024-01-16 09:00:00', '2024-01-16 09:00:00'),
+(10, 2002, -1001234567891, 234567890, NULL, 'Campaign banner design #design #banner #campaign', '2024-01-16 10:00:00', 1, 'photo', 1, 'https://t.me/marketing_team/2002', 'photo', 0, 0, NULL, 0, '2024-01-16 10:00:00', '2024-01-16 10:00:00'),
 (11, 2003, -1001234567891, 456789012, NULL, NULL, '2024-01-16 11:00:00', 1, 'video', 1, 'https://t.me/marketing_team/2003', 'video', 0, 0, NULL, 0, '2024-01-16 11:00:00', '2024-01-16 11:00:00'),
-(12, 2004, -1001234567891, 234567890, 'Marketing strategy document', NULL, '2024-01-16 12:00:00', 1, 'document', 1, 'https://t.me/marketing_team/2004', 'document', 0, 0, NULL, 0, '2024-01-16 12:00:00', '2024-01-16 12:00:00'),
+(12, 2004, -1001234567891, 234567890, 'Marketing strategy document #strategy #marketing #planning', NULL, '2024-01-16 12:00:00', 1, 'document', 1, 'https://t.me/marketing_team/2004', 'document', 0, 0, NULL, 0, '2024-01-16 12:00:00', '2024-01-16 12:00:00'),
 (13, 2005, -1001234567891, 456789012, NULL, NULL, '2024-01-16 13:00:00', 0, NULL, 0, 'https://t.me/marketing_team/2005', 'sticker', 1, 0, '💡', 0, '2024-01-16 13:00:00', '2024-01-16 13:00:00'),
 
 -- Group 3: Project Management (2 messages)
-(14, 3001, -1001234567892, 123456789, 'Sprint planning meeting scheduled for tomorrow. Agenda: https://docs.example.com/sprint', NULL, '2024-01-17 08:00:00', 0, NULL, 0, 'https://t.me/c/1234567892/3001', 'text', 0, 1, NULL, 0, '2024-01-17 08:00:00', '2024-01-17 08:00:00'),
+(14, 3001, -1001234567892, 123456789, 'Sprint planning meeting scheduled for tomorrow. Agenda: https://docs.example.com/sprint #sprint #meeting #planning', NULL, '2024-01-17 08:00:00', 0, NULL, 0, 'https://t.me/c/1234567892/3001', 'text', 0, 1, NULL, 0, '2024-01-17 08:00:00', '2024-01-17 08:00:00'),
 (15, 3002, -1001234567892, 345678901, 'This message was deleted', NULL, '2024-01-17 09:00:00', 0, NULL, 0, 'https://t.me/c/1234567892/3002', 'text', 0, 0, NULL, 1, '2024-01-17 09:00:00', '2024-01-17 10:00:00');
 
 -- =====================================================
@@ -111,7 +111,43 @@ INSERT OR REPLACE INTO reactions (
 (10, 3001, -1001234567892, 345678901, '✅', 'https://t.me/c/1234567892/3001', '2024-01-17 08:01:00', '2024-01-17 08:01:00');
 
 -- =====================================================
--- 7. MEDIA FILES (8 media files)
+-- 7. MESSAGE TAGS (23 tags from various messages)
+-- =====================================================
+INSERT OR REPLACE INTO message_tags (
+    id, message_id, group_id, user_id, tag,
+    date_sent, created_at
+) VALUES 
+-- Group 1: Tech Developers Community (11 tags)
+(1, 1001, -1001234567890, 123456789, 'python', '2024-01-15 10:30:00', '2024-01-15 10:30:00'),
+(2, 1001, -1001234567890, 123456789, 'library', '2024-01-15 10:30:00', '2024-01-15 10:30:00'),
+(3, 1001, -1001234567890, 123456789, 'opensource', '2024-01-15 10:30:00', '2024-01-15 10:30:00'),
+(4, 1002, -1001234567890, 234567890, 'design', '2024-01-15 11:00:00', '2024-01-15 11:00:00'),
+(5, 1002, -1001234567890, 234567890, 'ui', '2024-01-15 11:00:00', '2024-01-15 11:00:00'),
+(6, 1002, -1001234567890, 234567890, 'ux', '2024-01-15 11:00:00', '2024-01-15 11:00:00'),
+(7, 1005, -1001234567890, 234567890, 'documentation', '2024-01-15 13:00:00', '2024-01-15 13:00:00'),
+(8, 1005, -1001234567890, 234567890, 'project', '2024-01-15 13:00:00', '2024-01-15 13:00:00'),
+(9, 1007, -1001234567890, 123456789, 'team', '2024-01-15 15:00:00', '2024-01-15 15:00:00'),
+(10, 1007, -1001234567890, 123456789, 'success', '2024-01-15 15:00:00', '2024-01-15 15:00:00'),
+(11, 1007, -1001234567890, 123456789, 'celebration', '2024-01-15 15:00:00', '2024-01-15 15:00:00'),
+
+-- Group 2: Marketing Team (9 tags)
+(12, 2001, -1001234567891, 456789012, 'campaign', '2024-01-16 09:00:00', '2024-01-16 09:00:00'),
+(13, 2001, -1001234567891, 456789012, 'launch', '2024-01-16 09:00:00', '2024-01-16 09:00:00'),
+(14, 2001, -1001234567891, 456789012, 'marketing', '2024-01-16 09:00:00', '2024-01-16 09:00:00'),
+(15, 2002, -1001234567891, 234567890, 'design', '2024-01-16 10:00:00', '2024-01-16 10:00:00'),
+(16, 2002, -1001234567891, 234567890, 'banner', '2024-01-16 10:00:00', '2024-01-16 10:00:00'),
+(17, 2002, -1001234567891, 234567890, 'campaign', '2024-01-16 10:00:00', '2024-01-16 10:00:00'),
+(18, 2004, -1001234567891, 234567890, 'strategy', '2024-01-16 12:00:00', '2024-01-16 12:00:00'),
+(19, 2004, -1001234567891, 234567890, 'marketing', '2024-01-16 12:00:00', '2024-01-16 12:00:00'),
+(20, 2004, -1001234567891, 234567890, 'planning', '2024-01-16 12:00:00', '2024-01-16 12:00:00'),
+
+-- Group 3: Project Management (3 tags)
+(21, 3001, -1001234567892, 123456789, 'sprint', '2024-01-17 08:00:00', '2024-01-17 08:00:00'),
+(22, 3001, -1001234567892, 123456789, 'meeting', '2024-01-17 08:00:00', '2024-01-17 08:00:00'),
+(23, 3001, -1001234567892, 123456789, 'planning', '2024-01-17 08:00:00', '2024-01-17 08:00:00');
+
+-- =====================================================
+-- 8. MEDIA FILES (8 media files)
 -- =====================================================
 INSERT OR REPLACE INTO media_files (
     id, message_id, file_path, file_name, file_size_bytes,
@@ -127,7 +163,7 @@ INSERT OR REPLACE INTO media_files (
 (8, 1002, './downloads/techdevs/1002_photo_alt.jpg', 'ui_design_alternative.jpg', 198000, 'photo', 'image/jpeg', './downloads/techdevs/1002_photo_alt_thumb.jpg', '2024-01-15 11:05:00');
 
 -- =====================================================
--- 8. DELETED MESSAGES (1 deleted message)
+-- 9. DELETED MESSAGES (1 deleted message)
 -- =====================================================
 INSERT OR REPLACE INTO deleted_messages (
     id, message_id, group_id, deleted_at
@@ -135,7 +171,7 @@ INSERT OR REPLACE INTO deleted_messages (
 (1, 3002, -1001234567892, '2024-01-17 10:00:00');
 
 -- =====================================================
--- 9. DELETED USERS (1 deleted user)
+-- 10. DELETED USERS (1 deleted user)
 -- =====================================================
 INSERT OR REPLACE INTO deleted_users (
     id, user_id, deleted_at
@@ -143,7 +179,7 @@ INSERT OR REPLACE INTO deleted_users (
 (1, 567890123, '2024-01-17 10:00:00');
 
 -- =====================================================
--- 10. LOGIN CREDENTIALS (2 records)
+-- 11. LOGIN CREDENTIALS (2 records)
 -- =====================================================
 INSERT OR REPLACE INTO login_credentials (
     id, email, encrypted_password, created_at, updated_at
@@ -152,7 +188,7 @@ INSERT OR REPLACE INTO login_credentials (
 (2, 'jane.smith@example.com', 'encrypted_password_hash_2', '2024-01-16 11:00:00', '2024-01-19 15:00:00');
 
 -- =====================================================
--- 11. USER LICENSE CACHE (2 records)
+-- 12. USER LICENSE CACHE (2 records)
 -- =====================================================
 INSERT OR REPLACE INTO user_license_cache (
     id, user_email, license_tier, expiration_date,
@@ -174,6 +210,7 @@ PRAGMA foreign_keys = ON;
 -- - telegram_groups: 3
 -- - telegram_users: 5 (1 deleted)
 -- - messages: 15 (various types: text, photo, video, sticker, document, audio, with links)
+-- - message_tags: 23 (tags extracted from messages)
 -- - reactions: 10
 -- - media_files: 8
 -- - deleted_messages: 1
@@ -187,6 +224,7 @@ PRAGMA foreign_keys = ON;
 -- ✓ Various message types (text, photo, video, sticker, document, audio)
 -- ✓ Messages with links
 -- ✓ Messages with media
+-- ✓ Message tags (hashtags extracted from content and captions)
 -- ✓ Reactions to messages
 -- ✓ Deleted messages tracking
 -- ✓ Deleted users tracking

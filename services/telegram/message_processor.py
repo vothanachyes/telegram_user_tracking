@@ -4,10 +4,11 @@ Message processor for handling Telegram message data.
 
 import logging
 import re
-from typing import Optional
+from typing import Optional, List
 
 from database.models import Message
 from utils.helpers import get_telegram_message_link
+from utils.tag_extractor import TagExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -131,12 +132,15 @@ class MessageProcessor:
             # Generate message link
             message_link = get_telegram_message_link(group_username, group_id, telegram_msg.id)
             
+            # Extract caption (for media messages)
+            caption = getattr(telegram_msg, 'message', None) or ""
+            
             message = Message(
                 message_id=telegram_msg.id,
                 group_id=group_id,
                 user_id=telegram_msg.sender.id if telegram_msg.sender else 0,
                 content=content,
-                caption=getattr(telegram_msg, 'message', None) or "",  # Telethon uses 'message' for text
+                caption=caption,
                 date_sent=telegram_msg.date,
                 has_media=has_media,
                 media_type=media_type,
@@ -153,4 +157,17 @@ class MessageProcessor:
         except Exception as e:
             logger.error(f"Error processing message: {e}")
             return None
+    
+    def extract_tags(self, content: str = None, caption: str = None) -> List[str]:
+        """
+        Extract tags from message content and caption.
+        
+        Args:
+            content: Message content text
+            caption: Message caption text
+            
+        Returns:
+            List of normalized tags (without # prefix)
+        """
+        return TagExtractor.extract_tags_from_content_and_caption(content, caption)
 

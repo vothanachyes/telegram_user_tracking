@@ -177,7 +177,7 @@ class MessagesExporter(BaseExporter):
             elements.append(self.pdf_formatter.create_paragraph("Messages", heading_style))
             
             # Format messages for PDF
-            table_data = self.data_formatter.format_messages_for_pdf(messages, limit=100)
+            table_data = self.data_formatter.format_messages_for_pdf(messages, self.db_manager, limit=100)
             
             # Create table
             msg_table = self.pdf_formatter.create_table(

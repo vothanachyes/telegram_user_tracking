@@ -31,6 +31,7 @@ USER_DATA_TABLES = [
     'telegram_groups',
     'telegram_users',
     'messages',
+    'message_tags',
     'reactions',
     'media_files',
     'deleted_messages',

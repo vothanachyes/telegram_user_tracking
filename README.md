@@ -72,13 +72,25 @@ python3 main.py
 
 ## Building Executable
 
-Build the application for your platform:
+### Local Build
+
+Build the application for your current platform:
 
 ```bash
-python3 build.py
+python3 scripts/build.py
 ```
 
 The executable will be created in the `dist/` directory.
+
+### Windows Build from macOS/Linux
+
+Since PyInstaller cannot cross-compile, use **GitHub Actions** to build Windows executables from any platform:
+
+1. **Manual Trigger**: Go to GitHub Actions tab → "Build Windows Executable" → "Run workflow"
+2. **Automatic Trigger**: Push a version tag (e.g., `git tag v1.0.0 && git push origin v1.0.0`)
+3. **Download**: After build completes, download the `.exe` from the Artifacts section
+
+📖 **See detailed guide**: [Windows Build Workflow Documentation](docs/WINDOWS_BUILD_WORKFLOW.md)
 
 ## Testing
 

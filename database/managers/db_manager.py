@@ -125,10 +125,11 @@ class DatabaseManager(BaseDatabaseManager):
     def save_message(self, message):
         return self._message.save_message(message)
     
-    def get_messages(self, group_id=None, user_id=None, start_date=None, end_date=None,
+    def get_messages(self, group_id=None, group_ids=None, user_id=None, start_date=None, end_date=None,
                      include_deleted=False, limit=None, offset=0, tags=None):
-        return self._message.get_messages(group_id, user_id, start_date, end_date,
-                                         include_deleted, limit, offset, tags)
+        return self._message.get_messages(group_id=group_id, group_ids=group_ids, user_id=user_id, 
+                                         start_date=start_date, end_date=end_date,
+                                         include_deleted=include_deleted, limit=limit, offset=offset, tags=tags)
     
     def get_message_count(self, group_id=None, user_id=None, include_deleted=False):
         return self._message.get_message_count(group_id, user_id, include_deleted)
@@ -169,13 +170,20 @@ class DatabaseManager(BaseDatabaseManager):
         return self._reaction.delete_reaction(reaction_id)
     
     # Statistics
-    def get_top_active_users_by_group(self, group_id, limit=10):
-        return self._stats.get_top_active_users_by_group(group_id, limit)
+    def get_top_active_users_by_group(self, group_id=None, group_ids=None, start_date=None, end_date=None, limit=10):
+        return self._stats.get_top_active_users_by_group(
+            group_id=group_id, 
+            group_ids=group_ids, 
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit
+        )
     
     def get_group_summaries(self):
         return self._stats.get_group_summaries()
-    def get_dashboard_stats(self):
-        return self._stats.get_dashboard_stats()
+    
+    def get_dashboard_stats(self, group_ids=None, start_date=None, end_date=None):
+        return self._stats.get_dashboard_stats(group_ids=group_ids, start_date=start_date, end_date=end_date)
     
     def get_user_activity_stats(self, user_id, group_id=None, start_date=None, end_date=None):
         return self._stats.get_user_activity_stats(user_id, group_id, start_date, end_date)

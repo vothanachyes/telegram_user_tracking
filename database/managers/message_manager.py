@@ -95,6 +95,7 @@ class MessageManager(BaseDatabaseManager):
     def get_messages(
         self, 
         group_id: Optional[int] = None,
+        group_ids: Optional[List[int]] = None,
         user_id: Optional[int] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
@@ -107,7 +108,8 @@ class MessageManager(BaseDatabaseManager):
         Get messages with filters.
         
         Args:
-            group_id: Filter by group ID
+            group_id: Filter by single group ID (for backward compatibility)
+            group_ids: Filter by list of group IDs (takes precedence over group_id)
             user_id: Filter by user ID
             start_date: Filter by start date
             end_date: Filter by end date
@@ -150,7 +152,12 @@ class MessageManager(BaseDatabaseManager):
             query = "SELECT * FROM messages WHERE 1=1"
             params = []
         
-        if group_id:
+        # Handle group filtering - use group_ids if provided, otherwise use group_id
+        if group_ids and len(group_ids) > 0:
+            placeholders = ",".join("?" * len(group_ids))
+            query += f" AND group_id IN ({placeholders})"
+            params.extend(group_ids)
+        elif group_id:
             query += " AND group_id = ?"
             params.append(group_id)
         

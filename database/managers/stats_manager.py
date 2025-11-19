@@ -13,40 +13,138 @@ logger = logging.getLogger(__name__)
 class StatsManager(BaseDatabaseManager):
     """Manages statistics operations."""
     
-    def get_dashboard_stats(self) -> Dict[str, Any]:
-        """Get statistics for dashboard."""
+    def get_dashboard_stats(
+        self, 
+        group_ids: Optional[List[int]] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Get statistics for dashboard.
+        
+        Args:
+            group_ids: Optional list of group IDs to filter by. If None, includes all groups.
+            start_date: Optional start date to filter by.
+            end_date: Optional end date to filter by.
+        """
         with self.get_connection() as conn:
             stats = {}
             
+            # Build filter conditions
+            conditions = ["is_deleted = 0"]
+            params = []
+            
+            if group_ids and len(group_ids) > 0:
+                placeholders = ",".join("?" * len(group_ids))
+                conditions.append(f"group_id IN ({placeholders})")
+                params.extend(group_ids)
+            
+            if start_date:
+                conditions.append("date_sent >= ?")
+                params.append(start_date)
+            
+            if end_date:
+                conditions.append("date_sent <= ?")
+                params.append(end_date)
+            
+            where_clause = " AND ".join(conditions)
+            
             # Total messages
-            cursor = conn.execute("SELECT COUNT(*) FROM messages WHERE is_deleted = 0")
+            query = f"SELECT COUNT(*) FROM messages WHERE {where_clause}"
+            cursor = conn.execute(query, params)
             stats['total_messages'] = cursor.fetchone()[0]
             
-            # Total users
-            cursor = conn.execute("SELECT COUNT(*) FROM telegram_users WHERE is_deleted = 0")
-            stats['total_users'] = cursor.fetchone()[0]
+            # Total users (distinct users from selected groups)
+            if group_ids and len(group_ids) > 0:
+                user_conditions = ["m.is_deleted = 0", "u.is_deleted = 0"]
+                user_params = []
+                
+                placeholders = ",".join("?" * len(group_ids))
+                user_conditions.append(f"m.group_id IN ({placeholders})")
+                user_params.extend(group_ids)
+                
+                if start_date:
+                    user_conditions.append("m.date_sent >= ?")
+                    user_params.append(start_date)
+                
+                if end_date:
+                    user_conditions.append("m.date_sent <= ?")
+                    user_params.append(end_date)
+                
+                user_where = " AND ".join(user_conditions)
+                query = f"""
+                    SELECT COUNT(DISTINCT u.user_id) FROM telegram_users u
+                    INNER JOIN messages m ON u.user_id = m.user_id
+                    WHERE {user_where}
+                """
+                cursor = conn.execute(query, user_params)
+                stats['total_users'] = cursor.fetchone()[0]
+            else:
+                cursor = conn.execute("SELECT COUNT(*) FROM telegram_users WHERE is_deleted = 0")
+                stats['total_users'] = cursor.fetchone()[0]
             
-            # Total groups
-            cursor = conn.execute("SELECT COUNT(*) FROM telegram_groups")
-            stats['total_groups'] = cursor.fetchone()[0]
+            # Total groups (count of selected groups or all groups)
+            if group_ids and len(group_ids) > 0:
+                placeholders = ",".join("?" * len(group_ids))
+                query = f"SELECT COUNT(*) FROM telegram_groups WHERE group_id IN ({placeholders})"
+                cursor = conn.execute(query, group_ids)
+                stats['total_groups'] = cursor.fetchone()[0]
+            else:
+                cursor = conn.execute("SELECT COUNT(*) FROM telegram_groups")
+                stats['total_groups'] = cursor.fetchone()[0]
             
-            # Total media size
-            cursor = conn.execute("SELECT SUM(file_size_bytes) FROM media_files")
+            # Total media size (from selected groups and date range)
+            media_conditions = ["m.is_deleted = 0"]
+            media_params = []
+            
+            if group_ids and len(group_ids) > 0:
+                placeholders = ",".join("?" * len(group_ids))
+                media_conditions.append(f"m.group_id IN ({placeholders})")
+                media_params.extend(group_ids)
+            
+            if start_date:
+                media_conditions.append("m.date_sent >= ?")
+                media_params.append(start_date)
+            
+            if end_date:
+                media_conditions.append("m.date_sent <= ?")
+                media_params.append(end_date)
+            
+            media_where = " AND ".join(media_conditions)
+            query = f"""
+                SELECT SUM(mf.file_size_bytes) FROM media_files mf
+                INNER JOIN messages m ON mf.message_id = m.message_id
+                WHERE {media_where}
+            """
+            cursor = conn.execute(query, media_params)
             result = cursor.fetchone()[0]
             stats['total_media_size'] = result if result else 0
             
-            # Messages today
-            cursor = conn.execute("""
-                SELECT COUNT(*) FROM messages 
-                WHERE date_sent >= date('now') AND is_deleted = 0
-            """)
+            # Messages today (within date range if specified)
+            today_conditions = ["date_sent >= date('now')", "is_deleted = 0"]
+            today_params = []
+            
+            if group_ids and len(group_ids) > 0:
+                placeholders = ",".join("?" * len(group_ids))
+                today_conditions.append(f"group_id IN ({placeholders})")
+                today_params.extend(group_ids)
+            
+            today_where = " AND ".join(today_conditions)
+            query = f"SELECT COUNT(*) FROM messages WHERE {today_where}"
+            cursor = conn.execute(query, today_params)
             stats['messages_today'] = cursor.fetchone()[0]
             
-            # Messages this month
-            cursor = conn.execute("""
-                SELECT COUNT(*) FROM messages 
-                WHERE date_sent >= date('now', 'start of month') AND is_deleted = 0
-            """)
+            # Messages this month (within date range if specified)
+            month_conditions = ["date_sent >= date('now', 'start of month')", "is_deleted = 0"]
+            month_params = []
+            
+            if group_ids and len(group_ids) > 0:
+                placeholders = ",".join("?" * len(group_ids))
+                month_conditions.append(f"group_id IN ({placeholders})")
+                month_params.extend(group_ids)
+            
+            month_where = " AND ".join(month_conditions)
+            query = f"SELECT COUNT(*) FROM messages WHERE {month_where}"
+            cursor = conn.execute(query, month_params)
             stats['messages_this_month'] = cursor.fetchone()[0]
             
             return stats
@@ -176,14 +274,48 @@ class StatsManager(BaseDatabaseManager):
     
     def get_top_active_users_by_group(
         self,
-        group_id: int,
+        group_id: Optional[int] = None,
+        group_ids: Optional[List[int]] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
         limit: int = 10
     ) -> List[Dict[str, Any]]:
-        """Get top active users in a group sorted by message count."""
+        """Get top active users in group(s) sorted by message count.
+        
+        Args:
+            group_id: Single group ID (for backward compatibility)
+            group_ids: List of group IDs to filter by (takes precedence over group_id)
+            limit: Maximum number of users to return
+        """
         encryption_service = self.get_encryption_service()
         
+        # Use group_ids if provided, otherwise use group_id
+        if group_ids and len(group_ids) > 0:
+            target_group_ids = group_ids
+        elif group_id:
+            target_group_ids = [group_id]
+        else:
+            return []
+        
         with self.get_connection() as conn:
-            cursor = conn.execute("""
+            placeholders = ",".join("?" * len(target_group_ids))
+            conditions = [
+                f"m.group_id IN ({placeholders})",
+                "m.is_deleted = 0",
+                "u.is_deleted = 0"
+            ]
+            params = list(target_group_ids)
+            
+            if start_date:
+                conditions.append("m.date_sent >= ?")
+                params.append(start_date)
+            
+            if end_date:
+                conditions.append("m.date_sent <= ?")
+                params.append(end_date)
+            
+            where_clause = " AND ".join(conditions)
+            query = f"""
                 SELECT 
                     u.user_id,
                     u.username,
@@ -192,14 +324,17 @@ class StatsManager(BaseDatabaseManager):
                     u.full_name,
                     u.phone,
                     u.profile_photo_path,
-                    COUNT(m.message_id) as message_count
+                    COUNT(m.message_id) as message_count,
+                    MAX(m.date_sent) as last_activity_date
                 FROM telegram_users u
                 INNER JOIN messages m ON u.user_id = m.user_id
-                WHERE m.group_id = ? AND m.is_deleted = 0 AND u.is_deleted = 0
+                WHERE {where_clause}
                 GROUP BY u.user_id
                 ORDER BY message_count DESC
                 LIMIT ?
-            """, (group_id, limit))
+            """
+            params.append(limit)
+            cursor = conn.execute(query, params)
             
             results = []
             for row in cursor.fetchall():
@@ -210,6 +345,8 @@ class StatsManager(BaseDatabaseManager):
                 full_name = encryption_service.decrypt_field(row['full_name']) if encryption_service else row['full_name']
                 phone = encryption_service.decrypt_field(row['phone']) if encryption_service else row['phone']
                 
+                last_activity = _parse_datetime(row['last_activity_date']) if row['last_activity_date'] else None
+                
                 results.append({
                     'user_id': row['user_id'],
                     'username': username,
@@ -218,7 +355,8 @@ class StatsManager(BaseDatabaseManager):
                     'full_name': full_name,
                     'phone': phone,
                     'profile_photo_path': row['profile_photo_path'],
-                    'message_count': row['message_count']
+                    'message_count': row['message_count'],
+                    'last_activity_date': last_activity
                 })
             
             return results

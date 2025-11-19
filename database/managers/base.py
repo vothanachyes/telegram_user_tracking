@@ -224,6 +224,21 @@ class BaseDatabaseManager:
                 conn.execute("ALTER TABLE app_settings ADD COLUMN encrypted_pin TEXT")
                 logger.info("Added encrypted_pin column to app_settings table")
             
+            # Add pin_attempt_count column if missing
+            if 'pin_attempt_count' not in settings_columns:
+                conn.execute("ALTER TABLE app_settings ADD COLUMN pin_attempt_count INTEGER NOT NULL DEFAULT 0")
+                logger.info("Added pin_attempt_count column to app_settings table")
+            
+            # Add pin_lockout_until column if missing
+            if 'pin_lockout_until' not in settings_columns:
+                conn.execute("ALTER TABLE app_settings ADD COLUMN pin_lockout_until TIMESTAMP")
+                logger.info("Added pin_lockout_until column to app_settings table")
+            
+            # Add user_encrypted_pin column if missing
+            if 'user_encrypted_pin' not in settings_columns:
+                conn.execute("ALTER TABLE app_settings ADD COLUMN user_encrypted_pin TEXT")
+                logger.info("Added user_encrypted_pin column to app_settings table")
+            
             # Check if user_license_cache table exists
             cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_license_cache'")
             table_exists = cursor.fetchone()

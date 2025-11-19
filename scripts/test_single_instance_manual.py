@@ -6,7 +6,7 @@ This script helps test the single instance feature by simulating
 multiple instances trying to start simultaneously.
 
 Usage:
-    python test_single_instance_manual.py
+    python scripts/test_single_instance_manual.py
 """
 
 import sys
@@ -14,8 +14,8 @@ import time
 import subprocess
 from pathlib import Path
 
-# Add project root to path
-project_root = Path(__file__).resolve().parent
+# Add project root to path (scripts/ is one level down from project root)
+project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 from utils.single_instance import SingleInstance

@@ -2,13 +2,17 @@
 """
 PIN Decryption Script for Telegram User Tracking
 
-This script decrypts a PIN using the device information and encrypted PIN
+This script decrypts a PIN using the device information, user ID, and encrypted PIN
 exported from the Security tab in Settings.
 
+The PIN is double-encrypted:
+1. First encrypted with device key (hostname, machine, system)
+2. Then encrypted with Firebase user ID
+
 Usage:
-    python decrypt_pin.py <json_file>
-    python decrypt_pin.py --json '{"hostname": "...", "machine": "...", "system": "...", "encrypted_pin": "..."}'
-    python decrypt_pin.py  # Interactive mode - paste JSON when prompted
+    python scripts/decrypt_pin.py <json_file>
+    python scripts/decrypt_pin.py --json '{"hostname": "...", "machine": "...", "system": "...", "user_id": "...", "encrypted_pin": "..."}'
+    python scripts/decrypt_pin.py  # Interactive mode - paste JSON when prompted
 
 Requirements:
     pip install cryptography
@@ -61,12 +65,44 @@ def derive_encryption_key(hostname: str, machine: str, system: str) -> bytes:
     return key
 
 
-def decrypt_pin(encrypted_pin: str, hostname: str, machine: str, system: str) -> str:
+def derive_user_encryption_key(user_id: str) -> bytes:
     """
-    Decrypt PIN using device information.
+    Derive encryption key from Firebase user ID.
+    
+    This replicates the exact key derivation process used in encrypt_pin_with_user_id.
     
     Args:
-        encrypted_pin: Base64-encoded encrypted PIN string
+        user_id: Firebase user ID (UID)
+        
+    Returns:
+        Base64-encoded Fernet key
+    """
+    # Derive encryption key from user ID (same as encryption)
+    salt = hashlib.sha256(f"user-pin-encryption-{user_id}".encode()).digest()[:16]
+    password = hashlib.sha256(f"{user_id}-pin-encryption".encode()).digest()
+    
+    # Derive key using PBKDF2
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100000,
+    )
+    key = base64.urlsafe_b64encode(kdf.derive(password))
+    return key
+
+
+def decrypt_pin(user_encrypted_pin: str, user_id: str, hostname: str, machine: str, system: str) -> str:
+    """
+    Decrypt PIN using user ID and device information (double decryption).
+    
+    The PIN is encrypted twice:
+    1. First with device key (hostname, machine, system)
+    2. Then with Firebase user ID
+    
+    Args:
+        user_encrypted_pin: Base64-encoded PIN encrypted with user ID
+        user_id: Firebase user ID (UID)
         hostname: Device hostname
         machine: Machine type
         system: Operating system
@@ -78,17 +114,21 @@ def decrypt_pin(encrypted_pin: str, hostname: str, machine: str, system: str) ->
         ValueError: If decryption fails
     """
     try:
-        # Derive encryption key
-        key = derive_encryption_key(hostname, machine, system)
+        # Step 1: Decrypt with user ID key
+        user_key = derive_user_encryption_key(user_id)
+        user_cipher = Fernet(user_key)
         
-        # Create Fernet cipher
-        cipher = Fernet(key)
+        # Decode and decrypt first layer (user ID encryption)
+        encrypted_bytes = base64.urlsafe_b64decode(user_encrypted_pin.encode())
+        device_encrypted_pin = user_cipher.decrypt(encrypted_bytes).decode()
         
-        # Decode encrypted PIN from base64
-        encrypted_bytes = base64.urlsafe_b64decode(encrypted_pin.encode())
+        # Step 2: Decrypt with device key
+        device_key = derive_encryption_key(hostname, machine, system)
+        device_cipher = Fernet(device_key)
         
-        # Decrypt
-        decrypted = cipher.decrypt(encrypted_bytes)
+        # Decode and decrypt second layer (device encryption)
+        device_encrypted_bytes = base64.urlsafe_b64decode(device_encrypted_pin.encode())
+        decrypted = device_cipher.decrypt(device_encrypted_bytes)
         
         # Return as string
         return decrypted.decode()
@@ -117,7 +157,7 @@ def load_json_from_string(json_str: str) -> dict:
 
 def validate_json_data(data: dict) -> tuple:
     """Validate and extract required fields from JSON."""
-    required_fields = ['hostname', 'machine', 'system', 'encrypted_pin']
+    required_fields = ['hostname', 'machine', 'system', 'user_id', 'encrypted_pin']
     
     missing_fields = [field for field in required_fields if field not in data]
     if missing_fields:
@@ -126,12 +166,16 @@ def validate_json_data(data: dict) -> tuple:
     hostname = str(data['hostname'])
     machine = str(data['machine'])
     system = str(data['system'])
+    user_id = str(data['user_id'])
     encrypted_pin = str(data['encrypted_pin'])
     
     if not encrypted_pin:
         raise ValueError("encrypted_pin cannot be empty")
     
-    return hostname, machine, system, encrypted_pin
+    if not user_id:
+        raise ValueError("user_id cannot be empty")
+    
+    return hostname, machine, system, user_id, encrypted_pin
 
 
 def main():
@@ -142,13 +186,13 @@ def main():
         epilog="""
 Examples:
   # From file:
-  python decrypt_pin.py recovery_data.json
+  python scripts/decrypt_pin.py recovery_data.json
   
   # From JSON string:
-  python decrypt_pin.py --json '{"hostname": "...", "machine": "...", "system": "...", "encrypted_pin": "..."}'
+  python scripts/decrypt_pin.py --json '{"hostname": "...", "machine": "...", "system": "...", "user_id": "...", "encrypted_pin": "..."}'
   
   # Interactive mode:
-  python decrypt_pin.py
+  python scripts/decrypt_pin.py
         """
     )
     
@@ -199,7 +243,7 @@ Examples:
     
     # Validate and extract data
     try:
-        hostname, machine, system, encrypted_pin = validate_json_data(data)
+        hostname, machine, system, user_id, encrypted_pin = validate_json_data(data)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -208,9 +252,10 @@ Examples:
     try:
         print("\nDecrypting PIN...")
         print(f"Device: {hostname} ({machine}, {system})")
+        print(f"User ID: {user_id[:8]}...")  # Show first 8 chars for privacy
         print("-" * 50)
         
-        pin = decrypt_pin(encrypted_pin, hostname, machine, system)
+        pin = decrypt_pin(encrypted_pin, user_id, hostname, machine, system)
         
         print(f"\n✓ PIN Decrypted Successfully!")
         print(f"\nYour PIN is: {pin}\n")
@@ -219,6 +264,7 @@ Examples:
         print(f"\n✗ Decryption failed: {e}", file=sys.stderr)
         print("\nPossible reasons:")
         print("  - Device information doesn't match the original device")
+        print("  - User ID doesn't match the original user")
         print("  - Encrypted PIN is corrupted or invalid")
         print("  - JSON data is incorrect")
         sys.exit(1)

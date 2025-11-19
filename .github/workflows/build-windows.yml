@@ -1,0 +1,120 @@
+name: Build Windows Executable
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.0
+  workflow_dispatch:  # Allow manual triggering from GitHub UI
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  build-windows:
+    name: Build Windows Executable
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+      
+      - name: Clean up unnecessary files and directories
+        run: |
+          Write-Host "Cleaning up unnecessary files and directories for build..."
+          
+          # Remove development and test directories (not needed in production build)
+          $dirsToRemove = @(
+            "data",           # Database and session files
+            "downloads",      # Downloaded media files
+            "logs",           # Log files
+            "docs",           # Documentation
+            ".github",        # GitHub workflows
+            "data_ran",       # Test data generator
+            "z_sanbox",       # Sandbox/development files
+            "unused",         # Unused files
+            "tests"           # Test files
+          )
+          
+          foreach ($dir in $dirsToRemove) {
+            if (Test-Path $dir) {
+              Write-Host "Removing directory: $dir"
+              Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+            }
+          }
+          
+          # Remove test and development files from root
+          $rootFilesToRemove = @(
+            "dataRan.py",
+            "me.json"
+          )
+          
+          foreach ($file in $rootFilesToRemove) {
+            if (Test-Path $file) {
+              Write-Host "Removing file: $file"
+              Remove-Item -Force $file -ErrorAction SilentlyContinue
+            }
+          }
+          
+          # Remove backup files recursively
+          Get-ChildItem -Recurse -Filter "*.backup" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+          
+          # Remove all __pycache__ directories recursively (not needed in build)
+          Get-ChildItem -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          
+          # Remove .pyc files (compiled Python files)
+          Get-ChildItem -Recurse -Filter "*.pyc" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+          
+          Write-Host "`nCleanup completed!"
+          Write-Host "Remaining top-level directories:"
+          Get-ChildItem -Directory | Select-Object Name | Format-Table -AutoSize
+      
+      - name: Build executable
+        run: |
+          python scripts/build.py
+      
+      - name: Verify executable exists
+        run: |
+          if (Test-Path "dist\TelegramUserTracking.exe") {
+            Write-Host "✅ Executable built successfully"
+            $exe = Get-Item "dist\TelegramUserTracking.exe"
+            $sizeMB = [math]::Round($exe.Length / 1MB, 2)
+            Write-Host "File: $($exe.Name)"
+            Write-Host "Size: $sizeMB MB"
+            Write-Host "Last Modified: $($exe.LastWriteTime)"
+          } else {
+            Write-Host "❌ Executable not found"
+            Write-Host "Searching for any .exe files..."
+            Get-ChildItem -Recurse -Filter "*.exe" | Select-Object FullName
+            exit 1
+          }
+      
+      - name: Upload Windows executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TelegramUserTracking-Windows
+          path: dist/TelegramUserTracking.exe
+          retention-days: 30
+      
+      - name: Upload build logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-logs-windows
+          path: |
+            build/
+            dist/
+          retention-days: 7
+

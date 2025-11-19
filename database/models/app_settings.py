@@ -28,6 +28,9 @@ class AppSettings:
     reaction_fetch_delay: float = 0.5
     pin_enabled: bool = False
     encrypted_pin: Optional[str] = None
+    user_encrypted_pin: Optional[str] = None  # PIN encrypted with Firebase user ID
+    pin_attempt_count: int = 0
+    pin_lockout_until: Optional[datetime] = None
     rate_limit_warning_last_seen: Optional[datetime] = None
     db_path: Optional[str] = None  # Custom database path (None = use default)
     encryption_enabled: bool = False  # Database encryption enabled

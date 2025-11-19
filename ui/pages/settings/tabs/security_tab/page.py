@@ -13,6 +13,7 @@ from ui.theme import theme_manager
 from config.settings import settings as app_settings
 from utils.constants import DATABASE_PATH
 from utils.windows_auth import WindowsAuth
+from utils.user_pin_encryption import get_or_create_user_encrypted_pin
 from services.database.encryption_service import DatabaseEncryptionService
 from services.database.db_migration_service import DatabaseMigrationService
 
@@ -534,12 +535,21 @@ class SecurityTab:
             self.page.update()
     
     def _get_pin_recovery_data(self) -> dict:
-        """Generate JSON with device info and encrypted PIN."""
+        """Generate JSON with device info, user ID, and user-encrypted PIN."""
+        # Get or create user-encrypted PIN
+        user_encrypted_pin = get_or_create_user_encrypted_pin(self.db_manager)
+        
+        # Get Firebase user ID
+        from services.auth_service import auth_service
+        current_user = auth_service.get_current_user()
+        user_id = current_user.get('uid') if current_user else ""
+        
         return {
             "hostname": platform.node(),
             "machine": platform.machine(),
             "system": platform.system(),
-            "encrypted_pin": self.current_settings.encrypted_pin or ""
+            "user_id": user_id,
+            "encrypted_pin": user_encrypted_pin or ""
         }
     
     def _get_masked_json(self) -> str:
@@ -554,6 +564,7 @@ class SecurityTab:
             "hostname": "*" * len(str(data["hostname"])) if data["hostname"] else "",
             "machine": "*" * len(str(data["machine"])) if data["machine"] else "",
             "system": "*" * len(str(data["system"])) if data["system"] else "",
+            "user_id": "*" * len(str(data["user_id"])) if data["user_id"] else "",
             "encrypted_pin": "*" * len(str(data["encrypted_pin"])) if data["encrypted_pin"] else ""
         }
         

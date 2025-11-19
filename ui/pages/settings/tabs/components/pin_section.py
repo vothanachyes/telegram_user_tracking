@@ -9,6 +9,7 @@ from database.models import AppSettings
 from ui.theme import theme_manager
 from config.settings import settings as app_settings
 from utils.pin_validator import encrypt_pin, verify_pin
+from utils.user_pin_encryption import get_or_create_user_encrypted_pin, update_user_encrypted_pin
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +51,11 @@ class PinSection:
             weight=ft.FontWeight.BOLD
         )
         
-        # Encrypted PIN display
+        # Encrypted PIN display (show user-encrypted PIN)
         self.encrypted_pin_visible = False
-        encrypted_pin_value = self.current_settings.encrypted_pin or ""
+        # Get user-encrypted PIN (will be created if needed)
+        user_encrypted_pin = get_or_create_user_encrypted_pin(app_settings.db_manager) if has_pin else None
+        encrypted_pin_value = user_encrypted_pin or ""
         self.encrypted_pin_text = ft.Text(
             "••••••••••••••••" if encrypted_pin_value else "",
             size=11,
@@ -61,6 +64,8 @@ class PinSection:
             visible=True,
             selectable=True
         )
+        # Store the actual value for copying
+        self._user_encrypted_pin_value = user_encrypted_pin
         
         # Peek button (eye icon)
         self.peek_pin_btn = ft.IconButton(
@@ -233,6 +238,14 @@ class PinSection:
                 self.current_settings.encrypted_pin = encrypted_pin
                 
                 if app_settings.save_settings(self.current_settings):
+                    # Update user-encrypted PIN
+                    update_user_encrypted_pin(app_settings.db_manager)
+                    
+                    # Refresh settings to get updated user-encrypted PIN
+                    self.current_settings = app_settings.db_manager.get_settings()
+                    user_encrypted_pin = get_or_create_user_encrypted_pin(app_settings.db_manager)
+                    self._user_encrypted_pin_value = user_encrypted_pin
+                    
                     # Update UI
                     self._update_ui_state()
                     
@@ -292,6 +305,7 @@ class PinSection:
                     # PIN verified, disable PIN
                     self.current_settings.encrypted_pin = None
                     self.current_settings.pin_enabled = False
+                    self.current_settings.user_encrypted_pin = None  # Clear user-encrypted PIN
                     
                     if app_settings.save_settings(self.current_settings):
                         # Update UI
@@ -361,11 +375,18 @@ class PinSection:
                             self.current_settings.encrypted_pin = encrypted_pin
                             
                             if app_settings.save_settings(self.current_settings):
+                                # Update user-encrypted PIN
+                                update_user_encrypted_pin(app_settings.db_manager)
+                                
+                                # Refresh settings to get updated user-encrypted PIN
+                                self.current_settings = app_settings.db_manager.get_settings()
+                                user_encrypted_pin = get_or_create_user_encrypted_pin(app_settings.db_manager)
+                                self._user_encrypted_pin_value = user_encrypted_pin
+                                
                                 # Update encrypted PIN display
-                                self.encrypted_pin_text.value = encrypted_pin
+                                self.encrypted_pin_text.value = "••••••••••••••••"
                                 self.encrypted_pin_visible = False
                                 self.peek_pin_btn.icon = ft.Icons.VISIBILITY_OFF
-                                self.encrypted_pin_text.value = "••••••••••••••••"
                                 
                                 theme_manager.show_snackbar(
                                     self.page,
@@ -442,6 +463,7 @@ class PinSection:
                     # PIN verified, remove PIN
                     self.current_settings.encrypted_pin = None
                     self.current_settings.pin_enabled = False
+                    self.current_settings.user_encrypted_pin = None  # Clear user-encrypted PIN
                     
                     if app_settings.save_settings(self.current_settings):
                         # Update UI
@@ -496,7 +518,10 @@ class PinSection:
         self.encrypted_pin_visible = not self.encrypted_pin_visible
         
         if self.encrypted_pin_visible:
-            self.encrypted_pin_text.value = self.current_settings.encrypted_pin
+            # Show user-encrypted PIN
+            user_encrypted_pin = get_or_create_user_encrypted_pin(app_settings.db_manager)
+            self._user_encrypted_pin_value = user_encrypted_pin
+            self.encrypted_pin_text.value = user_encrypted_pin or "••••••••••••••••"
             self.peek_pin_btn.icon = ft.Icons.VISIBILITY
             self.peek_pin_btn.tooltip = theme_manager.t("hide_encrypted_pin") or "Hide encrypted PIN"
         else:
@@ -508,12 +533,17 @@ class PinSection:
             self.page.update()
     
     def _copy_encrypted_pin(self, e):
-        """Copy encrypted PIN to clipboard."""
+        """Copy user-encrypted PIN to clipboard."""
         if not self.current_settings.encrypted_pin:
             return
         
+        # Get user-encrypted PIN
+        user_encrypted_pin = get_or_create_user_encrypted_pin(app_settings.db_manager)
+        if not user_encrypted_pin:
+            return
+        
         if self.page:
-            self.page.set_clipboard(self.current_settings.encrypted_pin)
+            self.page.set_clipboard(user_encrypted_pin)
             theme_manager.show_snackbar(
                 self.page,
                 theme_manager.t("encrypted_pin_copied") or "Encrypted PIN copied to clipboard",

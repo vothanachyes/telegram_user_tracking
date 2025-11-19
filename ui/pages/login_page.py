@@ -8,6 +8,7 @@ import logging
 import threading
 import time
 import os
+from pathlib import Path
 from typing import Callable, Optional, Tuple
 from ui.theme import theme_manager
 from services.auth_service import auth_service
@@ -86,11 +87,8 @@ class LoginPage(ft.Container):
                 # Logo/Title
                 ft.Container(
                     content=ft.Column([
-                        ft.Icon(
-                            name=ft.Icons.TELEGRAM,
-                            size=80,
-                            color=theme_manager.primary_color
-                        ),
+                        # Logo image (use transparent version for login page)
+                        self._get_logo_image(),
                         ft.Text(
                             settings.app_name,
                             size=theme_manager.font_size_page_title,
@@ -147,6 +145,30 @@ class LoginPage(ft.Container):
         # Auto-login if we have saved credentials OR dev credentials from .env
         self._should_auto_login = bool(saved_email and saved_password)
         self._pending_error = None
+    
+    def _get_logo_image(self) -> ft.Control:
+        """Get logo image for login page (use transparent version)."""
+        project_root = Path(__file__).parent.parent.parent
+        logo_path = project_root / 'assets' / 'appLogo_trp.png'
+        
+        # Fallback to regular logo if transparent version doesn't exist
+        if not logo_path.exists():
+            logo_path = project_root / 'assets' / 'appLogo.png'
+        
+        if logo_path.exists():
+            return ft.Image(
+                src=str(logo_path),
+                width=100,
+                height=100,
+                fit=ft.ImageFit.CONTAIN,
+            )
+        else:
+            # Fallback to icon if logo file doesn't exist
+            return ft.Icon(
+                name=ft.Icons.TELEGRAM,
+                size=80,
+                color=theme_manager.primary_color
+            )
     
     def _trigger_auto_login(self):
         """Trigger auto-login after page is set up."""

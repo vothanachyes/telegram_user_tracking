@@ -4,14 +4,17 @@ Dashboard page with statistics and activity feed.
 
 import flet as ft
 import asyncio
-from typing import Optional
-from datetime import datetime
+from typing import Optional, List
+from datetime import datetime, timedelta
 from ui.theme import theme_manager
-from ui.components import StatCard, DataTable
+from ui.components import StatCard
 from database.db_manager import DatabaseManager
 from utils.constants import format_bytes
 from ui.pages.dashboard.sample_data import SampleDataGenerator
-from utils.helpers import format_datetime, get_telegram_user_link
+from ui.pages.dashboard.components.group_selector import GroupSelectorComponent
+from ui.pages.dashboard.components.date_range_selector import DateRangeSelectorComponent
+from ui.pages.dashboard.components.active_users_list import ActiveUsersListComponent
+from ui.pages.dashboard.components.recent_messages import RecentMessagesComponent
 
 
 class DashboardPage(ft.Container):
@@ -24,30 +27,49 @@ class DashboardPage(ft.Container):
         
         # Generate sample data if database is empty
         self.sample_data_generator.ensure_sample_data()
-        
-        # Check if we're showing sample data
         self.is_sample_data = self.sample_data_generator.is_sample_data()
         
-        # Get groups and set default selected group
+        # Get groups and set default selected groups
         groups = self.db_manager.get_all_groups()
-        self.selected_group_id = groups[0].group_id if groups else None
-        self.selected_group_name = groups[0].group_name if groups else None
+        self.selected_group_ids = [groups[0].group_id] if groups else []
+        self.selected_group_names = [groups[0].group_name] if groups else []
         
-        # Create group dropdown
-        group_options = [f"{g.group_name} ({g.group_id})" for g in groups]
-        default_group_value = group_options[0] if group_options else None
-        self.group_dropdown = theme_manager.create_dropdown(
-            label=theme_manager.t("select_group"),
-            options=group_options if group_options else ["No groups"],
-            value=default_group_value,
-            on_change=self._on_group_selected,
-            width=250
+        # Initialize date range (default: 1 month - last 30 days)
+        today = datetime.now()
+        one_month_ago = today - timedelta(days=30)
+        self.start_date = one_month_ago.replace(hour=0, minute=0, second=0, microsecond=0)
+        self.end_date = today
+        
+        # Create components
+        self.group_selector = GroupSelectorComponent(
+            groups=groups,
+            selected_group_ids=self.selected_group_ids,
+            selected_group_names=self.selected_group_names,
+            on_selection_changed=self._on_groups_changed
         )
         
-        # Create stat cards
-        stats = self.db_manager.get_dashboard_stats()
+        self.date_range_selector = DateRangeSelectorComponent(
+            start_date=self.start_date,
+            end_date=self.end_date,
+            on_date_range_changed=self._on_date_range_changed
+        )
         
-        self.stat_cards = ft.Row([
+        self.active_users_component = ActiveUsersListComponent()
+        self.recent_messages_component = RecentMessagesComponent()
+        
+        # Build components once and store references
+        self.group_selector_widget = self.group_selector.build()
+        self.date_range_selector_widget = self.date_range_selector.build()
+        
+        # Create stat cards
+        stats = self.db_manager.get_dashboard_stats(
+            group_ids=self.selected_group_ids if self.selected_group_ids else None,
+            start_date=self.start_date,
+            end_date=self.end_date
+        )
+        
+        # Wrap stat cards in container with padding to prevent edge clipping on hover
+        stat_cards_row = ft.Row([
             StatCard(
                 title=theme_manager.t("total_messages"),
                 value=str(stats['total_messages']),
@@ -73,6 +95,12 @@ class DashboardPage(ft.Container):
                 color=ft.Colors.ORANGE
             ),
         ], spacing=theme_manager.spacing_sm, wrap=True, run_spacing=theme_manager.spacing_sm)
+        
+        self.stat_cards = ft.Container(
+            content=stat_cards_row,
+            clip_behavior=ft.ClipBehavior.NONE,
+            padding=ft.padding.all(5)  # Add padding to allow scale effect without clipping
+        )
         
         # Monthly stats
         self.monthly_stats = self._create_modern_card(
@@ -130,12 +158,19 @@ class DashboardPage(ft.Container):
                     )
                 ]),
                 ft.Divider(),
-                self._get_recent_messages()
+                self.recent_messages_component.build(
+                    self.db_manager.get_messages(
+                        group_ids=self.selected_group_ids if self.selected_group_ids else None,
+                        start_date=self.start_date,
+                        end_date=self.end_date,
+                        limit=10
+                    ),
+                    self.db_manager.get_user_by_id
+                )
             ], spacing=theme_manager.spacing_sm)
         )
         
-        # Top 10 active users table
-        self.active_users_table = self._create_active_users_table()
+        # Top active users card
         self.active_users_card = self._create_modern_card(
             content=ft.Column([
                 ft.Row([
@@ -145,16 +180,15 @@ class DashboardPage(ft.Container):
                         weight=ft.FontWeight.BOLD
                     ),
                     ft.Container(expand=True),
-                    ft.ElevatedButton(
-                        text=theme_manager.t("all"),
-                        icon=ft.Icons.ARROW_FORWARD,
-                        on_click=self._navigate_to_reports,
-                        disabled=self.selected_group_id is None
+                    ft.IconButton(
+                        icon=ft.Icons.MORE_VERT,
+                        tooltip=theme_manager.t("more_options"),
+                        on_click=self._navigate_to_reports
                     ),
                 ]),
                 ft.Divider(),
                 ft.Container(
-                    content=self.active_users_table,
+                    content=self.active_users_component.build(),
                     height=400,
                     width=None
                 ),
@@ -171,9 +205,11 @@ class DashboardPage(ft.Container):
                         weight=ft.FontWeight.BOLD
                     ),
                     ft.Container(expand=True),
-                    self.group_dropdown,
+                    self.group_selector_widget,
                     self._create_sample_data_badge() if self.is_sample_data else ft.Container(),
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, spacing=10),
+                ft.Container(height=10),
+                self.date_range_selector_widget,
                 self.stat_cards,
                 theme_manager.spacing_container("md"),
                 ft.Row([
@@ -189,8 +225,6 @@ class DashboardPage(ft.Container):
         
         # Load initial data
         self._refresh_active_users()
-        
-        # Trigger animations after page is mounted
         self._animation_initialized = False
     
     def _create_modern_card(self, content: ft.Control) -> ft.Container:
@@ -249,25 +283,21 @@ class DashboardPage(ft.Container):
         
         self._animation_initialized = True
         
-        # Animate stat cards with staggered delay (100ms between each)
-        for idx, card in enumerate(self.stat_cards.controls):
-            await asyncio.sleep(0.1 * idx)  # 100ms delay between each card
+        for idx, card in enumerate(self.stat_cards.content.controls):
+            await asyncio.sleep(0.1 * idx)
             if hasattr(card, '_animate_in'):
                 card._animate_in()
         
-        # Animate monthly stats after stat cards (400ms total delay)
         await asyncio.sleep(0.1)
         self.monthly_stats.opacity = 1
         if self.page:
             self.page.update()
         
-        # Animate recent activity (100ms after monthly stats)
         await asyncio.sleep(0.1)
         self.recent_activity.opacity = 1
         if self.page:
             self.page.update()
         
-        # Animate active users card (100ms after recent activity)
         await asyncio.sleep(0.1)
         self.active_users_card.opacity = 1
         if self.page:
@@ -277,86 +307,56 @@ class DashboardPage(ft.Container):
         """Set page reference and trigger animations."""
         self.page = page
         
+        # Set page reference for components
+        self.group_selector.set_page(page)
+        self.date_range_selector.set_page(page)
+        self.active_users_component.set_page(page)
+        self.recent_messages_component.set_page(page)
+        
         # Set page reference for stat cards
-        for card in self.stat_cards.controls:
+        for card in self.stat_cards.content.controls:
             card.page = page
         
-        # Trigger animations after a longer delay to ensure controls are added to page tree
+        # Trigger animations
         if page and hasattr(page, 'run_task'):
             async def start_animations():
-                await asyncio.sleep(0.3)  # Longer delay to ensure page tree is built
+                await asyncio.sleep(0.3)
                 await self._animate_dashboard()
-            
             page.run_task(start_animations)
         elif page:
             async def start_animations():
-                await asyncio.sleep(0.3)  # Longer delay to ensure page tree is built
+                await asyncio.sleep(0.3)
                 await self._animate_dashboard()
-            
             asyncio.create_task(start_animations())
     
-    def _get_recent_messages(self) -> ft.Column:
-        """Get recent messages list."""
-        messages = self.db_manager.get_messages(limit=10)
-        
-        if not messages:
-            return ft.Column([
-                ft.Text(
-                    theme_manager.t("no_data"),
-                    color=theme_manager.text_secondary_color
-                )
-            ])
-        
-        message_items = []
-        for msg in messages:
-            user = self.db_manager.get_user_by_id(msg.user_id)
-            user_name = user.full_name if user else "Unknown"
-            
-            message_items.append(
-                ft.ListTile(
-                    leading=ft.Icon(ft.Icons.MESSAGE, color=theme_manager.primary_color),
-                    title=ft.Text(user_name, weight=ft.FontWeight.BOLD),
-                    subtitle=ft.Text(
-                        msg.content[:100] + "..." if msg.content and len(msg.content) > 100 else msg.content or "",
-                        max_lines=2
-                    ),
-                    trailing=ft.Text(
-                        self._format_message_date(msg.date_sent),
-                        size=theme_manager.font_size_small,
-                        color=theme_manager.text_secondary_color
-                    )
-                )
-            )
-        
-        return ft.Column(message_items, spacing=theme_manager.spacing_xs, scroll=ft.ScrollMode.AUTO, height=400)
+    def _on_groups_changed(self, group_ids: List[int], group_names: List[str]):
+        """Handle group selection change."""
+        self.selected_group_ids = group_ids
+        self.selected_group_names = group_names
+        self._refresh_all_data()
     
-    def _format_message_date(self, date_value) -> str:
-        """Format message date, handling both string and datetime objects."""
-        if not date_value:
-            return ""
-        
-        # If it's already a string, parse it first
-        if isinstance(date_value, str):
-            try:
-                # Try to parse ISO format datetime
-                date_obj = datetime.fromisoformat(date_value.replace('Z', '+00:00'))
-                return date_obj.strftime("%Y-%m-%d %H:%M")
-            except:
-                # If parsing fails, return the string as-is (might already be formatted)
-                return date_value[:16] if len(date_value) >= 16 else date_value
-        
-        # If it's a datetime object, format it
-        if isinstance(date_value, datetime):
-            return date_value.strftime("%Y-%m-%d %H:%M")
-        
-        return str(date_value)
+    def _on_date_range_changed(self, start_date: datetime, end_date: datetime):
+        """Handle date range change."""
+        self.start_date = start_date
+        self.end_date = end_date
+        self._refresh_all_data()
     
     def _refresh_data(self, e):
         """Refresh dashboard data."""
-        stats = self.db_manager.get_dashboard_stats()
+        self._refresh_all_data()
+        self.update()
+    
+    def _refresh_all_data(self):
+        """Refresh all dashboard data based on selected groups and date range."""
+        # Update stats
+        stats = self.db_manager.get_dashboard_stats(
+            group_ids=self.selected_group_ids if self.selected_group_ids else None,
+            start_date=self.start_date,
+            end_date=self.end_date
+        )
         
-        # Update stat cards
-        cards = self.stat_cards.controls
+        # Update stat cards (access through Container -> Row -> controls)
+        cards = self.stat_cards.content.controls
         cards[0].update_value(str(stats['total_messages']))
         cards[1].update_value(str(stats['total_users']))
         cards[2].update_value(str(stats['total_groups']))
@@ -369,86 +369,39 @@ class DashboardPage(ft.Container):
         
         # Update recent activity
         activity_content = self.recent_activity.content
-        activity_content.controls[2] = self._get_recent_messages()
+        activity_content.controls[2] = self.recent_messages_component.build(
+            self.db_manager.get_messages(
+                group_ids=self.selected_group_ids if self.selected_group_ids else None,
+                start_date=self.start_date,
+                end_date=self.end_date,
+                limit=10
+            ),
+            self.db_manager.get_user_by_id
+        )
         
         # Update active users
         self._refresh_active_users()
         
-        self.update()
-    
-    
-    def _on_group_selected(self, e):
-        """Handle group selection."""
-        if e.control.value and e.control.value != "No groups":
-            group_str = e.control.value
-            self.selected_group_id = int(group_str.split("(")[-1].strip(")"))
-            groups = self.db_manager.get_all_groups()
-            for group in groups:
-                if group.group_id == self.selected_group_id:
-                    self.selected_group_name = group.group_name
-                    break
-        else:
-            self.selected_group_id = None
-            self.selected_group_name = None
-        
-        # Update active users table
-        self._refresh_active_users()
-        
-        # Update All button
+        # Update more options button
         if hasattr(self, 'active_users_card'):
             content = self.active_users_card.content
-            all_btn = content.controls[0].controls[2]
-            all_btn.disabled = self.selected_group_id is None
-        
-        if self.page:
-            self.page.update()
-    
-    def _create_active_users_table(self) -> DataTable:
-        """Create top 10 active users table."""
-        return DataTable(
-            columns=["No", "Username", "Full Name", "Phone", "Messages"],
-            rows=[],
-            on_row_click=None,
-            page_size=10,
-            column_alignments=["center", "center", "left", "center", "center"],
-            row_metadata=[],
-            searchable=False
-        )
+            more_btn = content.controls[0].controls[2]
+            more_btn.disabled = not self.selected_group_ids
     
     def _refresh_active_users(self):
-        """Refresh active users table."""
-        if not self.selected_group_id:
-            self.active_users_table.refresh([], [])
+        """Refresh active users list."""
+        if not self.selected_group_ids:
+            self.active_users_component.clear()
             return
         
-        users = self.db_manager.get_top_active_users_by_group(self.selected_group_id, limit=10)
+        users = self.db_manager.get_top_active_users_by_group(
+            group_ids=self.selected_group_ids,
+            start_date=self.start_date,
+            end_date=self.end_date,
+            limit=10
+        )
         
-        rows = []
-        row_metadata = []
-        for idx, user in enumerate(users, 1):
-            username = user.get('username') or "-"
-            full_name = user.get('full_name') or "-"
-            phone = user.get('phone') or "-"
-            message_count = user.get('message_count', 0)
-            user_link = get_telegram_user_link(user.get('username'))
-            
-            rows.append([
-                idx,
-                username,
-                full_name,
-                phone,
-                str(message_count),
-            ])
-            
-            row_meta = {
-                'cells': {}
-            }
-            if user_link and user.get('username'):
-                row_meta['cells'][1] = {'link': user_link}
-                row_meta['cells'][2] = {'link': user_link}
-            row_metadata.append(row_meta)
-        
-        self.active_users_table.refresh(rows, row_metadata)
+        self.active_users_component.update_users(users)
     
     def _navigate_to_reports(self, e):
         """Navigate to reports page."""
@@ -479,4 +432,3 @@ class DashboardPage(ft.Container):
             padding=ft.padding.symmetric(horizontal=12, vertical=6),
             tooltip="This dashboard is showing sample/demo data. Connect to Telegram to see real data."
         )
-

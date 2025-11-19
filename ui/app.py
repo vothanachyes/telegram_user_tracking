@@ -169,6 +169,17 @@ class TelegramUserTrackingApp:
         # Start update service
         self._start_update_service()
         
+        # Ensure splash screen is hidden (in case it's still showing)
+        # This is important when PIN dialog is shown after auto-login
+        if hasattr(self.page, 'controls') and self.page.controls:
+            # Check if splash screen is still in controls
+            from ui.components.splash_screen import SplashScreen
+            if isinstance(self.page.controls[0], SplashScreen):
+                # Replace splash with empty container temporarily
+                # PIN dialog will be shown as a modal, so we need a clean background
+                self.page.controls = []
+                self.page.update()
+        
         # Check if PIN is enabled
         settings = self.db_manager.get_settings()
         if settings.pin_enabled and settings.encrypted_pin:
@@ -183,39 +194,64 @@ class TelegramUserTrackingApp:
         """Show PIN entry dialog after login."""
         from ui.dialogs.pin_dialog import PinEntryDialog
         from utils.pin_validator import verify_pin
+        from utils.pin_attempt_manager import PinAttemptManager
         
         # Get settings from database (includes PIN fields)
         settings = self.db_manager.get_settings()
+        
+        # Create PIN attempt manager
+        pin_attempt_manager = PinAttemptManager(self.db_manager)
         
         def on_pin_submit(pin: str):
             """Handle PIN submission."""
             try:
                 # Verify PIN
                 if verify_pin(pin, settings.encrypted_pin):
-                    # Correct PIN, proceed to main app
+                    # Correct PIN, reset attempts and close dialog
+                    pin_attempt_manager.reset_attempts()
+                    pin_dialog.open = False
+                    if self.page:
+                        self.page.update()
+                    # Proceed to main app
                     self._show_main_app()
                     self._check_license_on_startup()
                 else:
-                    # Incorrect PIN, show error and retry
+                    # Incorrect PIN, show error and keep dialog open
                     pin_dialog.show_error(theme_manager.t("pin_incorrect"))
+                    # Clear PIN field for retry
+                    pin_dialog.pin_field.value = ""
+                    # Reset visual feedback dots
+                    for dot in pin_dialog.pin_dots.controls:
+                        dot.bgcolor = theme_manager.text_secondary_color
+                    if self.page:
+                        self.page.update()
             except Exception as e:
                 logger.error(f"Error verifying PIN: {e}")
                 pin_dialog.show_error(theme_manager.t("pin_incorrect"))
+                # Clear PIN field for retry
+                pin_dialog.pin_field.value = ""
+                # Reset visual feedback dots
+                for dot in pin_dialog.pin_dots.controls:
+                    dot.bgcolor = theme_manager.text_secondary_color
+                if self.page:
+                    self.page.update()
         
         def on_pin_cancel():
             """Handle PIN cancellation - logout user."""
             logger.info("PIN entry cancelled, logging out")
             self._on_logout()
         
-        # Create and show PIN dialog
+        # Create and show PIN dialog (no warning message at login for security)
         pin_dialog = PinEntryDialog(
             title=theme_manager.t("pin_required"),
-            message=theme_manager.t("pin_warning_dialog"),
+            message=None,  # No warning message at login to avoid exposing information
             on_submit=on_pin_submit,
             on_cancel=on_pin_cancel,
-            allow_cancel=True
+            allow_cancel=True,
+            pin_attempt_manager=pin_attempt_manager
         )
         pin_dialog.page = self.page
+        pin_dialog.db_manager = self.db_manager  # Set db_manager for recovery data
         
         # Use page.open() as per repo rules
         try:

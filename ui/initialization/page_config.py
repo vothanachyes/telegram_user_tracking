@@ -3,6 +3,8 @@ Page configuration utilities.
 """
 
 import flet as ft
+import platform
+from pathlib import Path
 from ui.theme import theme_manager
 from config.settings import settings
 from utils.constants import (
@@ -33,6 +35,32 @@ class PageConfig:
             page.window.height = DEFAULT_WINDOW_HEIGHT
             page.window.min_width = MIN_WINDOW_WIDTH
             page.window.min_height = MIN_WINDOW_HEIGHT
+            
+            # Set window icon from assets/icons directory
+            project_root = Path(__file__).parent.parent.parent
+            system = platform.system()
+            
+            if system == 'Windows':
+                icon_path = project_root / 'assets' / 'icons' / 'win' / 'icon.ico'
+                if icon_path.exists():
+                    try:
+                        page.window.icon = str(icon_path)
+                    except AttributeError:
+                        pass  # Window icon setting not available
+            elif system == 'Darwin':  # macOS
+                icon_path = project_root / 'assets' / 'icons' / 'mac' / 'icon.icns'
+                if icon_path.exists():
+                    try:
+                        page.window.icon = str(icon_path)
+                    except AttributeError:
+                        pass  # Window icon setting not available
+            elif system == 'Linux':
+                icon_path = project_root / 'assets' / 'icons' / 'linux' / 'icon.png'
+                if icon_path.exists():
+                    try:
+                        page.window.icon = str(icon_path)
+                    except AttributeError:
+                        pass  # Window icon setting not available
         except AttributeError:
             pass
         

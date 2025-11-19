@@ -5,6 +5,7 @@ Splash screen component with breathing animation.
 import flet as ft
 import asyncio
 import time
+from pathlib import Path
 from ui.theme import theme_manager
 from config.settings import settings
 from utils.constants import SPLASH_SCREEN_DURATION
@@ -19,16 +20,34 @@ class SplashScreen(ft.Container):
         self._login_page = None  # Reference to login page for error cases
         self._start_time = time.time()  # Track when splash screen appeared
         
-        # Create logo icon
-        self.logo_icon = ft.Icon(
-            name=ft.Icons.TELEGRAM,
-            size=100,
-            color=theme_manager.primary_color,
-        )
+        # Get logo path (use transparent version for splash screen)
+        project_root = Path(__file__).parent.parent.parent
+        logo_path = project_root / 'assets' / 'appLogo_trp.png'
+        
+        # Fallback to regular logo if transparent version doesn't exist
+        if not logo_path.exists():
+            logo_path = project_root / 'assets' / 'appLogo.png'
+        
+        # Create logo image
+        logo_image = None
+        if logo_path.exists():
+            logo_image = ft.Image(
+                src=str(logo_path),
+                width=120,
+                height=120,
+                fit=ft.ImageFit.CONTAIN,
+            )
+        else:
+            # Fallback to icon if logo file doesn't exist
+            logo_image = ft.Icon(
+                name=ft.Icons.TELEGRAM,
+                size=100,
+                color=theme_manager.primary_color,
+            )
         
         # Create animated container for breathing effect
         self.animated_container = ft.Container(
-            content=self.logo_icon,
+            content=logo_image,
             animate_scale=ft.Animation(
                 duration=1500,
                 curve=ft.AnimationCurve.EASE_IN_OUT

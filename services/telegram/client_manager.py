@@ -54,7 +54,8 @@ class ClientManager:
     def __init__(self):
         self.client: Optional[TelegramClient] = None
         self.is_available = TELETHON_AVAILABLE
-        self._session_path = BASE_DIR / "data" / "sessions"
+        from utils.constants import APP_DATA_DIR
+        self._session_path = APP_DATA_DIR / "sessions"
         self._session_path.mkdir(parents=True, exist_ok=True)
         
         # Enable Telethon verbose logging

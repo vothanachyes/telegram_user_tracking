@@ -195,9 +195,9 @@ class TelegramCredentialManager(BaseDatabaseManager):
         # Check if session file exists on disk
         try:
             from pathlib import Path
-            from utils.constants import BASE_DIR
+            from utils.constants import APP_DATA_DIR
             
-            session_path = BASE_DIR / "data" / "sessions"
+            session_path = APP_DATA_DIR / "sessions"
             # Session name format: session_{phone.replace('+', '')}
             session_name = f"session_{phone_number.replace('+', '')}"
             session_file = session_path / f"{session_name}.session"

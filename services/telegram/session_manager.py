@@ -42,9 +42,9 @@ class SessionManager:
             session_file_path = Path(client.session.filename) if hasattr(client.session, 'filename') else None
             if not session_file_path:
                 # Fallback: construct session path from phone number
-                from utils.constants import BASE_DIR
+                from utils.constants import APP_DATA_DIR
                 session_name = f"session_{phone.replace('+', '')}"
-                session_file_path = BASE_DIR / "data" / "sessions" / session_name
+                session_file_path = APP_DATA_DIR / "sessions" / session_name
             
             credential = TelegramCredential(
                 phone_number=phone,
@@ -79,9 +79,9 @@ class SessionManager:
                 session_file_path = Path(session_file_path)
             else:
                 # Fallback: construct expected path
-                from utils.constants import BASE_DIR
+                from utils.constants import APP_DATA_DIR
                 session_name = f"session_{phone_number.replace('+', '')}"
-                session_file_path = BASE_DIR / "data" / "sessions" / session_name
+                session_file_path = APP_DATA_DIR / "sessions" / session_name
                 logger.warning(f"Session path not returned from client_manager, using fallback: {session_file_path}")
             
             # Verify the session file exists

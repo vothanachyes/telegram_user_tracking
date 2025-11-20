@@ -1,9 +1,11 @@
 # Environment
 .env
+.env.deploy
 venv/
 env/
 ENV/
 .venv
+config/fbsvc-0267b58ca8.json
 
 # Python
 __pycache__/
@@ -32,6 +34,10 @@ MANIFEST
 *.manifest
 *.spec
 version_info.txt
+
+# Build protection
+.build_key
+obfuscated_temp/
 
 # Logs
 *.log

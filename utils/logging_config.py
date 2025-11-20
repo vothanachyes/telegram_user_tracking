@@ -11,7 +11,7 @@ from pathlib import Path
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 
-from utils.constants import BASE_DIR
+from utils.constants import APP_DATA_DIR
 
 
 class LevelFilter(logging.Filter):
@@ -433,7 +433,7 @@ def setup_logging(allowed_levels=None, log_file=None, separate_by_category=True)
         allowed_levels = [logging.INFO, logging.WARNING, logging.ERROR, logging.DEBUG]
 
     # Set up log directory
-    log_dir = BASE_DIR / "logs"
+    log_dir = APP_DATA_DIR / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     
     # Configure root logger

@@ -26,14 +26,13 @@ class SingleInstance:
         Initialize single instance lock.
         
         Args:
-            lock_file_path: Path to lock file. If None, uses default in data directory.
+            lock_file_path: Path to lock file. If None, uses default in user data directory.
         """
         if lock_file_path is None:
-            # Use data directory for lock file
-            base_dir = Path(__file__).resolve().parent.parent
-            data_dir = base_dir / "data"
-            data_dir.mkdir(parents=True, exist_ok=True)
-            lock_file_path = data_dir / "app.lock"
+            # Use user data directory for lock file (works in both dev and bundled executable)
+            from utils.constants import USER_DATA_DIR
+            # USER_DATA_DIR is already created in constants.py, so we can use it directly
+            lock_file_path = USER_DATA_DIR / "app.lock"
         
         self.lock_file_path = lock_file_path
         self.lock_file: Optional[object] = None

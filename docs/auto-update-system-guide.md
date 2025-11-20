@@ -125,6 +125,199 @@ After publishing, get direct download URLs:
 
 **Note**: For private repos, you may need to use GitHub API with authentication or use a different hosting method.
 
+### 6. Public Releases Repository Setup
+
+For security and separation of concerns, it's recommended to use a **separate public repository** for releases:
+
+1. **Create Public Repository**:
+   - Repository name: `telegram_user_tracking-releases` (or your preferred name)
+   - Make it **public** (so users can download without authentication)
+   - Add a simple README.md explaining it's for release binaries only
+   - No source code should be in this repository
+
+2. **Repository Structure**:
+   ```
+   telegram_user_tracking-releases/
+   ├── README.md (simple description)
+   └── (GitHub Releases only - no source code)
+   ```
+
+3. **Benefits**:
+   - Keeps source code private
+   - Public access for downloads (no GitHub token needed in production app)
+   - Clean separation between development and releases
+   - Different access controls
+
+### 7. Automated Deployment Script
+
+The deployment process can be fully automated using the `scripts/deploy_update.py` script.
+
+#### Prerequisites
+
+1. **Install Dependencies**:
+   ```bash
+   pip install requests firebase-admin
+   ```
+
+2. **Set Environment Variables**:
+   ```bash
+   # GitHub (for deployment script)
+   export GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+   export GITHUB_REPO_OWNER=your_username
+   export GITHUB_REPO_NAME=telegram_user_tracking-releases
+   
+   # GitHub Private Repo (for CI/CD - Mac only)
+   export GITHUB_PRIVATE_REPO_OWNER=your_username
+   export GITHUB_PRIVATE_REPO_NAME=telegram_user_tracking
+   export GITHUB_WORKFLOW_NAME="Build Windows Executable"  # Optional
+   
+   # Firebase (for deployment script)
+   export FIREBASE_CREDENTIALS_PATH=/path/to/firebase-credentials.json
+   ```
+
+#### Deployment Workflow (Smart Auto-Detection)
+
+The script automatically detects your platform and handles the workflow accordingly:
+
+**From Mac:**
+- Automatically triggers GitHub CI/CD for Windows build
+- Builds Mac/Linux executables locally
+- Downloads Windows artifact automatically
+- Deploys all binaries in one command
+
+**From Windows:**
+- Builds Windows executable locally
+- Deploys Windows binary only
+- Skips Mac/Linux (no paid CI/CD needed)
+
+**One-Command Deployment:**
+
+```bash
+# From Mac - automatically handles Windows CI/CD + Mac/Linux local builds
+python scripts/deploy_update.py 1.0.1 --release-notes "Bug fixes"
+
+# From Windows - automatically builds Windows locally
+python scripts/deploy_update.py 1.0.1 --release-notes "Bug fixes"
+```
+
+**What Happens Automatically (Mac):**
+
+1. Script detects Mac platform
+2. Creates git tag `v1.0.1` and pushes to private repo
+3. GitHub Actions automatically triggers Windows build (via tag push)
+4. Script waits for Windows build to complete
+5. Script downloads Windows artifact automatically
+6. Script builds Mac executable locally
+7. Script builds Linux executable locally (optional)
+8. Script calculates SHA256 checksums for all
+9. Script creates GitHub release in public repo
+10. Script uploads all binaries to release
+11. Script updates Firebase with version info
+
+**What Happens Automatically (Windows):**
+
+1. Script detects Windows platform
+2. Script builds Windows executable locally
+3. Script calculates checksum
+4. Script creates GitHub release in public repo
+5. Script uploads Windows binary to release
+6. Script updates Firebase with version info
+7. Skips Mac/Linux (not needed)
+
+#### Script Usage Examples
+
+**Full deployment (build + deploy):**
+```bash
+python scripts/deploy_update.py 1.0.1 --release-notes "Bug fixes and performance improvements"
+```
+
+**Deploy with pre-built binaries:**
+```bash
+python scripts/deploy_update.py 1.0.1 --skip-build --release-notes "Bug fixes"
+```
+
+**Build only (no deployment):**
+```bash
+python scripts/deploy_update.py 1.0.1 --skip-github --skip-firebase
+```
+
+**Deploy to GitHub only (skip Firebase):**
+```bash
+python scripts/deploy_update.py 1.0.1 --skip-firebase
+```
+
+**Deploy to Firebase only (skip GitHub):**
+```bash
+python scripts/deploy_update.py 1.0.1 --skip-github
+```
+
+#### Script Options
+
+```
+positional arguments:
+  version               Version string (e.g., 1.0.1)
+
+optional arguments:
+  --platform {windows,macos,linux}
+                        Platform to build (default: current platform)
+  --release-notes TEXT  Release notes
+  --min-version TEXT    Minimum version required to update
+  --skip-build          Skip building (use existing binaries)
+  --skip-github         Skip GitHub release
+  --skip-firebase       Skip Firebase update
+  --github-token TEXT   GitHub personal access token
+  --repo-owner TEXT     GitHub repository owner
+  --repo-name TEXT      GitHub repository name
+```
+
+#### What the Script Does
+
+1. **Builds executables** (if not `--skip-build`):
+   - Runs `scripts/build.py` for current platform
+   - Outputs to `dist/` directory
+
+2. **Finds existing binaries** (if `--skip-build`):
+   - Scans `dist/` directory for executables
+   - Detects platform based on file extension and system
+
+3. **Calculates checksums**:
+   - SHA256 checksum for each binary
+   - Displays checksum and file size
+
+4. **Creates GitHub release** (if not `--skip-github`):
+   - Creates release with tag `v{version}`
+   - Uploads all binaries to release
+   - Returns release URL
+
+5. **Updates Firebase** (if not `--skip-firebase`):
+   - Updates `app_updates/latest` document
+   - Sets download URLs, checksums, file sizes
+   - Sets `is_available=true`
+
+#### Troubleshooting Deployment
+
+**Issue: GitHub token not working**
+- Verify token has `repo` scope
+- Check token hasn't expired
+- Ensure repository name is correct
+
+**Issue: Firebase update fails**
+- Verify `FIREBASE_CREDENTIALS_PATH` is correct
+- Check Firebase credentials file exists
+- Ensure Firestore is enabled in Firebase project
+
+**Issue: Binaries not found**
+- Check `dist/` directory exists
+- Verify binaries are named correctly:
+  - Windows: `TelegramUserTracking.exe`
+  - Mac/Linux: `TelegramUserTracking`
+- Use `--skip-build` only if binaries already exist
+
+**Issue: Upload fails**
+- Check file size (GitHub has limits)
+- Verify network connection
+- Check GitHub API rate limits
+
 ## How It Works
 
 ### Update Check Flow

@@ -4,15 +4,19 @@ Page configuration utilities.
 
 import flet as ft
 import platform
+import logging
 from pathlib import Path
 from ui.theme import theme_manager
 from config.settings import settings
 from utils.constants import (
+    BASE_DIR,
     DEFAULT_WINDOW_WIDTH,
     DEFAULT_WINDOW_HEIGHT,
     MIN_WINDOW_WIDTH,
     MIN_WINDOW_HEIGHT
 )
+
+logger = logging.getLogger(__name__)
 
 
 class PageConfig:
@@ -37,30 +41,37 @@ class PageConfig:
             page.window.min_height = MIN_WINDOW_HEIGHT
             
             # Set window icon from assets/icons directory
-            project_root = Path(__file__).parent.parent.parent
             system = platform.system()
             
             if system == 'Windows':
-                icon_path = project_root / 'assets' / 'icons' / 'win' / 'icon.ico'
+                icon_path = BASE_DIR / 'assets' / 'icons' / 'win' / 'icon.ico'
                 if icon_path.exists():
                     try:
-                        page.window.icon = str(icon_path)
-                    except AttributeError:
-                        pass  # Window icon setting not available
+                        icon_path_abs = icon_path.resolve()
+                        page.window.icon = str(icon_path_abs)
+                        logger.info(f"Window icon set: {icon_path_abs}")
+                    except (AttributeError, Exception) as e:
+                        logger.warning(f"Could not set window icon: {e}")
             elif system == 'Darwin':  # macOS
-                icon_path = project_root / 'assets' / 'icons' / 'mac' / 'icon.icns'
+                icon_path = BASE_DIR / 'assets' / 'icons' / 'mac' / 'icon.icns'
                 if icon_path.exists():
                     try:
-                        page.window.icon = str(icon_path)
-                    except AttributeError:
-                        pass  # Window icon setting not available
+                        icon_path_abs = icon_path.resolve()
+                        page.window.icon = str(icon_path_abs)
+                        logger.info(f"Window icon set: {icon_path_abs}")
+                    except (AttributeError, Exception) as e:
+                        logger.warning(f"Could not set window icon: {e}")
+                else:
+                    logger.warning(f"Mac icon not found at: {icon_path.resolve()}")
             elif system == 'Linux':
-                icon_path = project_root / 'assets' / 'icons' / 'linux' / 'icon.png'
+                icon_path = BASE_DIR / 'assets' / 'icons' / 'linux' / 'icon.png'
                 if icon_path.exists():
                     try:
-                        page.window.icon = str(icon_path)
-                    except AttributeError:
-                        pass  # Window icon setting not available
+                        icon_path_abs = icon_path.resolve()
+                        page.window.icon = str(icon_path_abs)
+                        logger.info(f"Window icon set: {icon_path_abs}")
+                    except (AttributeError, Exception) as e:
+                        logger.warning(f"Could not set window icon: {e}")
         except AttributeError:
             pass
         

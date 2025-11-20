@@ -3,8 +3,10 @@ Firebase configuration and initialization.
 """
 
 import os
+import sys
 from typing import Optional
 import logging
+from pathlib import Path
 
 try:
     import firebase_admin
@@ -41,6 +43,68 @@ class FirebaseConfig:
         self.is_available = FIREBASE_AVAILABLE
         self.db: Optional[firestore.Client] = None
     
+    def _find_firebase_credentials(self, credentials_path: Optional[str] = None) -> Optional[str]:
+        """
+        Find Firebase credentials file path.
+        Handles both development (source) and production (bundled executable) scenarios.
+        
+        Args:
+            credentials_path: Explicit path provided (takes priority)
+        
+        Returns:
+            Path to credentials file or None if not found
+        """
+        # Priority 1: Explicit path provided
+        if credentials_path and os.path.exists(credentials_path):
+            return credentials_path
+        
+        # Priority 2: Environment variable
+        if FIREBASE_CREDENTIALS_PATH and os.path.exists(FIREBASE_CREDENTIALS_PATH):
+            return FIREBASE_CREDENTIALS_PATH
+        
+        # Priority 3: Check if running from PyInstaller bundle
+        if getattr(sys, 'frozen', False):
+            # Running from executable - files are in sys._MEIPASS
+            base_path = Path(sys._MEIPASS)
+            config_dir = base_path / 'config'
+            
+            # Look for any .json file in config/ (Firebase credentials)
+            json_files = list(config_dir.glob('*.json'))
+            if json_files:
+                # Prefer files with 'firebase' in name, otherwise use first .json
+                firebase_files = [f for f in json_files if 'firebase' in f.name.lower() or 'fbsvc' in f.name.lower()]
+                if firebase_files:
+                    cred_path = firebase_files[0]
+                    logger.debug(f"Found Firebase credentials in bundle: {cred_path}")
+                    return str(cred_path)
+                else:
+                    # Use first JSON file found
+                    cred_path = json_files[0]
+                    logger.debug(f"Using JSON file from bundle: {cred_path}")
+                    return str(cred_path)
+        
+        # Priority 4: Check in source code directory (development)
+        # Get the directory where this file is located
+        current_file = Path(__file__).resolve()
+        config_dir = current_file.parent
+        
+        # Look for Firebase credentials JSON files
+        json_files = list(config_dir.glob('*.json'))
+        if json_files:
+            # Prefer files with 'firebase' in name, otherwise use first .json
+            firebase_files = [f for f in json_files if 'firebase' in f.name.lower() or 'fbsvc' in f.name.lower()]
+            if firebase_files:
+                cred_path = firebase_files[0]
+                logger.debug(f"Found Firebase credentials in source: {cred_path}")
+                return str(cred_path)
+            else:
+                # Use first JSON file found
+                cred_path = json_files[0]
+                logger.debug(f"Using JSON file from source: {cred_path}")
+                return str(cred_path)
+        
+        return None
+    
     def initialize(self, credentials_path: Optional[str] = None) -> bool:
         """
         Initialize Firebase Admin SDK.
@@ -54,12 +118,21 @@ class FirebaseConfig:
             return False
         
         try:
-            # Get credentials path
-            cred_path = credentials_path or FIREBASE_CREDENTIALS_PATH
+            # Find credentials file (handles both dev and bundled executable)
+            cred_path = self._find_firebase_credentials(credentials_path)
 
             if not cred_path or not os.path.exists(cred_path):
-                logger.error(f"Firebase credentials file not found: {cred_path}")
+                logger.warning(f"Firebase credentials file not found")
+                logger.debug(f"  Searched paths:")
+                logger.debug(f"    - Explicit: {credentials_path}")
+                logger.debug(f"    - Env var: {FIREBASE_CREDENTIALS_PATH}")
+                if getattr(sys, 'frozen', False):
+                    logger.debug(f"    - Bundle: {sys._MEIPASS}/config/*.json")
+                logger.debug(f"    - Source: {Path(__file__).parent}/*.json")
+                logger.info("Firebase features will be disabled")
                 return False
+            
+            logger.info(f"Using Firebase credentials: {cred_path}")
             
             # Initialize Firebase
             cred = credentials.Certificate(cred_path)
@@ -78,7 +151,7 @@ class FirebaseConfig:
             return True
             
         except Exception as e:
-            logger.error(f"Error initializing Firebase: {e}")
+            logger.error(f"Error initializing Firebase: {e}", exc_info=True)
             return False
     
     def is_initialized(self) -> bool:
@@ -343,6 +416,65 @@ class FirebaseConfig:
         except Exception as e:
             logger.error(f"Error getting app update info: {e}", exc_info=True)
             return None
+    
+    def set_app_update_info(self, update_data: dict) -> bool:
+        """
+        Set or update app update information in Firestore.
+        
+        Args:
+            update_data: Dictionary containing update information:
+                - version: Version string (required)
+                - download_url_windows: Windows download URL (optional)
+                - download_url_macos: macOS download URL (optional)
+                - download_url_linux: Linux download URL (optional)
+                - checksum_windows: Windows SHA256 checksum (optional)
+                - checksum_macos: macOS SHA256 checksum (optional)
+                - checksum_linux: Linux SHA256 checksum (optional)
+                - file_size_windows: Windows file size in bytes (optional)
+                - file_size_macos: macOS file size in bytes (optional)
+                - file_size_linux: Linux file size in bytes (optional)
+                - release_date: ISO format date string (optional)
+                - is_available: Boolean (optional, default True)
+                - release_notes: Release notes string (optional)
+                - min_version_required: Minimum version required (optional)
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self._initialized:
+            logger.error("Firebase not initialized")
+            return False
+        
+        if not self.db:
+            logger.error("Firestore database not available")
+            return False
+        
+        try:
+            from utils.constants import FIREBASE_APP_UPDATES_COLLECTION, FIREBASE_APP_UPDATES_DOCUMENT
+            
+            # Validate required fields
+            if 'version' not in update_data:
+                logger.error("Version is required in update_data")
+                return False
+            
+            # Set defaults
+            if 'is_available' not in update_data:
+                update_data['is_available'] = True
+            
+            if 'release_date' not in update_data:
+                from datetime import datetime
+                update_data['release_date'] = datetime.utcnow().isoformat() + "Z"
+            
+            # Update Firestore document
+            doc_ref = self.db.collection(FIREBASE_APP_UPDATES_COLLECTION).document(FIREBASE_APP_UPDATES_DOCUMENT)
+            doc_ref.set(update_data, merge=True)
+            
+            logger.info(f"App update info set: version={update_data.get('version')}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting app update info: {e}", exc_info=True)
+            return False
 
 
 # Global Firebase config instance

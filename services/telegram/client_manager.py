@@ -24,28 +24,54 @@ logger = logging.getLogger(__name__)
 
 
 def _setup_telethon_logging():
-    """Configure Telethon's internal logging for useful output (not encrypted payloads)."""
+    """
+    Configure Telethon's internal logging for useful output (not encrypted payloads).
+    
+    Automatically adjusts log levels based on production mode:
+    - Production: WARNING level (filters verbose network/encryption logs)
+    - Development: INFO/DEBUG levels (useful for debugging)
+    """
     if TELETHON_AVAILABLE:
-        # Set main Telethon logger to INFO to see high-level operations
-        telethon_logger = logging.getLogger('telethon')
-        telethon_logger.setLevel(logging.INFO)
+        import sys
         
-        # Keep client-level logging at DEBUG for useful info
-        logging.getLogger('telethon.client').setLevel(logging.DEBUG)
+        # Detect production mode (PyInstaller bundle)
+        is_production = getattr(sys, 'frozen', False)
         
-        # Set network layer to INFO to avoid encrypted payload spam
-        # These loggers produce too much noise with encryption details
-        logging.getLogger('telethon.network').setLevel(logging.INFO)
-        logging.getLogger('telethon.network.mtprotosender').setLevel(logging.INFO)
-        logging.getLogger('telethon.extensions.messagepacker').setLevel(logging.INFO)
+        if is_production:
+            # Production: Set all Telethon loggers to WARNING to filter verbose logs
+            telethon_logger = logging.getLogger('telethon')
+            telethon_logger.setLevel(logging.WARNING)
+            
+            # Set all Telethon sub-loggers to WARNING
+            logging.getLogger('telethon.client').setLevel(logging.WARNING)
+            logging.getLogger('telethon.network').setLevel(logging.WARNING)
+            logging.getLogger('telethon.network.mtprotosender').setLevel(logging.WARNING)
+            logging.getLogger('telethon.extensions.messagepacker').setLevel(logging.WARNING)
+            logging.getLogger('telethon.sessions').setLevel(logging.WARNING)
+            logging.getLogger('telethon.network.connection').setLevel(logging.WARNING)
+        else:
+            # Development: Keep useful INFO/DEBUG levels
+            # Set main Telethon logger to INFO to see high-level operations
+            telethon_logger = logging.getLogger('telethon')
+            telethon_logger.setLevel(logging.INFO)
+            
+            # Keep client-level logging at DEBUG for useful info
+            logging.getLogger('telethon.client').setLevel(logging.DEBUG)
+            
+            # Set network layer to INFO to avoid encrypted payload spam
+            # These loggers produce too much noise with encryption details
+            logging.getLogger('telethon.network').setLevel(logging.INFO)
+            logging.getLogger('telethon.network.mtprotosender').setLevel(logging.INFO)
+            logging.getLogger('telethon.extensions.messagepacker').setLevel(logging.INFO)
+            
+            # Sessions can be DEBUG for useful session info
+            logging.getLogger('telethon.sessions').setLevel(logging.DEBUG)
+            
+            # Keep connection info at INFO level
+            logging.getLogger('telethon.network.connection').setLevel(logging.INFO)
         
-        # Sessions can be DEBUG for useful session info
-        logging.getLogger('telethon.sessions').setLevel(logging.DEBUG)
-        
-        # Keep connection info at INFO level
-        logging.getLogger('telethon.network.connection').setLevel(logging.INFO)
-        
-        logger.debug("Telethon logging configured (network encryption logs filtered)")
+        if not is_production:
+            logger.debug("Telethon logging configured (network encryption logs filtered)")
 
 
 class ClientManager:

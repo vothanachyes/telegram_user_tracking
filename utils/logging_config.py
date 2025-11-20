@@ -421,16 +421,29 @@ def setup_logging(allowed_levels=None, log_file=None, separate_by_category=True)
     """
     Setup logging configuration with category separation and custom level filtering.
     
+    Automatically detects production mode (bundled executable) and adjusts log levels:
+    - Production: WARNING and ERROR only (best practice)
+    - Development: INFO, WARNING, ERROR, DEBUG
+    
     Args:
         allowed_levels: List of logging levels to show. 
-                       Defaults to [INFO, WARNING, ERROR, DEBUG]
+                       If None, auto-detects based on production mode.
         log_file: Path to log file (deprecated, kept for backward compatibility).
                  If separate_by_category is True, this is ignored.
         separate_by_category: If True, separate logs into category-specific files.
                              Defaults to True.
     """
+    # Detect production mode (PyInstaller bundle)
+    is_production = getattr(sys, 'frozen', False)
+    
+    # Set default log levels based on mode
     if allowed_levels is None:
-        allowed_levels = [logging.INFO, logging.WARNING, logging.ERROR, logging.DEBUG]
+        if is_production:
+            # Production: Only WARNING and ERROR (best practice)
+            allowed_levels = [logging.WARNING, logging.ERROR]
+        else:
+            # Development: All levels
+            allowed_levels = [logging.INFO, logging.WARNING, logging.ERROR, logging.DEBUG]
 
     # Set up log directory
     log_dir = APP_DATA_DIR / "logs"
@@ -460,9 +473,10 @@ def setup_logging(allowed_levels=None, log_file=None, separate_by_category=True)
             
             root_logger.addHandler(handler)
         
-        # Create colored console handler (shows all logs)
-        console_handler = ColoredConsoleHandler(allowed_levels=allowed_levels)
-        root_logger.addHandler(console_handler)
+        # Create colored console handler (only in development)
+        if not is_production:
+            console_handler = ColoredConsoleHandler(allowed_levels=allowed_levels)
+            root_logger.addHandler(console_handler)
     else:
         # Backward compatibility: single log file
         if log_file is None:
@@ -479,8 +493,10 @@ def setup_logging(allowed_levels=None, log_file=None, separate_by_category=True)
         )
         file_handler.setFormatter(file_formatter)
         
-        console_handler = ColoredConsoleHandler(allowed_levels=allowed_levels)
+        # Create console handler (only in development)
+        if not is_production:
+            console_handler = ColoredConsoleHandler(allowed_levels=allowed_levels)
+            root_logger.addHandler(console_handler)
         
         root_logger.addHandler(file_handler)
-        root_logger.addHandler(console_handler)
 

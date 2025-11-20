@@ -3,6 +3,7 @@ Application constants and configuration.
 """
 
 import os
+import sys
 import platform
 from pathlib import Path
 from dotenv import load_dotenv
@@ -38,6 +39,35 @@ def get_user_data_dir() -> Path:
 # Get secure user data directory and ensure it exists
 USER_DATA_DIR = get_user_data_dir()
 USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+def get_app_data_dir() -> Path:
+    """
+    Get application data directory (for logs, sessions, etc.).
+    
+    Priority:
+    1. If running from PyInstaller bundle (production) → use USER_DATA_DIR
+    2. If APP_DATA_DIR env var is set → use that
+    3. Otherwise (development) → use BASE_DIR (project root)
+    
+    Returns:
+        Path to application data directory
+    """
+    # Check if running from PyInstaller bundle (production)
+    if getattr(sys, 'frozen', False):
+        # Production: use user data directory
+        return USER_DATA_DIR
+    
+    # Development: check environment variable
+    app_data_dir = os.getenv("APP_DATA_DIR", "").strip()
+    if app_data_dir:
+        # Use custom directory from env var
+        return Path(app_data_dir)
+    
+    # Default: use project root (current development behavior)
+    return BASE_DIR
+
+# Application data directory (for logs, sessions, etc.)
+APP_DATA_DIR = get_app_data_dir()
 
 # Database path: Use env var if set (for development), otherwise use secure directory
 DATABASE_PATH = os.getenv("DATABASE_PATH", str(USER_DATA_DIR / "app.db"))

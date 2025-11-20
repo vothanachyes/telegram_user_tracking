@@ -27,6 +27,7 @@ python-pam>=2.0.0; sys_platform == "linux"
 
 # Build
 pyinstaller>=6.1.0
+pyarmor>=8.5.0  # Code obfuscation and protection
 
 # Testing
 pytest>=7.0.0

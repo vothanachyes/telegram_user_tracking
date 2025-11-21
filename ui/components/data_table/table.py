@@ -154,11 +154,25 @@ class DataTable(ft.Container):
         total_pages = (total_rows + self.page_size - 1) // self.page_size if total_rows > 0 else 0
         self.pagination.update(self.current_page, total_pages, total_rows)
         
-        # Only update if control has been added to a page
+        # Update only the table body container and pagination controls, not the entire table container
+        # This prevents the search field (which is outside the table) from being reset
         try:
-            self.update()
+            # Update the table body container directly - this is the minimal update needed
+            self.table_body_container.update()
+            # Update pagination controls individually
+            self.pagination.page_info.update()
+            self.pagination.prev_button.update()
+            self.pagination.next_button.update()
         except (AssertionError, AttributeError):
-            pass
+            # Fallback to updating scrollable body if table body update fails
+            try:
+                self.scrollable_body.update()
+            except (AssertionError, AttributeError):
+                # Final fallback to full update if partial updates fail
+                try:
+                    self.update()
+                except (AssertionError, AttributeError):
+                    pass
     
     def _on_row_click(self, row_index: int):
         """Handle row click."""
@@ -189,9 +203,23 @@ class DataTable(ft.Container):
     
     def _on_search(self, e):
         """Handle search input."""
+        # Preserve the current search field value before updating
+        current_value = e.control.value if e.control.value else ""
+        
+        # Update filtering state
         self.filtering._on_search(e)
         self.current_page = 0
+        
+        # Update table
         self._update_table()
+        
+        # Ensure search field value is preserved after update
+        if self.search_field and self.search_field.value != current_value:
+            self.search_field.value = current_value
+            try:
+                self.search_field.update()
+            except (AssertionError, AttributeError):
+                pass
     
     def update_filter_state(self, has_filters: bool):
         """Update the visibility of the clear filter button."""

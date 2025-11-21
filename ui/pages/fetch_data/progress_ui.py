@@ -137,18 +137,27 @@ class ProgressUI:
     async def update_cards_animated(self, message, user, error):
         """Update cards with animation - smoother with right card appearing during center saving."""
         try:
+            # Safety check: ensure cards are initialized
+            # This can happen if update is called before set_page() or during navigation
+            if not self.left_card or not self.center_card or not self.right_card:
+                logger.debug("Message cards not yet initialized, skipping update")
+                return
+            
             # Check message status if message exists
+            # Note: Since the fetcher already skips existing messages before processing,
+            # any message that reaches here is new. However, it may have been saved
+            # by the time we check, so we check if it existed BEFORE this fetch started.
+            # For simplicity, we assume messages are new during fetch (fetcher handles skipping).
             is_existing = False
             is_deleted = False
             if message and self.db_manager:
-                is_existing = self.db_manager.message_exists(
-                    message.message_id,
-                    message.group_id
-                )
+                # Only check if deleted, not if existing (fetcher already handles that)
                 is_deleted = self.db_manager.is_message_deleted(
                     message.message_id,
                     message.group_id
                 )
+                # Messages received during fetch are new (fetcher skips existing ones)
+                # So we don't need to check message_exists() here
             
             # After add_message, queue is: [previous_left, previous_center, new_message]
             # We want to show: left=previous_center, center=new_message, right=empty

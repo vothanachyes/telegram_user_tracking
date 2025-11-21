@@ -41,6 +41,10 @@ class AddAccountDialog(ft.AlertDialog):
         self._qr_cancelled = False
         self._qr_token = None
         
+        # Async task tracking for proper cleanup
+        self._auth_task: Optional[asyncio.Task] = None
+        self._is_closing = False
+        
         # OTP and password event handling
         self._otp_event: Optional[threading.Event] = None
         self._otp_value_container: Optional[dict] = None
@@ -250,20 +254,35 @@ class AddAccountDialog(ft.AlertDialog):
             self._show_error("Please configure API credentials first in Settings > Configuration")
             return
         
+        # Cancel any existing auth task
+        if self._auth_task and not self._auth_task.done():
+            self._auth_task.cancel()
+        
         # Start QR code authentication flow
         if self.page and hasattr(self.page, 'run_task'):
-            self.page.run_task(
+            # Use run_task which should handle coroutine wrapping
+            self._auth_task = self.page.run_task(
                 self._authenticate_telegram_qr,
                 app_settings.telegram_api_id,
                 app_settings.telegram_api_hash
             )
         else:
-            asyncio.create_task(
-                self._authenticate_telegram_qr(
-                    app_settings.telegram_api_id,
-                    app_settings.telegram_api_hash
+            # Fallback: create task directly
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                self._auth_task = loop.create_task(
+                    self._authenticate_telegram_qr(
+                        app_settings.telegram_api_id,
+                        app_settings.telegram_api_hash
+                    )
                 )
-            )
+            else:
+                self._auth_task = asyncio.create_task(
+                    self._authenticate_telegram_qr(
+                        app_settings.telegram_api_id,
+                        app_settings.telegram_api_hash
+                    )
+                )
     
     def _handle_phone_submit(self):
         """Handle phone number submission."""
@@ -294,22 +313,38 @@ class AddAccountDialog(ft.AlertDialog):
         self.current_phone = phone
         self.submitted_phone = phone
         
+        # Cancel any existing auth task
+        if self._auth_task and not self._auth_task.done():
+            self._auth_task.cancel()
+        
         # Start authentication flow
         if self.page and hasattr(self.page, 'run_task'):
-            self.page.run_task(
+            # Use run_task which should handle coroutine wrapping
+            self._auth_task = self.page.run_task(
                 self._authenticate_telegram,
                 phone,
                 app_settings.telegram_api_id,
                 app_settings.telegram_api_hash
             )
         else:
-            asyncio.create_task(
-                self._authenticate_telegram(
-                    phone,
-                    app_settings.telegram_api_id,
-                    app_settings.telegram_api_hash
+            # Fallback: create task directly
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                self._auth_task = loop.create_task(
+                    self._authenticate_telegram(
+                        phone,
+                        app_settings.telegram_api_id,
+                        app_settings.telegram_api_hash
+                    )
                 )
-            )
+            else:
+                self._auth_task = asyncio.create_task(
+                    self._authenticate_telegram(
+                        phone,
+                        app_settings.telegram_api_id,
+                        app_settings.telegram_api_hash
+                    )
+                )
     
     def _handle_otp_submit(self, e):
         """Handle OTP submission."""
@@ -424,6 +459,10 @@ class AddAccountDialog(ft.AlertDialog):
     async def _authenticate_telegram(self, phone: str, api_id: str, api_hash: str):
         """Authenticate Telegram account with OTP and 2FA support."""
         try:
+            # Check if already cancelled
+            if self._is_closing:
+                return
+            
             # Show loading state
             self._show_loading(theme_manager.t("sending_otp") or "Sending OTP code...")
             
@@ -507,24 +546,49 @@ class AddAccountDialog(ft.AlertDialog):
                 password_callback=get_2fa_password
             )
             
+            # Check if cancelled before proceeding
+            if self._is_closing:
+                return
+            
             if success:
                 # Account saved automatically by telegram_service.start_session
                 # (save_telegram_credential handles duplicates with ON CONFLICT UPDATE)
                 logger.info(f"Account {phone} authenticated and saved successfully")
                 
                 # Close dialog
-                self.open = False
-                if self.page:
-                    self.page.update()
-                
-                # Call success callback
-                if self.on_success_callback:
-                    self.on_success_callback(phone)
+                if not self._is_closing:
+                    self.open = False
+                    if self.page:
+                        self.page.update()
+                    
+                    # Call success callback
+                    if self.on_success_callback:
+                        self.on_success_callback(phone)
             else:
                 # Show error and allow retry
-                error_msg = error or theme_manager.t("authentication_failed") or "Authentication failed. Please try again."
-                self._show_error(error_msg)
-                # Reset to phone input for retry
+                if not self._is_closing:
+                    error_msg = error or theme_manager.t("authentication_failed") or "Authentication failed. Please try again."
+                    self._show_error(error_msg)
+                    # Reset to phone input for retry
+                    self.state = "phone_input"
+                    self.phone_field.visible = True
+                    self.otp_field.visible = False
+                    self.otp_helper.visible = False
+                    self.password_field.visible = False
+                    self.password_helper.visible = False
+                    self.submit_btn.text = theme_manager.t("add_account") or "Add Account"
+                    self.submit_btn.icon = ft.Icons.ADD
+                    self.title.value = theme_manager.t("add_account") or "Add Account"
+                
+        except asyncio.CancelledError:
+            # Task was cancelled, clean up
+            logger.info("Phone authentication cancelled")
+            raise  # Re-raise to properly handle cancellation
+        except Exception as e:
+            logger.error(f"Error authenticating Telegram account: {e}", exc_info=True)
+            if not self._is_closing:
+                self._show_error(f"Error: {str(e)}")
+                # Reset to phone input
                 self.state = "phone_input"
                 self.phone_field.visible = True
                 self.otp_field.visible = False
@@ -534,27 +598,21 @@ class AddAccountDialog(ft.AlertDialog):
                 self.submit_btn.text = theme_manager.t("add_account") or "Add Account"
                 self.submit_btn.icon = ft.Icons.ADD
                 self.title.value = theme_manager.t("add_account") or "Add Account"
-                
-        except Exception as e:
-            logger.error(f"Error authenticating Telegram account: {e}", exc_info=True)
-            self._show_error(f"Error: {str(e)}")
-            # Reset to phone input
-            self.state = "phone_input"
-            self.phone_field.visible = True
-            self.otp_field.visible = False
-            self.otp_helper.visible = False
-            self.password_field.visible = False
-            self.password_helper.visible = False
-            self.submit_btn.text = theme_manager.t("add_account") or "Add Account"
-            self.submit_btn.icon = ft.Icons.ADD
-            self.title.value = theme_manager.t("add_account") or "Add Account"
     
     async def _authenticate_telegram_qr(self, api_id: str, api_hash: str):
         """Authenticate Telegram account via QR code."""
         try:
+            # Check if already cancelled
+            if self._is_closing or self._qr_cancelled:
+                return
+            
             self._show_loading(theme_manager.t("generating_qr_code") or "Generating QR code...")
             self._qr_cancelled = False
             self._qr_token = None
+            
+            # Check again after UI update
+            if self._is_closing:
+                return
             
             # Create QR code dialog
             self._qr_dialog = QRCodeDialog(
@@ -565,32 +623,49 @@ class AddAccountDialog(ft.AlertDialog):
             self._qr_dialog.page = self.page
             
             # Open QR dialog
-            if self.page:
+            if self.page and not self._is_closing:
                 try:
                     self.page.open(self._qr_dialog)
                 except Exception:
-                    self.page.dialog = self._qr_dialog
-                    self._qr_dialog.open = True
-                    self.page.update()
+                    if not self._is_closing:
+                        self.page.dialog = self._qr_dialog
+                        self._qr_dialog.open = True
+                        self.page.update()
             
             await asyncio.sleep(0.1)
             
+            # Check cancellation after sleep
+            if self._is_closing or self._qr_cancelled:
+                return
+            
             def qr_callback(token: str):
                 """Callback to update QR code in dialog."""
-                if self._qr_dialog and not self._qr_cancelled:
-                    self._qr_dialog.refresh_qr_code(token)
-                    self._qr_token = token
+                if not self._is_closing and self._qr_dialog and not self._qr_cancelled:
+                    try:
+                        self._qr_dialog.refresh_qr_code(token)
+                        self._qr_token = token
+                    except Exception:
+                        pass  # Dialog may be closed
             
             def status_callback(status: str):
                 """Callback to update status in dialog."""
-                if self._qr_dialog and not self._qr_cancelled:
-                    is_success = "success" in status.lower() or "successful" in status.lower()
-                    self._qr_dialog.update_status(status, is_success=is_success)
+                if not self._is_closing and self._qr_dialog and not self._qr_cancelled:
+                    try:
+                        is_success = "success" in status.lower() or "successful" in status.lower()
+                        self._qr_dialog.update_status(status, is_success=is_success)
+                    except Exception:
+                        pass  # Dialog may be closed
             
             async def password_callback() -> str:
                 """Callback to get 2FA password."""
+                if self._is_closing:
+                    return ""
+                
                 if self._qr_dialog:
-                    self._qr_dialog.update_status("Two-factor authentication required. Please enter your password.", is_error=False)
+                    try:
+                        self._qr_dialog.update_status("Two-factor authentication required. Please enter your password.", is_error=False)
+                    except Exception:
+                        pass  # Dialog may be closed
                 
                 # Show password input in main dialog
                 password_event = threading.Event()
@@ -599,7 +674,8 @@ class AddAccountDialog(ft.AlertDialog):
                 self._password_value_container = password_value_container
                 
                 # Transition to password input
-                self._transition_to_password()
+                if not self._is_closing:
+                    self._transition_to_password()
                 
                 # Wait for password (async)
                 def _wait_for_password_blocking() -> str:
@@ -609,11 +685,16 @@ class AddAccountDialog(ft.AlertDialog):
                     start_time = time.time()
                     
                     while time.time() - start_time < timeout:
+                        if self._is_closing or self._qr_cancelled:
+                            return ""
                         if password_event.is_set():
                             value = password_value_container["value"]
                             return value or ""
                         time.sleep(0.1)
                     
+                    return ""
+                
+                if self._is_closing:
                     return ""
                 
                 loop = asyncio.get_event_loop()
@@ -625,17 +706,33 @@ class AddAccountDialog(ft.AlertDialog):
                 return self._qr_cancelled
             
             # Start QR session
-            success, error, phone_number = await self.telegram_service.start_session_qr(
-                api_id=api_id,
-                api_hash=api_hash,
-                qr_callback=qr_callback,
-                status_callback=status_callback,
-                password_callback=password_callback,
-                cancelled_callback=cancelled_callback
-            )
+            try:
+                success, error, phone_number = await self.telegram_service.start_session_qr(
+                    api_id=api_id,
+                    api_hash=api_hash,
+                    qr_callback=qr_callback,
+                    status_callback=status_callback,
+                    password_callback=password_callback,
+                    cancelled_callback=cancelled_callback
+                )
+            except asyncio.CancelledError:
+                # Task was cancelled, clean up and return
+                logger.info("QR authentication task cancelled")
+                if self._qr_dialog and self.page and not self._is_closing:
+                    try:
+                        if hasattr(self.page, 'close'):
+                            self.page.close(self._qr_dialog)
+                        else:
+                            self._qr_dialog.open = False
+                            if self.page.dialog == self._qr_dialog:
+                                self.page.dialog = None
+                            self.page.update()
+                    except Exception:
+                        pass
+                raise  # Re-raise to properly handle cancellation
             
             # Close QR dialog
-            if self._qr_dialog and self.page:
+            if self._qr_dialog and self.page and not self._is_closing:
                 try:
                     if hasattr(self.page, 'close'):
                         self.page.close(self._qr_dialog)
@@ -647,39 +744,61 @@ class AddAccountDialog(ft.AlertDialog):
                 except Exception:
                     pass
             
+            # Check if cancelled before proceeding
+            if self._is_closing or self._qr_cancelled:
+                return
+            
             if success:
                 # Account saved automatically by telegram_service.start_session_qr
                 logger.info(f"Account {phone_number} authenticated via QR code and saved successfully")
                 self.submitted_phone = phone_number
                 
                 # Close dialog
-                self.open = False
-                if self.page:
-                    self.page.update()
-                
-                # Call success callback
-                if self.on_success_callback:
-                    self.on_success_callback(phone_number)
+                if not self._is_closing:
+                    self.open = False
+                    if self.page:
+                        self.page.update()
+                    
+                    # Call success callback
+                    if self.on_success_callback:
+                        self.on_success_callback(phone_number)
             else:
                 # Show error and allow retry
-                error_msg = error or theme_manager.t("authentication_failed") or "Authentication failed. Please try again."
-                self._show_error(error_msg)
+                if not self._is_closing:
+                    error_msg = error or theme_manager.t("authentication_failed") or "Authentication failed. Please try again."
+                    self._show_error(error_msg)
+                    # Reset to method selection
+                    self.state = "method_selection"
+                    self.phone_field.visible = (self.login_method == "phone")
+                    self.submit_btn.text = theme_manager.t("add_account") or "Add Account"
+                    self.submit_btn.icon = ft.Icons.ADD
+                    self.title.value = theme_manager.t("add_account") or "Add Account"
+                
+        except asyncio.CancelledError:
+            # Task was cancelled, clean up
+            logger.info("QR authentication cancelled")
+            if self._qr_dialog and self.page and not self._is_closing:
+                try:
+                    if hasattr(self.page, 'close'):
+                        self.page.close(self._qr_dialog)
+                    else:
+                        self._qr_dialog.open = False
+                        if self.page.dialog == self._qr_dialog:
+                            self.page.dialog = None
+                        self.page.update()
+                except Exception:
+                    pass
+            raise  # Re-raise to properly handle cancellation
+        except Exception as e:
+            logger.error(f"Error authenticating Telegram account via QR: {e}", exc_info=True)
+            if not self._is_closing:
+                self._show_error(f"Error: {str(e)}")
                 # Reset to method selection
                 self.state = "method_selection"
                 self.phone_field.visible = (self.login_method == "phone")
                 self.submit_btn.text = theme_manager.t("add_account") or "Add Account"
                 self.submit_btn.icon = ft.Icons.ADD
                 self.title.value = theme_manager.t("add_account") or "Add Account"
-                
-        except Exception as e:
-            logger.error(f"Error authenticating Telegram account via QR: {e}", exc_info=True)
-            self._show_error(f"Error: {str(e)}")
-            # Reset to method selection
-            self.state = "method_selection"
-            self.phone_field.visible = (self.login_method == "phone")
-            self.submit_btn.text = theme_manager.t("add_account") or "Add Account"
-            self.submit_btn.icon = ft.Icons.ADD
-            self.title.value = theme_manager.t("add_account") or "Add Account"
     
     def _on_qr_dialog_cancel(self):
         """Handle QR dialog cancellation."""
@@ -691,6 +810,27 @@ class AddAccountDialog(ft.AlertDialog):
     
     def _handle_cancel(self, e):
         """Handle cancel button click."""
+        # Mark as closing to prevent further UI updates
+        self._is_closing = True
+        self._qr_cancelled = True
+        
+        # Cancel any running auth task
+        if self._auth_task and not self._auth_task.done():
+            self._auth_task.cancel()
+        
+        # Close QR dialog if open
+        if self._qr_dialog and self.page:
+            try:
+                if hasattr(self.page, 'close'):
+                    self.page.close(self._qr_dialog)
+                else:
+                    self._qr_dialog.open = False
+                    if self.page.dialog == self._qr_dialog:
+                        self.page.dialog = None
+                    self.page.update()
+            except Exception:
+                pass
+        
         self.submitted_phone = None
         self.current_phone = None
         self.open = False

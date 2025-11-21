@@ -374,7 +374,27 @@ class MessageCard(ft.Container):
             self.is_deleted = False
         
         self.content = self._build_content()
-        self.update()
+        
+        # Only update if control is attached to the page
+        # In Flet, update() can only be called after control is added to page
+        # Check if control has a parent (is in the page hierarchy)
+        is_attached = hasattr(self, 'parent') and self.parent is not None
+        
+        if is_attached:
+            try:
+                self.update()
+            except (AssertionError, AttributeError, RuntimeError) as e:
+                # Control might have been removed from page (e.g., during navigation)
+                # This is expected when navigating away and back
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.debug(f"MessageCard update skipped (control not attached): {e}")
+            except Exception as e:
+                # Other errors - log but don't crash
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.debug(f"Error updating MessageCard: {e}")
+        # If not attached, skip update - it will update when added to page via get_cards_row()
         
         # Start timer if deleted
         if self.is_deleted and self.on_undelete:

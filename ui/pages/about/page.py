@@ -2,6 +2,7 @@
 Main about page orchestration.
 """
 
+import os
 import flet as ft
 from database.db_manager import DatabaseManager
 from services.license_service import LicenseService
@@ -22,9 +23,13 @@ class AboutPage:
         self.about_tab_component = AboutTab(self.license_service)
         self.pricing_tab_component = PricingTab(self.license_service)
         
+        # Check if pricing tab should be enabled (default: disabled)
+        self.pricing_tab_enabled = os.getenv("PRICING_TAB_ENABLED", "").lower() in ("true", "1", "yes")
+        
         # Create tabs
         self.tabs = ft.Tabs(
             selected_index=0,
+            on_change=self._on_tab_change,
             tabs=[
                 ft.Tab(
                     text=theme_manager.t("about"),
@@ -76,8 +81,17 @@ class AboutPage:
         update_button(tab_content)
         return tab_content
     
+    def _on_tab_change(self, e):
+        """Handle tab change - prevent switching to pricing tab if disabled."""
+        # If trying to switch to pricing tab (index 1) and it's disabled, revert to about tab
+        if e.control.selected_index == 1 and not self.pricing_tab_enabled:
+            e.control.selected_index = 0
+            self.page.update()
+    
     def _switch_to_pricing_tab(self):
         """Switch to pricing tab."""
-        self.tabs.selected_index = 1
-        self.page.update()
+        # Check if pricing tab is enabled before switching
+        if self.pricing_tab_enabled and len(self.tabs.tabs) > 1:
+            self.tabs.selected_index = 1
+            self.page.update()
 

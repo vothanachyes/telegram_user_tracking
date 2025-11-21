@@ -1,13 +1,13 @@
 """
 Build script for creating executable with PyInstaller.
-Includes code protection: PyArmor obfuscation, bytecode encryption, and source file removal.
+Includes code protection: PyArmor obfuscation and source file removal.
+Note: Bytecode encryption (--key) was removed in PyInstaller v6.0+
 """
 import os
 import sys
 import platform
 import subprocess
 import shutil
-import secrets
 from pathlib import Path
 
 # Get project root (parent of scripts/ directory)
@@ -15,26 +15,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Code protection settings
 USE_PYARMOR = True  # Set to False to disable PyArmor obfuscation
-USE_BYTECODE_ENCRYPTION = True  # PyInstaller --key option (works with or without PyArmor)
+USE_BYTECODE_ENCRYPTION = False  # DISABLED: PyInstaller removed --key option in v6.0+
 REMOVE_SOURCE_FILES = True  # Remove .py files after build
 
-# Generate or load encryption key for PyInstaller
-ENCRYPTION_KEY_FILE = PROJECT_ROOT / '.build_key'
+# Obfuscation temporary directory
 OBFUSCATED_DIR = PROJECT_ROOT / 'obfuscated_temp'
-
-
-def get_or_create_encryption_key() -> str:
-    """Get existing encryption key or create a new one."""
-    if ENCRYPTION_KEY_FILE.exists():
-        with open(ENCRYPTION_KEY_FILE, 'r') as f:
-            return f.read().strip()
-    else:
-        # Generate a 16-byte hex key
-        key = secrets.token_hex(16)
-        with open(ENCRYPTION_KEY_FILE, 'w') as f:
-            f.write(key)
-        print(f"Generated new encryption key: {ENCRYPTION_KEY_FILE}")
-        return key
 
 
 def obfuscate_code() -> bool:
@@ -192,11 +177,11 @@ def build_executable():
         '--noconfirm',  # Skip confirmation prompts
     ]
     
-    # Add bytecode encryption (Option 2)
+    # Bytecode encryption removed: PyInstaller v6.0+ no longer supports --key option
+    # Use PyArmor obfuscation instead for code protection
     if USE_BYTECODE_ENCRYPTION:
-        encryption_key = get_or_create_encryption_key()
-        cmd.extend(['--key', encryption_key])
-        print(f"  Using bytecode encryption (key from: {ENCRYPTION_KEY_FILE.name})")
+        print("  ⚠️  Bytecode encryption is disabled (not supported in PyInstaller v6.0+)")
+        print("     Use PyArmor obfuscation for code protection instead")
     
     # Use obfuscated main.py or original
     cmd.append(str(main_file))
@@ -249,16 +234,15 @@ def build_executable():
     if (PROJECT_ROOT / 'assets').exists():
         data_files.append('--add-data=assets:assets')
     
-    # Check for Firebase credentials JSON files in config/
+    # Note: Firebase credentials are NO LONGER bundled (security improvement)
+    # Desktop app uses REST API with ID tokens - no Admin SDK credentials needed
     config_dir = PROJECT_ROOT / 'config'
     firebase_creds = list(config_dir.glob('*.json'))
     if firebase_creds:
-        print(f"\nFound Firebase credentials file(s):")
+        print(f"\n⚠️  Found Firebase credentials file(s) in config/ (will be EXCLUDED from build):")
         for cred_file in firebase_creds:
-            print(f"  - {cred_file.name}")
-    else:
-        print("\n⚠️  No Firebase credentials JSON file found in config/")
-        print("   Firebase features may not work in production")
+            print(f"  - {cred_file.name} (excluded for security)")
+        print("   Desktop app uses REST API - credentials only needed for deployment scripts")
     
     cmd.extend(data_files)
     
@@ -324,6 +308,22 @@ def build_executable():
                     except Exception as e:
                         print(f"  Warning: Could not remove {py_file}: {e}")
                 print(f"  ✅ Removed {removed_count} source files")
+                
+                # Remove Firebase credentials JSON files (security - no Admin SDK in desktop app)
+                config_dir = resources_dir / 'config'
+                if config_dir.exists():
+                    creds_removed = 0
+                    for cred_file in config_dir.glob('*.json'):
+                        # Check if it's a Firebase credentials file
+                        if 'firebase' in cred_file.name.lower() or 'fbsvc' in cred_file.name.lower():
+                            try:
+                                cred_file.unlink()
+                                creds_removed += 1
+                                print(f"  ✅ Removed Firebase credentials: {cred_file.name}")
+                            except Exception as e:
+                                print(f"  Warning: Could not remove {cred_file}: {e}")
+                    if creds_removed > 0:
+                        print(f"  ✅ Removed {creds_removed} Firebase credential file(s) (security improvement)")
             else:
                 print(f"  ⚠️  Resources directory not found: {resources_dir}")
         
@@ -344,9 +344,9 @@ def build_executable():
             print("  ⚠️  PyArmor obfuscation: DISABLED or FAILED")
         
         if USE_BYTECODE_ENCRYPTION:
-            print("  ✅ Bytecode encryption: ENABLED")
+            print("  ⚠️  Bytecode encryption: NOT SUPPORTED (PyInstaller v6.0+)")
         else:
-            print("  ⚠️  Bytecode encryption: DISABLED")
+            print("  ⚠️  Bytecode encryption: DISABLED (not supported in PyInstaller v6.0+)")
         
         if REMOVE_SOURCE_FILES:
             print("  ✅ Source file removal: ENABLED")

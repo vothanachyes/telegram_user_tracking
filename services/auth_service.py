@@ -116,27 +116,30 @@ class AuthService:
                     return False, error
                 id_token = token
             
-            if not firebase_config.is_initialized():
-                return False, "Firebase not initialized"
+            # Initialize Firebase with ID token (no Admin SDK needed)
+            if not firebase_config.initialize(id_token):
+                return False, "Failed to initialize Firebase"
             
-            # Verify the ID token
+            # Verify and decode the ID token
             decoded_token = firebase_config.verify_token(id_token)
             if not decoded_token:
                 return False, "Invalid authentication token"
             
-            uid = decoded_token['uid']
+            # Extract UID from token (Firebase uses 'user_id' in REST API tokens)
+            uid = decoded_token.get('user_id') or decoded_token.get('uid')
+            if not uid:
+                return False, "Could not extract user ID from token"
             
-            # Get user info
-            user_info = firebase_config.get_user(uid)
+            # Get user info from token (no Admin SDK needed)
+            user_info = firebase_config.get_user(uid, id_token)
             if not user_info:
                 return False, "User not found"
             
-            # Check if user is disabled
-            if user_info.get('disabled', False):
-                return False, "User account is disabled"
+            # Note: Can't check if user is disabled without Admin SDK
+            # This would need to be handled server-side or via custom claims
             
             # Implement single-device enforcement
-            # Get current device ID from custom claims
+            # Get current device ID from custom claims (if set by admin)
             current_device = decoded_token.get('device_id')
             
             if current_device and current_device != self.device_id:
@@ -153,14 +156,13 @@ class AuthService:
                     logger.warning(f"Device limit reached: {error_msg}")
                     return False, error_msg
                 
-                # Add device to license
-                firebase_config.add_device_to_license(uid, self.device_id)
+                # Note: Adding device to license requires Admin SDK (admin-only operation)
+                # This should be done server-side or via admin panel
+                # For now, we'll just check the limit and allow login
+                logger.info(f"Device {self.device_id} allowed for user {email} (device management is admin-only)")
             
-            # Set device ID in custom claims
-            firebase_config.set_custom_claims(uid, {
-                'device_id': self.device_id,
-                'last_login': datetime.now().isoformat()
-            })
+            # Note: Setting custom claims requires Admin SDK (admin-only operation)
+            # Device enforcement should be handled server-side or via admin panel
             
             # Store current user
             self.current_user = user_info
@@ -183,17 +185,8 @@ class AuthService:
                 
                 logger.info(f"Logging out user: {email}")
                 
-                # Try to clear device ID from custom claims
-                try:
-                    if firebase_config.is_initialized() and uid:
-                        firebase_config.set_custom_claims(uid, {
-                            'device_id': None,
-                            'last_logout': datetime.now().isoformat()
-                        })
-                        logger.info(f"Cleared custom claims for user: {email}")
-                except Exception as e:
-                    logger.warning(f"Failed to clear custom claims: {e}")
-                    # Continue with logout even if clearing claims fails
+                # Note: Clearing custom claims requires Admin SDK (admin-only operation)
+                # Device management should be handled server-side or via admin panel
                 
                 logger.info(f"User logged out successfully: {email}")
                 self.current_user = None

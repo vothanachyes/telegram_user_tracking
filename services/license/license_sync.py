@@ -55,36 +55,24 @@ class LicenseSync:
             license_data = firebase_config.get_user_license(uid)
             
             if not license_data:
-                logger.info(f"No license found in Firebase for user {uid}, creating default license")
-                # Create default license document for new user
+                logger.info(f"No license found in Firebase for user {uid}")
+                logger.info("License creation is admin-only - please contact admin to create your license")
+                # Use default tier for local cache (user will see limits but can't use features)
                 default_tier = DEFAULT_LICENSE_TIER
                 tier_info = LICENSE_PRICING.get(default_tier, {})
-                # Get period from tier info (default to 7 days if not specified)
                 period_days = tier_info.get('period', 7)
-                default_license = {
+                
+                # Create local cache with default values (no Firebase write)
+                license_data = {
                     'license_tier': default_tier,
                     'max_devices': tier_info.get('max_devices', 1),
                     'max_groups': tier_info.get('max_groups', 1),
                     'max_accounts': tier_info.get('max_accounts', 1),
-                    'max_account_actions': 2,  # Default max account actions
+                    'max_account_actions': 2,
                     'active_device_ids': [],
-                    # Set expiration based on tier's period
-                    # Admin can extend this later
                     'expiration_date': (datetime.now() + timedelta(days=period_days)).isoformat()
                 }
-                
-                # Create the license document in Firestore
-                if not firebase_config.set_user_license(uid, default_license):
-                    logger.error(f"Failed to create default license for user {uid}")
-                    return False
-                
-                # Retry getting the license
-                license_data = firebase_config.get_user_license(uid)
-                if not license_data:
-                    logger.error(f"Failed to retrieve newly created license for user {uid}")
-                    return False
-                
-                logger.info(f"Created default {default_tier} license for user {uid}")
+                logger.warning(f"Using default license tier {default_tier} for user {uid} (no license in Firebase)")
             
             # Parse expiration date
             expiration_date = None
@@ -116,59 +104,10 @@ class LicenseSync:
                     expiration_date = expiration_date.replace(tzinfo=now.tzinfo)
                 
                 if expiration_date < now:
-                    if tier == LICENSE_TIER_BRONZE:
-                        # Auto-renew expired Bronze (free trial) licenses
-                        logger.info(f"Bronze license expired for user {uid}, auto-renewing")
-                        tier_info = LICENSE_PRICING.get(LICENSE_TIER_BRONZE, {})
-                        period_days = tier_info.get('period', 7)
-                        new_expiration = datetime.now() + timedelta(days=period_days)
-                        
-                        # Preserve timezone if original had one
-                        if expiration_date.tzinfo:
-                            new_expiration = new_expiration.replace(tzinfo=expiration_date.tzinfo)
-                        
-                        # Update expiration date in Firestore
-                        updated_license = {
-                            'expiration_date': new_expiration.isoformat(),
-                            'license_tier': LICENSE_TIER_BRONZE,
-                            'max_devices': tier_info.get('max_devices', 1),
-                            'max_groups': tier_info.get('max_groups', 1),
-                            'max_accounts': tier_info.get('max_accounts', 1),
-                            'max_account_actions': 2
-                        }
-                        firebase_config.set_user_license(uid, updated_license)
-                        
-                        # Update expiration_date for local processing
-                        expiration_date = new_expiration
-                        logger.info(f"Auto-renewed Bronze license for user {uid}, new expiration: {new_expiration.isoformat()}")
-                    else:
-                        # For expired paid tiers, convert to Bronze and renew (grace period)
-                        # This handles cases where users had expired licenses before Bronze tier existed
-                        original_tier = tier
-                        logger.info(f"Expired {original_tier} license for user {uid}, converting to Bronze and renewing")
-                        tier_info = LICENSE_PRICING.get(LICENSE_TIER_BRONZE, {})
-                        period_days = tier_info.get('period', 7)
-                        new_expiration = datetime.now() + timedelta(days=period_days)
-                        
-                        # Preserve timezone if original had one
-                        if expiration_date.tzinfo:
-                            new_expiration = new_expiration.replace(tzinfo=expiration_date.tzinfo)
-                        
-                        # Convert to Bronze and renew
-                        updated_license = {
-                            'expiration_date': new_expiration.isoformat(),
-                            'license_tier': LICENSE_TIER_BRONZE,
-                            'max_devices': tier_info.get('max_devices', 1),
-                            'max_groups': tier_info.get('max_groups', 1),
-                            'max_accounts': tier_info.get('max_accounts', 1),
-                            'max_account_actions': 2
-                        }
-                        firebase_config.set_user_license(uid, updated_license)
-                        
-                        # Update tier and expiration_date for local processing
-                        tier = LICENSE_TIER_BRONZE
-                        expiration_date = new_expiration
-                        logger.info(f"Converted expired {original_tier} license to Bronze and renewed for user {uid}, new expiration: {new_expiration.isoformat()}")
+                    # License is expired - note that renewal is admin-only
+                    logger.warning(f"License expired for user {uid} (tier: {tier})")
+                    logger.info("License renewal is admin-only - please contact admin to renew your license")
+                    # Continue with expired license data (user will see expiration warnings)
             max_devices = license_data.get('max_devices', LICENSE_PRICING.get(tier, {}).get('max_devices', 1))
             max_groups = license_data.get('max_groups', LICENSE_PRICING.get(tier, {}).get('max_groups', 3))
             max_accounts = license_data.get('max_accounts', LICENSE_PRICING.get(tier, {}).get('max_accounts', 1))

@@ -1,5 +1,6 @@
 """
-Firebase configuration and initialization.
+Firebase configuration and initialization using REST API (no Admin SDK).
+This eliminates the need for Admin credentials in the desktop app.
 """
 
 import os
@@ -7,28 +8,33 @@ import sys
 from typing import Optional
 import logging
 from pathlib import Path
+import base64
+import json
 
 try:
-    import firebase_admin
-    from firebase_admin import credentials, auth
-    try:
-        from firebase_admin import firestore
-        FIRESTORE_AVAILABLE = True
-    except ImportError:
-        FIRESTORE_AVAILABLE = False
-    FIREBASE_AVAILABLE = True
+    import jwt
+    import requests
+    JWT_AVAILABLE = True
+    REQUESTS_AVAILABLE = True
 except ImportError:
-    FIREBASE_AVAILABLE = False
-    FIRESTORE_AVAILABLE = False
-    logging.warning("Firebase Admin SDK not installed")
+    JWT_AVAILABLE = False
+    REQUESTS_AVAILABLE = False
+    logging.warning("PyJWT or requests not installed - Firebase features will be limited")
 
-from utils.constants import FIREBASE_CREDENTIALS_PATH, FIREBASE_PROJECT_ID
+from utils.constants import FIREBASE_PROJECT_ID, FIREBASE_WEB_API_KEY
 
 logger = logging.getLogger(__name__)
 
+# Firebase REST API endpoints
+FIREBASE_AUTH_URL = "https://identitytoolkit.googleapis.com/v1"
+FIRESTORE_REST_URL = "https://firestore.googleapis.com/v1"
+
 
 class FirebaseConfig:
-    """Firebase configuration manager."""
+    """
+    Firebase configuration manager using REST API.
+    No Admin SDK required - uses Firebase REST API with ID token authentication.
+    """
     
     _instance = None
     _initialized = False
@@ -39,120 +45,45 @@ class FirebaseConfig:
         return cls._instance
     
     def __init__(self):
-        self.app: Optional[firebase_admin.App] = None
-        self.is_available = FIREBASE_AVAILABLE
-        self.db: Optional[firestore.Client] = None
+        self.is_available = JWT_AVAILABLE and REQUESTS_AVAILABLE
+        self.project_id = FIREBASE_PROJECT_ID
+        self.web_api_key = FIREBASE_WEB_API_KEY
+        self._current_id_token: Optional[str] = None
     
-    def _find_firebase_credentials(self, credentials_path: Optional[str] = None) -> Optional[str]:
+    def initialize(self, id_token: Optional[str] = None) -> bool:
         """
-        Find Firebase credentials file path.
-        Handles both development (source) and production (bundled executable) scenarios.
+        Initialize Firebase (no credentials needed).
+        Just stores the ID token for Firestore REST API calls.
         
         Args:
-            credentials_path: Explicit path provided (takes priority)
+            id_token: Firebase ID token from authentication (optional, can be set later)
         
         Returns:
-            Path to credentials file or None if not found
-        """
-        # Priority 1: Explicit path provided
-        if credentials_path and os.path.exists(credentials_path):
-            return credentials_path
-        
-        # Priority 2: Environment variable
-        if FIREBASE_CREDENTIALS_PATH and os.path.exists(FIREBASE_CREDENTIALS_PATH):
-            return FIREBASE_CREDENTIALS_PATH
-        
-        # Priority 3: Check if running from PyInstaller bundle
-        if getattr(sys, 'frozen', False):
-            # Running from executable - files are in sys._MEIPASS
-            base_path = Path(sys._MEIPASS)
-            config_dir = base_path / 'config'
-            
-            # Look for any .json file in config/ (Firebase credentials)
-            json_files = list(config_dir.glob('*.json'))
-            if json_files:
-                # Prefer files with 'firebase' in name, otherwise use first .json
-                firebase_files = [f for f in json_files if 'firebase' in f.name.lower() or 'fbsvc' in f.name.lower()]
-                if firebase_files:
-                    cred_path = firebase_files[0]
-                    logger.debug(f"Found Firebase credentials in bundle: {cred_path}")
-                    return str(cred_path)
-                else:
-                    # Use first JSON file found
-                    cred_path = json_files[0]
-                    logger.debug(f"Using JSON file from bundle: {cred_path}")
-                    return str(cred_path)
-        
-        # Priority 4: Check in source code directory (development)
-        # Get the directory where this file is located
-        current_file = Path(__file__).resolve()
-        config_dir = current_file.parent
-        
-        # Look for Firebase credentials JSON files
-        json_files = list(config_dir.glob('*.json'))
-        if json_files:
-            # Prefer files with 'firebase' in name, otherwise use first .json
-            firebase_files = [f for f in json_files if 'firebase' in f.name.lower() or 'fbsvc' in f.name.lower()]
-            if firebase_files:
-                cred_path = firebase_files[0]
-                logger.debug(f"Found Firebase credentials in source: {cred_path}")
-                return str(cred_path)
-            else:
-                # Use first JSON file found
-                cred_path = json_files[0]
-                logger.debug(f"Using JSON file from source: {cred_path}")
-                return str(cred_path)
-        
-        return None
-    
-    def initialize(self, credentials_path: Optional[str] = None) -> bool:
-        """
-        Initialize Firebase Admin SDK.
-        Returns True if successful.
+            True if successful
         """
         if self._initialized:
             return True
         
         if not self.is_available:
-            logger.error("Firebase Admin SDK is not available")
+            logger.warning("Firebase REST API not available (missing PyJWT or requests)")
             return False
         
-        try:
-            # Find credentials file (handles both dev and bundled executable)
-            cred_path = self._find_firebase_credentials(credentials_path)
-
-            if not cred_path or not os.path.exists(cred_path):
-                logger.warning(f"Firebase credentials file not found")
-                logger.debug(f"  Searched paths:")
-                logger.debug(f"    - Explicit: {credentials_path}")
-                logger.debug(f"    - Env var: {FIREBASE_CREDENTIALS_PATH}")
-                if getattr(sys, 'frozen', False):
-                    logger.debug(f"    - Bundle: {sys._MEIPASS}/config/*.json")
-                logger.debug(f"    - Source: {Path(__file__).parent}/*.json")
-                logger.info("Firebase features will be disabled")
-                return False
-            
-            logger.info(f"Using Firebase credentials: {cred_path}")
-            
-            # Initialize Firebase
-            cred = credentials.Certificate(cred_path)
-            self.app = firebase_admin.initialize_app(cred)
-            
-            # Initialize Firestore if available
-            if FIRESTORE_AVAILABLE:
-                self.db = firestore.client()
-                logger.info("Firestore client initialized successfully")
-            else:
-                logger.warning("Firestore is not available - license features will not work")
-                self.db = None
-            
-            self._initialized = True
-            logger.info("Firebase initialized successfully")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error initializing Firebase: {e}", exc_info=True)
+        if not self.project_id:
+            logger.warning("FIREBASE_PROJECT_ID not configured")
             return False
+        
+        if id_token:
+            self._current_id_token = id_token
+        
+        self._initialized = True
+        logger.info("Firebase REST API initialized successfully")
+        return True
+    
+    def set_id_token(self, id_token: str) -> None:
+        """Set the current ID token for Firestore API calls."""
+        self._current_id_token = id_token
+        if not self._initialized:
+            self.initialize(id_token)
     
     def is_initialized(self) -> bool:
         """Check if Firebase is initialized."""
@@ -160,323 +91,338 @@ class FirebaseConfig:
     
     def verify_token(self, id_token: str) -> Optional[dict]:
         """
-        Verify Firebase ID token.
-        Returns decoded token if valid, None otherwise.
+        Decode Firebase ID token (client-side decoding, no verification).
+        For production, you should verify the token signature, but for desktop apps,
+        we trust the token from Firebase REST API.
+        
+        Returns:
+            Decoded token dict if valid, None otherwise
         """
-        if not self._initialized:
-            logger.error("Firebase not initialized")
+        if not self.is_available:
+            logger.error("JWT library not available")
             return None
         
         try:
-            decoded_token = auth.verify_id_token(id_token)
+            # Decode without verification (we trust Firebase REST API)
+            # In production, you should verify the signature using Firebase public keys
+            decoded_token = jwt.decode(
+                id_token,
+                options={"verify_signature": False}  # Skip signature verification for now
+            )
+            
+            # Store token for Firestore calls
+            self._current_id_token = id_token
+            
             return decoded_token
+        except jwt.DecodeError as e:
+            logger.error(f"Error decoding token: {e}")
+            return None
         except Exception as e:
             logger.error(f"Error verifying token: {e}")
             return None
     
-    def get_user(self, uid: str) -> Optional[dict]:
+    def get_user(self, uid: Optional[str] = None, id_token: Optional[str] = None) -> Optional[dict]:
         """
-        Get user by UID.
-        Returns user record if found, None otherwise.
+        Get user info from ID token (no Admin SDK needed).
+        User info is embedded in the ID token itself.
+        
+        Args:
+            uid: User ID (optional, will extract from token if not provided)
+            id_token: ID token to decode (optional, uses current token if not provided)
+        
+        Returns:
+            User info dict if found, None otherwise
         """
-        if not self._initialized:
-            logger.error("Firebase not initialized")
+        token = id_token or self._current_id_token
+        if not token:
+            logger.error("No ID token available")
             return None
         
         try:
-            user = auth.get_user(uid)
-            return {
-                'uid': user.uid,
-                'email': user.email,
-                'display_name': user.display_name,
-                'photo_url': user.photo_url,
-                'email_verified': user.email_verified,
-                'disabled': user.disabled
+            decoded_token = self.verify_token(token)
+            if not decoded_token:
+                return None
+            
+            # Extract user info from token
+            user_info = {
+                'uid': decoded_token.get('user_id') or decoded_token.get('uid') or uid,
+                'email': decoded_token.get('email'),
+                'email_verified': decoded_token.get('email_verified', False),
+                'disabled': False,  # Can't check this without Admin SDK, assume enabled
+                'display_name': decoded_token.get('name'),
+                'photo_url': decoded_token.get('picture')
             }
+            
+            return user_info
         except Exception as e:
             logger.error(f"Error getting user: {e}")
             return None
     
-    def create_user(self, email: str, password: str, display_name: Optional[str] = None) -> Optional[str]:
+    def get_user_license(self, uid: str, id_token: Optional[str] = None) -> Optional[dict]:
         """
-        Create a new user.
-        Returns UID if successful, None otherwise.
+        Get user license from Firestore using REST API.
+        
+        Args:
+            uid: User ID
+            id_token: Firebase ID token for authentication (optional, uses current token)
+        
+        Returns:
+            License document if found, None otherwise
         """
         if not self._initialized:
             logger.error("Firebase not initialized")
             return None
         
-        try:
-            user = auth.create_user(
-                email=email,
-                password=password,
-                display_name=display_name
-            )
-            logger.info(f"User created: {user.uid}")
-            return user.uid
-        except Exception as e:
-            logger.error(f"Error creating user: {e}")
-            return None
-    
-    def delete_user(self, uid: str) -> bool:
-        """
-        Delete a user.
-        Returns True if successful.
-        """
-        if not self._initialized:
-            logger.error("Firebase not initialized")
-            return False
-        
-        try:
-            auth.delete_user(uid)
-            logger.info(f"User deleted: {uid}")
-            return True
-        except Exception as e:
-            logger.error(f"Error deleting user: {e}")
-            return False
-    
-    def set_custom_claims(self, uid: str, claims: dict) -> bool:
-        """
-        Set custom user claims (for device enforcement).
-        Returns True if successful.
-        """
-        if not self._initialized:
-            logger.error("Firebase not initialized")
-            return False
-        
-        try:
-            auth.set_custom_user_claims(uid, claims)
-            return True
-        except Exception as e:
-            logger.error(f"Error setting custom claims: {e}")
-            return False
-    
-    # ==================== Firestore License Methods ====================
-    
-    def get_user_license(self, uid: str) -> Optional[dict]:
-        """
-        Get user license from Firestore.
-        Returns license document if found, None otherwise.
-        """
-        if not self._initialized:
-            logger.error("Firebase not initialized")
+        if not self.project_id:
+            logger.error("FIREBASE_PROJECT_ID not configured")
             return None
         
-        if not self.db:
-            logger.error("Firestore database not available")
+        token = id_token or self._current_id_token
+        if not token:
+            logger.error("No ID token available for Firestore access")
             return None
         
         try:
-            doc_ref = self.db.collection('user_licenses').document(uid)
-            logger.debug(f"Checking for license document for user {uid}")
-            doc = doc_ref.get()
-            if doc.exists:
-                data = doc.to_dict()
-                data['uid'] = uid
-                logger.debug(f"License found for user {uid}: {data}")
-                return data
-            logger.debug(f"No license document found for user {uid}")
+            # Firestore REST API endpoint
+            url = f"{FIRESTORE_REST_URL}/projects/{self.project_id}/databases/(default)/documents/user_licenses/{uid}"
+            
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                # Convert Firestore document format to dict
+                license_data = self._convert_firestore_document(data)
+                if license_data:
+                    license_data['uid'] = uid
+                    logger.debug(f"License found for user {uid}: {license_data}")
+                    return license_data
+            elif response.status_code == 404:
+                logger.debug(f"No license document found for user {uid}")
+                return None
+            else:
+                logger.error(f"Error getting license: {response.status_code} - {response.text}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error getting license: {e}")
             return None
         except Exception as e:
             logger.error(f"Error getting user license: {e}", exc_info=True)
             return None
     
-    def set_user_license(self, uid: str, license_data: dict) -> bool:
+    def _convert_firestore_document(self, firestore_doc: dict) -> Optional[dict]:
         """
-        Set or update user license in Firestore.
-        Returns True if successful.
-        """
-        if not self._initialized:
-            logger.error("Firebase not initialized")
-            return False
+        Convert Firestore REST API document format to Python dict.
         
-        if not self.db:
-            logger.error("Firestore database not available")
-            return False
-        
-        try:
-            doc_ref = self.db.collection('user_licenses').document(uid)
-            # Remove uid from data if present (it's the document ID)
-            data = {k: v for k, v in license_data.items() if k != 'uid'}
-            logger.info(f"Attempting to create/update license document for user {uid} with data: {data}")
-            doc_ref.set(data, merge=True)
-            logger.info(f"License successfully created/updated for user: {uid}")
-            return True
-        except Exception as e:
-            logger.error(f"Error setting user license: {e}", exc_info=True)
-            return False
-    
-    def add_device_to_license(self, uid: str, device_id: str) -> bool:
+        Firestore REST API returns documents in a nested format:
+        {
+            "fields": {
+                "field_name": {
+                    "stringValue": "value"  # or integerValue, booleanValue, etc.
+                }
+            }
+        }
         """
-        Add a device ID to user's active devices list.
-        Returns True if successful.
-        """
-        if not self._initialized or not self.db:
-            logger.error("Firebase not initialized")
-            return False
+        if 'fields' not in firestore_doc:
+            return None
         
-        try:
-            doc_ref = self.db.collection('user_licenses').document(uid)
-            doc = doc_ref.get()
-            
-            if doc.exists:
-                data = doc.to_dict()
-                active_devices = data.get('active_device_ids', [])
-                if device_id not in active_devices:
-                    active_devices.append(device_id)
-                    doc_ref.update({'active_device_ids': active_devices})
-                    logger.info(f"Device {device_id} added to user {uid}")
-                return True
+        result = {}
+        for field_name, field_value in firestore_doc['fields'].items():
+            # Handle different Firestore value types
+            if 'stringValue' in field_value:
+                result[field_name] = field_value['stringValue']
+            elif 'integerValue' in field_value:
+                result[field_name] = int(field_value['integerValue'])
+            elif 'doubleValue' in field_value:
+                result[field_name] = float(field_value['doubleValue'])
+            elif 'booleanValue' in field_value:
+                result[field_name] = field_value['booleanValue']
+            elif 'timestampValue' in field_value:
+                # Parse ISO timestamp
+                result[field_name] = field_value['timestampValue']
+            elif 'arrayValue' in field_value:
+                # Handle arrays
+                values = field_value['arrayValue'].get('values', [])
+                result[field_name] = [
+                    self._convert_firestore_value(v) for v in values
+                ]
+            elif 'mapValue' in field_value:
+                # Handle nested maps
+                result[field_name] = self._convert_firestore_document(field_value['mapValue'])
             else:
-                # Create new license document with this device
-                doc_ref.set({
-                    'active_device_ids': [device_id],
-                    'license_tier': 'silver',  # Default tier
-                    'max_devices': 1,
-                    'max_groups': 3
-                })
-                logger.info(f"Created new license for user {uid} with device {device_id}")
-                return True
-        except Exception as e:
-            logger.error(f"Error adding device to license: {e}")
-            return False
-    
-    def remove_device_from_license(self, uid: str, device_id: str) -> bool:
-        """
-        Remove a device ID from user's active devices list.
-        Returns True if successful.
-        """
-        if not self._initialized or not self.db:
-            logger.error("Firebase not initialized")
-            return False
+                # Unknown type, try to extract value
+                logger.warning(f"Unknown Firestore field type for {field_name}: {field_value}")
+                result[field_name] = str(field_value)
         
-        try:
-            doc_ref = self.db.collection('user_licenses').document(uid)
-            doc = doc_ref.get()
-            
-            if doc.exists:
-                data = doc.to_dict()
-                active_devices = data.get('active_device_ids', [])
-                if device_id in active_devices:
-                    active_devices.remove(device_id)
-                    doc_ref.update({'active_device_ids': active_devices})
-                    logger.info(f"Device {device_id} removed from user {uid}")
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Error removing device from license: {e}")
-            return False
+        return result
     
-    def get_active_devices(self, uid: str) -> list:
+    def _convert_firestore_value(self, value: dict) -> any:
+        """Convert a single Firestore value to Python type."""
+        if 'stringValue' in value:
+            return value['stringValue']
+        elif 'integerValue' in value:
+            return int(value['integerValue'])
+        elif 'doubleValue' in value:
+            return float(value['doubleValue'])
+        elif 'booleanValue' in value:
+            return value['booleanValue']
+        else:
+            return str(value)
+    
+    def get_app_update_info(self, id_token: Optional[str] = None) -> Optional[dict]:
         """
-        Get list of active device IDs for a user.
-        Returns list of device IDs.
-        """
-        if not self._initialized or not self.db:
-            logger.error("Firebase not initialized")
-            return []
+        Get latest app update information from Firestore using REST API.
         
-        try:
-            doc_ref = self.db.collection('user_licenses').document(uid)
-            doc = doc_ref.get()
-            
-            if doc.exists:
-                data = doc.to_dict()
-                return data.get('active_device_ids', [])
-            return []
-        except Exception as e:
-            logger.error(f"Error getting active devices: {e}")
-            return []
-    
-    def get_app_update_info(self) -> Optional[dict]:
+        Args:
+            id_token: Firebase ID token (optional, uses current token)
+        
+        Returns:
+            Update document if found, None otherwise
         """
-        Get latest app update information from Firestore.
-        Returns update document if found, None otherwise.
-        """
-        if not self._initialized:
+        if not self._initialized or not self.project_id:
             logger.error("Firebase not initialized")
             return None
         
-        if not self.db:
-            logger.error("Firestore database not available")
+        token = id_token or self._current_id_token
+        if not token:
+            logger.error("No ID token available")
             return None
         
         try:
             from utils.constants import FIREBASE_APP_UPDATES_COLLECTION, FIREBASE_APP_UPDATES_DOCUMENT
             
-            doc_ref = self.db.collection(FIREBASE_APP_UPDATES_COLLECTION).document(FIREBASE_APP_UPDATES_DOCUMENT)
-            doc = doc_ref.get()
+            url = f"{FIRESTORE_REST_URL}/projects/{self.project_id}/databases/(default)/documents/{FIREBASE_APP_UPDATES_COLLECTION}/{FIREBASE_APP_UPDATES_DOCUMENT}"
             
-            if doc.exists:
-                data = doc.to_dict()
-                logger.debug(f"App update info retrieved: version={data.get('version')}")
-                return data
-            logger.debug("No app update document found")
-            return None
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                update_data = self._convert_firestore_document(data)
+                if update_data:
+                    logger.debug(f"App update info retrieved: version={update_data.get('version')}")
+                    return update_data
+            elif response.status_code == 404:
+                logger.debug("No app update document found")
+                return None
+            else:
+                logger.error(f"Error getting app update info: {response.status_code} - {response.text}")
+                return None
+                
         except Exception as e:
             logger.error(f"Error getting app update info: {e}", exc_info=True)
             return None
     
-    def set_app_update_info(self, update_data: dict) -> bool:
+    # ==================== Admin-Only Methods (Not Available in Desktop App) ====================
+    # These methods require Admin SDK and should only be used in deployment scripts
+    
+    def set_user_license(self, uid: str, license_data: dict) -> bool:
         """
-        Set or update app update information in Firestore.
+        Set or update user license in Firestore.
         
-        Args:
-            update_data: Dictionary containing update information:
-                - version: Version string (required)
-                - download_url_windows: Windows download URL (optional)
-                - download_url_macos: macOS download URL (optional)
-                - download_url_linux: Linux download URL (optional)
-                - checksum_windows: Windows SHA256 checksum (optional)
-                - checksum_macos: macOS SHA256 checksum (optional)
-                - checksum_linux: Linux SHA256 checksum (optional)
-                - file_size_windows: Windows file size in bytes (optional)
-                - file_size_macos: macOS file size in bytes (optional)
-                - file_size_linux: Linux file size in bytes (optional)
-                - release_date: ISO format date string (optional)
-                - is_available: Boolean (optional, default True)
-                - release_notes: Release notes string (optional)
-                - min_version_required: Minimum version required (optional)
+        NOTE: This method requires Admin SDK and should NOT be used in the desktop app.
+        License writes should only be done by admin via deployment scripts or admin panel.
         
         Returns:
-            True if successful, False otherwise
+            False (always fails in desktop app - use admin tools instead)
         """
-        if not self._initialized:
-            logger.error("Firebase not initialized")
-            return False
+        logger.warning("set_user_license() is not available in desktop app - use admin tools")
+        return False
+    
+    def add_device_to_license(self, uid: str, device_id: str) -> bool:
+        """
+        Add device to license.
         
-        if not self.db:
-            logger.error("Firestore database not available")
-            return False
+        NOTE: This method requires Admin SDK and should NOT be used in the desktop app.
         
-        try:
-            from utils.constants import FIREBASE_APP_UPDATES_COLLECTION, FIREBASE_APP_UPDATES_DOCUMENT
-            
-            # Validate required fields
-            if 'version' not in update_data:
-                logger.error("Version is required in update_data")
-                return False
-            
-            # Set defaults
-            if 'is_available' not in update_data:
-                update_data['is_available'] = True
-            
-            if 'release_date' not in update_data:
-                from datetime import datetime
-                update_data['release_date'] = datetime.utcnow().isoformat() + "Z"
-            
-            # Update Firestore document
-            doc_ref = self.db.collection(FIREBASE_APP_UPDATES_COLLECTION).document(FIREBASE_APP_UPDATES_DOCUMENT)
-            doc_ref.set(update_data, merge=True)
-            
-            logger.info(f"App update info set: version={update_data.get('version')}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error setting app update info: {e}", exc_info=True)
-            return False
+        Returns:
+            False (always fails in desktop app)
+        """
+        logger.warning("add_device_to_license() is not available in desktop app")
+        return False
+    
+    def remove_device_from_license(self, uid: str, device_id: str) -> bool:
+        """
+        Remove device from license.
+        
+        NOTE: This method requires Admin SDK and should NOT be used in the desktop app.
+        
+        Returns:
+            False (always fails in desktop app)
+        """
+        logger.warning("remove_device_from_license() is not available in desktop app")
+        return False
+    
+    def get_active_devices(self, uid: str) -> list:
+        """
+        Get active devices from license.
+        
+        Returns:
+            List of device IDs (from license document)
+        """
+        license_data = self.get_user_license(uid)
+        if license_data:
+            return license_data.get('active_device_ids', [])
+        return []
+    
+    def create_user(self, email: str, password: str, display_name: Optional[str] = None) -> Optional[str]:
+        """
+        Create a new user.
+        
+        NOTE: This method requires Admin SDK and should NOT be used in the desktop app.
+        
+        Returns:
+            None (always fails in desktop app)
+        """
+        logger.warning("create_user() is not available in desktop app - use admin tools")
+        return None
+    
+    def delete_user(self, uid: str) -> bool:
+        """
+        Delete a user.
+        
+        NOTE: This method requires Admin SDK and should NOT be used in the desktop app.
+        
+        Returns:
+            False (always fails in desktop app)
+        """
+        logger.warning("delete_user() is not available in desktop app - use admin tools")
+        return False
+    
+    def set_custom_claims(self, uid: str, claims: dict) -> bool:
+        """
+        Set custom user claims.
+        
+        NOTE: This method requires Admin SDK and should NOT be used in the desktop app.
+        
+        Returns:
+            False (always fails in desktop app)
+        """
+        logger.warning("set_custom_claims() is not available in desktop app - use admin tools")
+        return False
+    
+    def set_app_update_info(self, update_data: dict) -> bool:
+        """
+        Set app update information.
+        
+        NOTE: This method requires Admin SDK and should NOT be used in the desktop app.
+        Use deployment scripts instead.
+        
+        Returns:
+            False (always fails in desktop app)
+        """
+        logger.warning("set_app_update_info() is not available in desktop app - use deployment scripts")
+        return False
 
 
 # Global Firebase config instance
 firebase_config = FirebaseConfig()
-

@@ -359,6 +359,8 @@
   "pin_recovery_data": "PIN Recovery Data",
   "copy_pin_recovery_data": "Copy to Clipboard",
   "pin_recovery_data_copied": "PIN recovery data copied to clipboard",
-  "pin_recovery_not_available": "PIN recovery is only available when PIN is enabled"
+  "pin_recovery_not_available": "PIN recovery is only available when PIN is enabled",
+  "searching_by_username": "Searching by username",
+  "searching_by_tag": "Searching by tag"
 }
 

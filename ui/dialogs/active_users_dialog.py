@@ -119,6 +119,7 @@ class ActiveUsersDialog(ft.AlertDialog):
         for picker in pickers:
             if picker not in page.overlay:
                 page.overlay.append(picker)
+        page.update()
     
     def _create_table(self) -> DataTable:
         """Create active users data table."""
@@ -181,8 +182,18 @@ class ActiveUsersDialog(ft.AlertDialog):
         if self.excel_picker not in self.page.overlay:
             self.page.overlay.append(self.excel_picker)
         
+        # Set page reference on picker
+        self.excel_picker.page = self.page
+        self.page.update()
+        
+        # Small delay on macOS to ensure picker is ready
+        import time
+        time.sleep(0.1)
+        
         default_name = f"active_users_{self.group_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         try:
+            # File pickers use save_file() directly (not page.open() like dialogs)
+            # On macOS, ensure picker is in overlay and page is updated before calling save_file
             self.excel_picker.save_file(
                 dialog_title=theme_manager.t("export_to_excel"),
                 file_name=default_name,
@@ -248,8 +259,18 @@ class ActiveUsersDialog(ft.AlertDialog):
         if self.pdf_picker not in self.page.overlay:
             self.page.overlay.append(self.pdf_picker)
         
+        # Set page reference on picker
+        self.pdf_picker.page = self.page
+        self.page.update()
+        
+        # Small delay on macOS to ensure picker is ready
+        import time
+        time.sleep(0.1)
+        
         default_name = f"active_users_{self.group_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         try:
+            # File pickers use save_file() directly (not page.open() like dialogs)
+            # On macOS, ensure picker is in overlay and page is updated before calling save_file
             self.pdf_picker.save_file(
                 dialog_title=theme_manager.t("export_to_pdf"),
                 file_name=default_name,

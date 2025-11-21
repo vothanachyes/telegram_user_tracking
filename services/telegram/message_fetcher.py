@@ -186,6 +186,11 @@ class MessageFetcher:
                     if self.db_manager.is_message_deleted(telegram_msg.id, group_id):
                         continue
                     
+                    # Check if message already exists in database
+                    if self.db_manager.message_exists(telegram_msg.id, group_id):
+                        skipped_count += 1
+                        continue
+                    
                     if telegram_msg.sender:
                         await self.user_processor.process_user(telegram_msg.sender)
                         unique_users.add(telegram_msg.sender.id)
@@ -441,6 +446,11 @@ class MessageFetcher:
                             continue
                     
                     if self.db_manager.is_message_deleted(telegram_msg.id, group_id):
+                        continue
+                    
+                    # Check if message already exists in database
+                    if self.db_manager.message_exists(telegram_msg.id, group_id):
+                        skipped_count += 1
                         continue
                     
                     if telegram_msg.sender:

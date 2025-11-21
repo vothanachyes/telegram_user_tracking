@@ -73,11 +73,12 @@ class MessagesTabComponent:
         search_field = self.messages_table.search_field
         clear_filter_btn = self.messages_table.clear_filter_button
         
-        # Create search field container with tag autocomplete
+        # Create search field container with tag autocomplete and helper text
         search_container = ft.Column([
             search_field if search_field else ft.Container(),
+            self.messages_table.filtering.search_helper_text if hasattr(self.messages_table.filtering, 'search_helper_text') and self.messages_table.filtering.search_helper_text else ft.Container(),
             self.messages_table.filtering.tag_autocomplete_container if hasattr(self.messages_table.filtering, 'tag_autocomplete_container') and self.messages_table.filtering.tag_autocomplete_container else ft.Container()
-        ], spacing=0, tight=True) if search_field else ft.Container()
+        ], spacing=2, tight=True) if search_field else ft.Container()
         
         container = ft.Container(
             content=ft.Column([

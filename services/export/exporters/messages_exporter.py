@@ -116,7 +116,7 @@ class MessagesExporter(BaseExporter):
             return True
             
         except Exception as e:
-            logger.error(f"Error exporting messages to Excel: {e}")
+            logger.error(f"Error exporting messages to Excel: {e}", exc_info=True)
             return False
     
     def export_to_pdf(
@@ -206,6 +206,6 @@ class MessagesExporter(BaseExporter):
             return True
             
         except Exception as e:
-            logger.error(f"Error exporting messages to PDF: {e}")
+            logger.error(f"Error exporting messages to PDF: {e}", exc_info=True)
             return False
 

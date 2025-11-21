@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from ui.theme import theme_manager
 from config.settings import settings
+import sys
 from utils.constants import (
     BASE_DIR,
     DEFAULT_WINDOW_WIDTH,
@@ -15,6 +16,22 @@ from utils.constants import (
     MIN_WINDOW_WIDTH,
     MIN_WINDOW_HEIGHT
 )
+
+# Get the correct base directory for assets (works in both dev and bundle)
+def get_assets_base_dir():
+    """Get the base directory for assets, handling both dev and PyInstaller bundle."""
+    if getattr(sys, 'frozen', False):
+        # Running from PyInstaller bundle - assets are in Resources
+        if platform.system() == 'Darwin':
+            # macOS: Resources is in Contents/Resources
+            bundle_dir = Path(sys.executable).parent.parent.parent
+            return bundle_dir / 'Contents' / 'Resources'
+        else:
+            # Windows/Linux: assets are in the same directory as the executable
+            return Path(sys.executable).parent
+    else:
+        # Development: use project root
+        return BASE_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +59,10 @@ class PageConfig:
             
             # Set window icon from assets/icons directory
             system = platform.system()
+            assets_base = get_assets_base_dir()
             
             if system == 'Windows':
-                icon_path = BASE_DIR / 'assets' / 'icons' / 'win' / 'icon.ico'
+                icon_path = assets_base / 'assets' / 'icons' / 'win' / 'icon.ico'
                 if icon_path.exists():
                     try:
                         icon_path_abs = icon_path.resolve()
@@ -53,7 +71,7 @@ class PageConfig:
                     except (AttributeError, Exception) as e:
                         logger.warning(f"Could not set window icon: {e}")
             elif system == 'Darwin':  # macOS
-                icon_path = BASE_DIR / 'assets' / 'icons' / 'mac' / 'icon.icns'
+                icon_path = assets_base / 'assets' / 'icons' / 'mac' / 'icon.icns'
                 if icon_path.exists():
                     try:
                         icon_path_abs = icon_path.resolve()
@@ -62,9 +80,9 @@ class PageConfig:
                     except (AttributeError, Exception) as e:
                         logger.warning(f"Could not set window icon: {e}")
                 else:
-                    logger.warning(f"Mac icon not found at: {icon_path.resolve()}")
+                    logger.warning(f"Mac icon not found at: {icon_path}")
             elif system == 'Linux':
-                icon_path = BASE_DIR / 'assets' / 'icons' / 'linux' / 'icon.png'
+                icon_path = assets_base / 'assets' / 'icons' / 'linux' / 'icon.png'
                 if icon_path.exists():
                     try:
                         icon_path_abs = icon_path.resolve()

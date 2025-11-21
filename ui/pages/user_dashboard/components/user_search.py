@@ -31,6 +31,14 @@ class UserSearchComponent:
             border_radius=theme_manager.corner_radius
         )
         
+        # Helper text below search field
+        self.search_helper_text = ft.Text(
+            "",
+            size=11,
+            color=theme_manager.text_secondary_color,
+            visible=False
+        )
+        
         self.search_dropdown = ft.Container(
             visible=False,
             bgcolor=theme_manager.surface_color,
@@ -45,8 +53,9 @@ class UserSearchComponent:
         """Build the search component."""
         return ft.Column([
             self.search_field,
+            self.search_helper_text,
             self.search_dropdown,
-        ], spacing=0, tight=True)
+        ], spacing=2, tight=True)
     
     def update_dropdown(self, users: list[TelegramUser]):
         """Update dropdown with search results."""
@@ -86,6 +95,7 @@ class UserSearchComponent:
     def clear(self):
         """Clear search field."""
         self.search_field.value = ""
+        self._update_helper_text("")
         self.search_dropdown.visible = False
         self.search_dropdown.content.controls = []
         if self.page:
@@ -93,7 +103,11 @@ class UserSearchComponent:
     
     def _on_search_change(self, e):
         """Handle search field change."""
-        query = e.control.value
+        query = e.control.value or ""
+        
+        # Update helper text based on prefix
+        self._update_helper_text(query)
+        
         if not query or len(query) < 2:
             self.search_dropdown.visible = False
             self.search_dropdown.content.controls = []
@@ -103,6 +117,19 @@ class UserSearchComponent:
         
         if self.on_search_change:
             self.on_search_change(query)
+    
+    def _update_helper_text(self, value: str):
+        """Update helper text based on search prefix."""
+        if value.startswith('@'):
+            self.search_helper_text.value = theme_manager.t("searching_by_username")
+            self.search_helper_text.visible = True
+        else:
+            self.search_helper_text.visible = False
+        
+        try:
+            self.search_helper_text.update()
+        except (AssertionError, AttributeError):
+            pass
     
     def _on_search_focus(self, e):
         """Handle search field focus."""

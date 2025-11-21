@@ -132,7 +132,7 @@ class UserDataExporter(BaseExporter):
             return True
             
         except Exception as e:
-            logger.error(f"Error exporting user data to Excel: {e}")
+            logger.error(f"Error exporting user data to Excel: {e}", exc_info=True)
             return False
     
     def export_to_pdf(
@@ -251,6 +251,6 @@ class UserDataExporter(BaseExporter):
             return True
             
         except Exception as e:
-            logger.error(f"Error exporting user data to PDF: {e}")
+            logger.error(f"Error exporting user data to PDF: {e}", exc_info=True)
             return False
 

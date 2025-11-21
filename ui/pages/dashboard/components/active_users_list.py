@@ -11,7 +11,12 @@ class ActiveUsersListComponent:
     """Component for displaying top active users."""
     
     def __init__(self):
-        self.users_list = ft.Column([], spacing=theme_manager.spacing_xs, scroll=ft.ScrollMode.AUTO)
+        self.users_list = ft.Column(
+            [], 
+            spacing=theme_manager.spacing_xs, 
+            scroll=ft.ScrollMode.AUTO,
+            expand=True
+        )
         self.page: Optional[ft.Page] = None
     
     def _get_gradient_colors_for_letter(self, letter: str) -> tuple:
@@ -51,7 +56,7 @@ class ActiveUsersListComponent:
         return color_pair
     
     def _create_ranking_badge(self, rank: int) -> ft.Container:
-        """Create ranking badge/icon for top 5 users."""
+        """Create ranking badge/icon for all users."""
         if rank == 1:
             return ft.Container(
                 content=ft.Icon(ft.Icons.EMOJI_EVENTS, size=24, color=ft.Colors.AMBER_600),
@@ -73,7 +78,8 @@ class ActiveUsersListComponent:
                 alignment=ft.alignment.center,
                 tooltip="Rank #3"
             )
-        elif rank <= 5:
+        else:
+            # Show rank number for ranks 4-10
             return ft.Container(
                 content=ft.Text(str(rank), size=14, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
                 width=28, height=28,
@@ -82,8 +88,6 @@ class ActiveUsersListComponent:
                 border_radius=14,
                 tooltip=f"Rank #{rank}"
             )
-        else:
-            return ft.Container(width=32, height=32)
     
     def update_users(self, users: List[Dict]):
         """Update the users list."""
@@ -168,7 +172,8 @@ class ActiveUsersListComponent:
                     ], spacing=2, tight=True, expand=True),
                     message_badge,
                 ], spacing=theme_manager.spacing_sm, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=ft.padding.symmetric(vertical=8, horizontal=0),
+                padding=ft.padding.symmetric(vertical=8, horizontal=12),
+                clip_behavior=ft.ClipBehavior.NONE,
             )
             
             user_items.append(user_item)

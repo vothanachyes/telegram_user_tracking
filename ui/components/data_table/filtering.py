@@ -50,6 +50,18 @@ class TableFiltering:
             border_radius=theme_manager.corner_radius
         ) if searchable else None
         
+        # Helper text below search field
+        self.search_helper_text = ft.Text(
+            "",
+            size=11,
+            color=theme_manager.text_secondary_color,
+            visible=False
+        ) if searchable else None
+        
+        # Setup helper text handler for all search fields
+        if self.search_field:
+            self._setup_helper_text_handler()
+        
         # Tag autocomplete dropdown (will be created if tag filtering is enabled)
         self.tag_autocomplete_container = None
         if enable_tag_filtering and self.search_field:
@@ -62,6 +74,20 @@ class TableFiltering:
             on_click=self._on_clear_filters,
             visible=has_filters
         ) if on_clear_filters else None
+    
+    def _setup_helper_text_handler(self):
+        """Setup helper text handler that wraps the on_change callback."""
+        original_on_change = self.search_field.on_change
+        
+        def wrapped_on_change(e):
+            """Wrapper that updates helper text before calling original handler."""
+            value = e.control.value or ""
+            self._update_helper_text(value)
+            if original_on_change:
+                original_on_change(e)
+        
+        self.search_field.on_change = wrapped_on_change
+        self._original_on_change = original_on_change
     
     def _setup_tag_autocomplete(self):
         """Setup tag autocomplete dropdown."""
@@ -77,11 +103,15 @@ class TableFiltering:
         self.tag_autocomplete_container = self.tag_autocomplete.build()
         
         # Override search field on_change to detect # prefix
+        # Note: This will wrap the existing handler (which already handles helper text)
         original_on_change = self.search_field.on_change
         
         def enhanced_on_change(e):
             """Enhanced on_change that handles both text and tag filtering."""
             value = e.control.value or ""
+            
+            # Update helper text based on prefix
+            self._update_helper_text(value)
             
             # Check if input starts with #
             if value.startswith('#'):
@@ -106,6 +136,25 @@ class TableFiltering:
         
         self.search_field.on_change = enhanced_on_change
     
+    def _update_helper_text(self, value: str):
+        """Update helper text based on search prefix."""
+        if not self.search_helper_text:
+            return
+        
+        if value.startswith('@'):
+            self.search_helper_text.value = theme_manager.t("searching_by_username")
+            self.search_helper_text.visible = True
+        elif value.startswith('#'):
+            self.search_helper_text.value = theme_manager.t("searching_by_tag")
+            self.search_helper_text.visible = True
+        else:
+            self.search_helper_text.visible = False
+        
+        try:
+            self.search_helper_text.update()
+        except (AssertionError, AttributeError):
+            pass
+    
     def _on_tag_selected(self, tag: str):
         """
         Handle tag selection from autocomplete.
@@ -116,6 +165,7 @@ class TableFiltering:
         self.tag_query = tag
         if self.search_field:
             self.search_field.value = f"#{tag}"
+            self._update_helper_text(f"#{tag}")
         if self.on_tag_query_change:
             self.on_tag_query_change(tag)
         if self.tag_autocomplete:
@@ -170,6 +220,7 @@ class TableFiltering:
         self.tag_query = None
         if self.search_field:
             self.search_field.value = ""
+            self._update_helper_text("")
         if hasattr(self, 'tag_autocomplete') and self.tag_autocomplete:
             self.tag_autocomplete.clear()
         # Only notify if explicitly requested and tag query actually changed

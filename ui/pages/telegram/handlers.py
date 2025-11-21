@@ -80,7 +80,11 @@ class TelegramHandlers:
     
     def handle_export_messages_excel(self):
         """Handle messages Excel export."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         if not self.page:
+            logger.error("Page not set in TelegramHandlers")
             return
         
         messages = self.view_model.get_messages(
@@ -96,20 +100,44 @@ class TelegramHandlers:
             )
             return
         
-        if not hasattr(self.page, 'overlay') or self.page.overlay is None:
-            self.page.overlay = []
-        if self.excel_picker_messages not in self.page.overlay:
-            self.page.overlay.append(self.excel_picker_messages)
-        
-        default_name = f"messages_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         try:
-            self.excel_picker_messages.save_file(
-                dialog_title=theme_manager.t("export_to_excel"),
-                file_name=default_name,
-                file_type=ft.FilePickerFileType.CUSTOM,
-                allowed_extensions=["xlsx"]
-            )
+            if not hasattr(self.page, 'overlay') or self.page.overlay is None:
+                self.page.overlay = []
+            if self.excel_picker_messages not in self.page.overlay:
+                self.page.overlay.append(self.excel_picker_messages)
+            
+            # Set page reference on picker
+            self.excel_picker_messages.page = self.page
+            
+            # Verify picker is in overlay
+            if self.excel_picker_messages not in self.page.overlay:
+                logger.warning("File picker not in overlay, adding it")
+                self.page.overlay.append(self.excel_picker_messages)
+            
+            self.page.update()
+            
+            # Small delay on macOS to ensure picker is ready (Flet 0.28.3 macOS bug workaround)
+            import time
+            time.sleep(0.15)
+            
+            default_name = f"messages_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            logger.info(f"Opening Excel export dialog for messages (picker in overlay: {self.excel_picker_messages in self.page.overlay})")
+            
+            # File pickers use save_file() directly (not page.open() like dialogs)
+            # On macOS with Flet 0.28.3, there's a known bug - try calling save_file
+            try:
+                self.excel_picker_messages.save_file(
+                    dialog_title=theme_manager.t("export_to_excel"),
+                    file_name=default_name,
+                    file_type=ft.FilePickerFileType.CUSTOM,
+                    allowed_extensions=["xlsx"]
+                )
+                logger.info("save_file() called successfully")
+            except AttributeError as attr_err:
+                logger.error(f"FilePicker.save_file() failed: {attr_err}")
+                raise
         except Exception as ex:
+            logger.error(f"Error opening Excel export dialog: {ex}", exc_info=True)
             theme_manager.show_snackbar(
                 self.page,
                 f"Error opening file picker: {str(ex)}",
@@ -118,7 +146,11 @@ class TelegramHandlers:
     
     def handle_export_messages_pdf(self):
         """Handle messages PDF export."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         if not self.page:
+            logger.error("Page not set in TelegramHandlers")
             return
         
         messages = self.view_model.get_messages(
@@ -134,13 +166,25 @@ class TelegramHandlers:
             )
             return
         
-        if not hasattr(self.page, 'overlay') or self.page.overlay is None:
-            self.page.overlay = []
-        if self.pdf_picker_messages not in self.page.overlay:
-            self.page.overlay.append(self.pdf_picker_messages)
-        
-        default_name = f"messages_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         try:
+            if not hasattr(self.page, 'overlay') or self.page.overlay is None:
+                self.page.overlay = []
+            if self.pdf_picker_messages not in self.page.overlay:
+                self.page.overlay.append(self.pdf_picker_messages)
+            
+            # Set page reference on picker
+            self.pdf_picker_messages.page = self.page
+            self.page.update()
+            
+            # Small delay on macOS to ensure picker is ready
+            import time
+            time.sleep(0.1)
+            
+            default_name = f"messages_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            logger.info(f"Opening PDF export dialog for messages")
+            
+            # File pickers use save_file() directly (not page.open() like dialogs)
+            # On macOS, ensure picker is in overlay and page is updated before calling save_file
             self.pdf_picker_messages.save_file(
                 dialog_title=theme_manager.t("export_to_pdf"),
                 file_name=default_name,
@@ -148,6 +192,7 @@ class TelegramHandlers:
                 allowed_extensions=["pdf"]
             )
         except Exception as ex:
+            logger.error(f"Error opening PDF export dialog: {ex}", exc_info=True)
             theme_manager.show_snackbar(
                 self.page,
                 f"Error opening file picker: {str(ex)}",
@@ -156,7 +201,11 @@ class TelegramHandlers:
     
     def handle_export_users_excel(self):
         """Handle users Excel export."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         if not self.page:
+            logger.error("Page not set in TelegramHandlers")
             return
         
         users = self.view_model.get_all_users()
@@ -168,13 +217,25 @@ class TelegramHandlers:
             )
             return
         
-        if not hasattr(self.page, 'overlay') or self.page.overlay is None:
-            self.page.overlay = []
-        if self.excel_picker_users not in self.page.overlay:
-            self.page.overlay.append(self.excel_picker_users)
-        
-        default_name = f"users_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         try:
+            if not hasattr(self.page, 'overlay') or self.page.overlay is None:
+                self.page.overlay = []
+            if self.excel_picker_users not in self.page.overlay:
+                self.page.overlay.append(self.excel_picker_users)
+            
+            # Set page reference on picker
+            self.excel_picker_users.page = self.page
+            self.page.update()
+            
+            # Small delay on macOS to ensure picker is ready
+            import time
+            time.sleep(0.1)
+            
+            default_name = f"users_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            logger.info(f"Opening Excel export dialog for users")
+            
+            # File pickers use save_file() directly (not page.open() like dialogs)
+            # On macOS, ensure picker is in overlay and page is updated before calling save_file
             self.excel_picker_users.save_file(
                 dialog_title=theme_manager.t("export_to_excel"),
                 file_name=default_name,
@@ -182,6 +243,7 @@ class TelegramHandlers:
                 allowed_extensions=["xlsx"]
             )
         except Exception as ex:
+            logger.error(f"Error opening Excel export dialog: {ex}", exc_info=True)
             theme_manager.show_snackbar(
                 self.page,
                 f"Error opening file picker: {str(ex)}",
@@ -190,7 +252,11 @@ class TelegramHandlers:
     
     def handle_export_users_pdf(self):
         """Handle users PDF export."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         if not self.page:
+            logger.error("Page not set in TelegramHandlers")
             return
         
         users = self.view_model.get_all_users()
@@ -202,13 +268,25 @@ class TelegramHandlers:
             )
             return
         
-        if not hasattr(self.page, 'overlay') or self.page.overlay is None:
-            self.page.overlay = []
-        if self.pdf_picker_users not in self.page.overlay:
-            self.page.overlay.append(self.pdf_picker_users)
-        
-        default_name = f"users_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         try:
+            if not hasattr(self.page, 'overlay') or self.page.overlay is None:
+                self.page.overlay = []
+            if self.pdf_picker_users not in self.page.overlay:
+                self.page.overlay.append(self.pdf_picker_users)
+            
+            # Set page reference on picker
+            self.pdf_picker_users.page = self.page
+            self.page.update()
+            
+            # Small delay on macOS to ensure picker is ready
+            import time
+            time.sleep(0.1)
+            
+            default_name = f"users_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            logger.info(f"Opening PDF export dialog for users")
+            
+            # File pickers use save_file() directly (not page.open() like dialogs)
+            # On macOS, ensure picker is in overlay and page is updated before calling save_file
             self.pdf_picker_users.save_file(
                 dialog_title=theme_manager.t("export_to_pdf"),
                 file_name=default_name,
@@ -216,6 +294,7 @@ class TelegramHandlers:
                 allowed_extensions=["pdf"]
             )
         except Exception as ex:
+            logger.error(f"Error opening PDF export dialog: {ex}", exc_info=True)
             theme_manager.show_snackbar(
                 self.page,
                 f"Error opening file picker: {str(ex)}",

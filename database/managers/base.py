@@ -3,6 +3,7 @@ Base database manager with connection management, migrations, and helper functio
 """
 
 import sqlite3
+import os
 import base64
 from datetime import datetime
 from typing import Any, Optional
@@ -80,8 +81,16 @@ def _parse_datetime(dt_value: Any) -> Optional[datetime]:
 class BaseDatabaseManager:
     """Base class for database managers with connection management and migrations."""
     
-    def __init__(self, db_path: str = "./data/app.db"):
+    def __init__(self, db_path: str = None):
         """Initialize database manager."""
+        # Use DATABASE_PATH from constants if no path provided
+        if db_path is None:
+            try:
+                from utils.constants import DATABASE_PATH
+                db_path = DATABASE_PATH
+            except (ImportError, AttributeError):
+                # Fallback to default (for development)
+                db_path = "./data/app.db"
         self.db_path = db_path
         self._encryption_service = None
         self._ensure_db_directory()
@@ -89,22 +98,40 @@ class BaseDatabaseManager:
     
     def _ensure_db_directory(self):
         """Ensure database directory exists."""
-        db_dir = Path(self.db_path).parent
-        db_dir.mkdir(parents=True, exist_ok=True)
+        # Expand user home directory if present (~)
+        db_path_expanded = str(Path(self.db_path).expanduser())
+        db_dir = Path(db_path_expanded).parent
+        try:
+            db_dir.mkdir(parents=True, exist_ok=True)
+        except (OSError, PermissionError) as e:
+            logger.error(f"Failed to create database directory {db_dir}: {e}")
+            raise
     
     def _init_database(self):
         """Initialize database with schema."""
-        # Normalize database path for comparison
-        normalized_path = str(Path(self.db_path).resolve())
+        # Expand user home directory and normalize database path
+        db_path_expanded = str(Path(self.db_path).expanduser())
+        normalized_path = str(Path(db_path_expanded).resolve())
+        # Update self.db_path to the expanded/resolved path
+        self.db_path = normalized_path
         
         # Check if database file already exists (first time initialization)
-        db_file_exists = Path(self.db_path).exists()
+        db_file_exists = Path(normalized_path).exists()
         
         # Check if this database has already been initialized in this session
         is_first_init = normalized_path not in _initialized_databases
         
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            # Ensure parent directory exists and is writable
+            db_dir = Path(normalized_path).parent
+            if not db_dir.exists():
+                db_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Check if directory is writable
+            if not os.access(db_dir, os.W_OK):
+                raise PermissionError(f"Database directory is not writable: {db_dir}")
+            
+            with sqlite3.connect(normalized_path) as conn:
                 # Enable WAL (Write-Ahead Logging) mode for better concurrency
                 # WAL mode allows multiple readers while one writer is active
                 # This significantly reduces database lock conflicts

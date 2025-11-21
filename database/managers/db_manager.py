@@ -2,7 +2,14 @@
 Main database manager that composes all domain managers.
 """
 
+import sys
 from database.managers.base import BaseDatabaseManager
+
+# Import DATABASE_PATH from constants if available
+try:
+    from utils.constants import DATABASE_PATH
+except ImportError:
+    DATABASE_PATH = None
 from database.managers.settings_manager import SettingsManager
 from database.managers.telegram_credential_manager import TelegramCredentialManager
 from database.managers.group_manager import GroupManager
@@ -25,8 +32,15 @@ class DatabaseManager(BaseDatabaseManager):
     Maintains the same public API as the original DatabaseManager.
     """
     
-    def __init__(self, db_path: str = "./data/app.db"):
+    def __init__(self, db_path: str = None):
         """Initialize database manager with all composed managers."""
+        # Use DATABASE_PATH from constants if no path provided
+        if db_path is None:
+            if DATABASE_PATH is not None:
+                db_path = DATABASE_PATH
+            else:
+                # Fallback to default (for development)
+                db_path = "./data/app.db"
         # Initialize base class which sets up the database
         super().__init__(db_path)
         

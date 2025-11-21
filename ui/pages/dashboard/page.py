@@ -10,7 +10,6 @@ from ui.theme import theme_manager
 from ui.components import StatCard
 from database.db_manager import DatabaseManager
 from utils.constants import format_bytes
-from ui.pages.dashboard.sample_data import SampleDataGenerator
 from ui.pages.dashboard.components.group_selector import GroupSelectorComponent
 from ui.pages.dashboard.components.date_range_selector import DateRangeSelectorComponent
 from ui.pages.dashboard.components.active_users_list import ActiveUsersListComponent
@@ -23,11 +22,6 @@ class DashboardPage(ft.Container):
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
         self.page: Optional[ft.Page] = None
-        self.sample_data_generator = SampleDataGenerator(db_manager)
-        
-        # Generate sample data if database is empty
-        self.sample_data_generator.ensure_sample_data()
-        self.is_sample_data = self.sample_data_generator.is_sample_data()
         
         # Get groups and set default selected groups
         groups = self.db_manager.get_all_groups()
@@ -69,6 +63,7 @@ class DashboardPage(ft.Container):
         )
         
         # Wrap stat cards in container with padding to prevent edge clipping on hover
+        # Make stat cards bigger and responsive
         stat_cards_row = ft.Row([
             StatCard(
                 title=theme_manager.t("total_messages"),
@@ -94,7 +89,7 @@ class DashboardPage(ft.Container):
                 icon=ft.Icons.STORAGE,
                 color=ft.Colors.ORANGE
             ),
-        ], spacing=theme_manager.spacing_sm, wrap=True, run_spacing=theme_manager.spacing_sm)
+        ], spacing=theme_manager.spacing_md, wrap=True, run_spacing=theme_manager.spacing_md)
         
         self.stat_cards = ft.Container(
             content=stat_cards_row,
@@ -189,8 +184,10 @@ class DashboardPage(ft.Container):
                 ft.Divider(),
                 ft.Container(
                     content=self.active_users_component.build(),
-                    height=400,
-                    width=None
+                    height=450,
+                    width=None,
+                    padding=ft.padding.all(5),
+                    clip_behavior=ft.ClipBehavior.NONE
                 ),
             ], spacing=theme_manager.spacing_sm)
         )
@@ -206,17 +203,16 @@ class DashboardPage(ft.Container):
                     ),
                     ft.Container(expand=True),
                     self.group_selector_widget,
-                    self._create_sample_data_badge() if self.is_sample_data else ft.Container(),
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, spacing=10),
                 ft.Container(height=10),
                 self.date_range_selector_widget,
                 self.stat_cards,
-                theme_manager.spacing_container("md"),
+                ft.Container(height=theme_manager.spacing_md),
                 ft.Row([
                     self.monthly_stats,
                     self.recent_activity,
                 ], spacing=theme_manager.spacing_md, expand=True),
-                theme_manager.spacing_container("md"),
+                ft.Container(height=theme_manager.spacing_md),
                 self.active_users_card,
             ], scroll=ft.ScrollMode.AUTO, spacing=theme_manager.spacing_md),
             padding=theme_manager.padding_lg,
@@ -409,26 +405,3 @@ class DashboardPage(ft.Container):
             router = self.page.data.get('router')
             if router:
                 router.navigate_to("reports")
-    
-    def _create_sample_data_badge(self) -> ft.Container:
-        """Create a badge indicating sample data."""
-        return ft.Container(
-            content=ft.Row([
-                ft.Icon(
-                    ft.Icons.INFO_OUTLINED,
-                    size=18,
-                    color=ft.Colors.ORANGE_700 if theme_manager.is_dark else ft.Colors.ORANGE_600
-                ),
-                ft.Text(
-                    "Sample Data",
-                    size=theme_manager.font_size_small,
-                    weight=ft.FontWeight.BOLD,
-                    color=ft.Colors.ORANGE_700 if theme_manager.is_dark else ft.Colors.ORANGE_600
-                )
-            ], spacing=6, tight=True),
-            bgcolor=ft.Colors.ORANGE_100 if not theme_manager.is_dark else ft.Colors.ORANGE_900,
-            border=ft.border.all(1, ft.Colors.ORANGE_300 if not theme_manager.is_dark else ft.Colors.ORANGE_700),
-            border_radius=20,
-            padding=ft.padding.symmetric(horizontal=12, vertical=6),
-            tooltip="This dashboard is showing sample/demo data. Connect to Telegram to see real data."
-        )

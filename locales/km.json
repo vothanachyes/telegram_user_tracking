@@ -359,6 +359,8 @@
   "pin_recovery_data": "ទិន្នន័យការស្តារ PIN",
   "copy_pin_recovery_data": "ចម្លងទៅក្តារតម្បៀតខ្ទាស់",
   "pin_recovery_data_copied": "ទិន្នន័យការស្តារ PIN ត្រូវបានចម្លងទៅក្តារតម្បៀតខ្ទាស់",
-  "pin_recovery_not_available": "ការស្តារ PIN មានតែនៅពេល PIN ត្រូវបានបើកដំណើរការប៉ុណ្ណោះ"
+  "pin_recovery_not_available": "ការស្តារ PIN មានតែនៅពេល PIN ត្រូវបានបើកដំណើរការប៉ុណ្ណោះ",
+  "searching_by_username": "កំពុងស្វែងរកតាមឈ្មោះអ្នកប្រើ",
+  "searching_by_tag": "កំពុងស្វែងរកតាមស្លាក"
 }
 

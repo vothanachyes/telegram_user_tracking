@@ -100,6 +100,28 @@ def obfuscate_code() -> bool:
                         dst_file.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(file, dst_file)
         
+        # Flatten nested structure created by PyArmor
+        # PyArmor creates dir/dir/ structure, but we need dir/ for imports
+        print("  Flattening nested directory structure...")
+        for dir_name in code_dirs:
+            nested_dir = OBFUSCATED_DIR / dir_name / dir_name
+            target_dir = OBFUSCATED_DIR / dir_name
+            if nested_dir.exists() and nested_dir.is_dir():
+                # Move all files from nested_dir to target_dir
+                for item in nested_dir.iterdir():
+                    target_item = target_dir / item.name
+                    if target_item.exists():
+                        if target_item.is_dir():
+                            shutil.rmtree(target_item)
+                        else:
+                            target_item.unlink()
+                    shutil.move(str(item), str(target_item))
+                # Remove the now-empty nested directory
+                try:
+                    nested_dir.rmdir()
+                except OSError:
+                    pass  # Directory might not be empty if there are subdirs
+        
         print("✅ Code obfuscation completed")
         return True
         
@@ -214,16 +236,28 @@ def build_executable():
         '--add-data=utils:utils',
     ]
     
+    # Add Python paths for importable modules
+    python_paths = []
+    
     # If using obfuscated code, we need to adjust paths
     if USE_PYARMOR and obfuscation_success and OBFUSCATED_DIR.exists():
-        # For obfuscated builds, use obfuscated code directories
-        # But keep data files (JSON, etc.) from original
+        # For obfuscated builds, add obfuscated directories to Python path
+        # This makes them importable as Python modules
+        python_paths = [
+            '--paths', str(OBFUSCATED_DIR),
+        ]
+        # Also add as data files for non-Python files (JSON, etc.)
         data_files = [
             f'--add-data={OBFUSCATED_DIR}/config:config',
             f'--add-data={OBFUSCATED_DIR}/database:database',
             f'--add-data={OBFUSCATED_DIR}/services:services',
             f'--add-data={OBFUSCATED_DIR}/ui:ui',
             f'--add-data={OBFUSCATED_DIR}/utils:utils',
+        ]
+    else:
+        # For non-obfuscated builds, add project root to Python path
+        python_paths = [
+            '--paths', str(PROJECT_ROOT),
         ]
     
     # Add locales if they exist
@@ -244,12 +278,15 @@ def build_executable():
             print(f"  - {cred_file.name} (excluded for security)")
         print("   Desktop app uses REST API - credentials only needed for deployment scripts")
     
+    # Add Python paths first (for importable modules)
+    cmd.extend(python_paths)
+    # Then add data files
     cmd.extend(data_files)
     
     # Exclude unrelated code from build
     exclude_modules = [
-        'data_ran', 'tests', 'z_sanbox', 'unused', 'scripts',
-        'pytest', 'pytest_', 'dataRan', 'test_single_instance_manual',
+        'tests', 'z_sanbox', 'unused', 'scripts',
+        'pytest', 'pytest_', 'test_single_instance_manual',
         'decrypt_pin', 'icon_maker',
     ]
     
@@ -262,10 +299,41 @@ def build_executable():
     hidden_imports = [
         'flet', 'telethon', 'firebase_admin', 'pandas',
         'xlsxwriter', 'reportlab', 'PIL', 'dotenv', 'cryptography',
+        'qrcode',  # QR code generation
+        # UI components
+        'ui.components.tag_autocomplete',
+        # Utils modules (required for PyArmor obfuscated builds)
+        'utils',
+        'utils.logging_config',
+        'utils.constants',
+        'utils.credential_storage',
+        'utils.db_commands',
+        'utils.group_parser',
+        'utils.helpers',
+        'utils.pin_attempt_manager',
+        'utils.pin_validator',
+        'utils.rich_content_renderer',
+        'utils.single_instance',
+        'utils.tag_extractor',
+        'utils.user_pin_encryption',
+        'utils.validators',
+        'utils.version_utils',
+        'utils.windows_auth',
     ]
     
     for imp in hidden_imports:
         cmd.extend(['--hidden-import', imp])
+    
+    # Collect all submodules for packages with many nested modules
+    cmd.extend(['--collect-submodules', 'cryptography'])
+    cmd.extend(['--collect-submodules', 'reportlab'])
+    
+    # Add runtime hook for obfuscated imports (if using PyArmor)
+    if USE_PYARMOR and obfuscation_success:
+        runtime_hook = PROJECT_ROOT / 'scripts' / 'pyi_rth_obfuscated_imports.py'
+        if runtime_hook.exists():
+            cmd.extend(['--runtime-hook', str(runtime_hook)])
+            print(f"  Using runtime hook: {runtime_hook.name}")
     
     # Build info
     if system == 'Windows':
@@ -280,7 +348,8 @@ def build_executable():
         result = subprocess.run(cmd, check=True, cwd=PROJECT_ROOT)
         
         # Step 3: Remove source files (Option 3)
-        if REMOVE_SOURCE_FILES:
+        # NOTE: Skip this step when using PyArmor - obfuscated files are needed at runtime
+        if REMOVE_SOURCE_FILES and not (USE_PYARMOR and obfuscation_success):
             print("\n" + "=" * 60)
             print("Step 3: Removing source files from bundle...")
             print("=" * 60)
@@ -308,23 +377,40 @@ def build_executable():
                     except Exception as e:
                         print(f"  Warning: Could not remove {py_file}: {e}")
                 print(f"  ✅ Removed {removed_count} source files")
-                
-                # Remove Firebase credentials JSON files (security - no Admin SDK in desktop app)
-                config_dir = resources_dir / 'config'
-                if config_dir.exists():
-                    creds_removed = 0
-                    for cred_file in config_dir.glob('*.json'):
-                        # Check if it's a Firebase credentials file
-                        if 'firebase' in cred_file.name.lower() or 'fbsvc' in cred_file.name.lower():
-                            try:
-                                cred_file.unlink()
-                                creds_removed += 1
-                                print(f"  ✅ Removed Firebase credentials: {cred_file.name}")
-                            except Exception as e:
-                                print(f"  Warning: Could not remove {cred_file}: {e}")
-                    if creds_removed > 0:
-                        print(f"  ✅ Removed {creds_removed} Firebase credential file(s) (security improvement)")
-            else:
+        elif REMOVE_SOURCE_FILES and USE_PYARMOR and obfuscation_success:
+            print("\n" + "=" * 60)
+            print("Step 3: Skipping source file removal (PyArmor obfuscated files needed at runtime)")
+            print("=" * 60)
+            print("  ℹ️  Obfuscated .py files are kept in bundle (required for execution)")
+            print("  ℹ️  Files are already protected by PyArmor obfuscation")
+        
+        # Remove Firebase credentials JSON files (security - no Admin SDK in desktop app)
+        # This applies to both obfuscated and non-obfuscated builds
+        if system == 'Darwin':
+            resources_dir = PROJECT_ROOT / 'dist' / 'TelegramUserTracking.app' / 'Contents' / 'Resources'
+        elif system == 'Windows':
+            if build_mode == '--onedir':
+                resources_dir = PROJECT_ROOT / 'dist' / 'TelegramUserTracking'
+        else:
+            resources_dir = PROJECT_ROOT / 'dist' / 'TelegramUserTracking'
+        
+        if resources_dir and resources_dir.exists():
+            config_dir = resources_dir / 'config'
+            if config_dir.exists():
+                creds_removed = 0
+                for cred_file in config_dir.glob('*.json'):
+                    # Check if it's a Firebase credentials file
+                    if 'firebase' in cred_file.name.lower() or 'fbsvc' in cred_file.name.lower():
+                        try:
+                            cred_file.unlink()
+                            creds_removed += 1
+                            print(f"  ✅ Removed Firebase credentials: {cred_file.name}")
+                        except Exception as e:
+                            print(f"  Warning: Could not remove {cred_file}: {e}")
+                if creds_removed > 0:
+                    print(f"  ✅ Removed {creds_removed} Firebase credential file(s) (security improvement)")
+        else:
+            if resources_dir:
                 print(f"  ⚠️  Resources directory not found: {resources_dir}")
         
         # Clean up obfuscated temp directory

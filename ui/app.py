@@ -60,20 +60,28 @@ class TelegramUserTrackingApp:
     def _build_ui(self):
         """Build main UI."""
         try:
-            # Check if Firebase is available and initialized
+            # Check if Firebase is available and properly configured
             from config.firebase_config import firebase_config
-            firebase_available = getattr(firebase_config, 'is_available', False)
-            firebase_initialized = (
-                firebase_config.is_initialized() 
-                if hasattr(firebase_config, 'is_initialized') 
-                else False
-            )
+            from utils.constants import FIREBASE_PROJECT_ID, FIREBASE_WEB_API_KEY
             
-            # Show login only if Firebase is available and initialized
-            if firebase_available and firebase_initialized:
-                self._show_login()
+            firebase_available = getattr(firebase_config, 'is_available', False)
+            firebase_configured = bool(FIREBASE_PROJECT_ID and FIREBASE_WEB_API_KEY)
+            
+            # Show login only if Firebase is available, configured, and initialized
+            # Note: initialize() can be called later during login, so we check configuration here
+            if firebase_available and firebase_configured:
+                # Try to initialize (will succeed even without ID token if config is present)
+                if firebase_config.initialize():
+                    self._show_login()
+                else:
+                    logger.warning("Firebase initialization failed, showing main app directly")
+                    self.is_logged_in = True
+                    self._show_main_app()
             else:
-                logger.info("Firebase not configured, showing main app directly")
+                if not firebase_available:
+                    logger.info("Firebase libraries not available (PyJWT/requests missing), showing main app directly")
+                elif not firebase_configured:
+                    logger.info("Firebase not configured (missing FIREBASE_PROJECT_ID or FIREBASE_WEB_API_KEY), showing main app directly")
                 self.is_logged_in = True
                 self._show_main_app()
         except Exception as e:

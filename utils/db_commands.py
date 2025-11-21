@@ -3,7 +3,6 @@ Database management CLI commands.
 
 Provides commands for:
 - Clearing database data (with option to preserve system/app data)
-- Initializing sample data from SQL file
 - Dumping current data to SQL file
 """
 
@@ -103,43 +102,6 @@ def clear_database(db_path: str, preserve_system: bool = False, preserve_auth: b
             
     except Exception as e:
         logger.error(f"Error clearing database: {e}", exc_info=True)
-        return False
-
-
-def init_sample_data(db_path: str, sql_file_path: str) -> bool:
-    """
-    Initialize database with sample data from SQL file.
-    
-    Args:
-        db_path: Path to database file
-        sql_file_path: Path to SQL file containing sample data
-    
-    Returns:
-        True if successful, False otherwise
-    """
-    sql_path = Path(sql_file_path)
-    if not sql_path.exists():
-        logger.error(f"SQL file not found: {sql_file_path}")
-        return False
-    
-    if not Path(db_path).exists():
-        logger.error(f"Database file not found: {db_path}")
-        return False
-    
-    try:
-        # Read SQL file
-        sql_content = sql_path.read_text(encoding='utf-8')
-        
-        with get_connection(db_path) as conn:
-            # Execute SQL script
-            conn.executescript(sql_content)
-            conn.commit()
-            
-            logger.info(f"Sample data loaded successfully from {sql_file_path}")
-            return True
-            
-    except Exception as e:
-        logger.error(f"Error loading sample data: {e}", exc_info=True)
         return False
 
 
@@ -284,9 +246,6 @@ Examples:
   # Clear only user data (preserve system and auth)
   python -m utils.db_commands clear-db --preserve-system --preserve-auth
   
-  # Initialize sample data
-  python -m utils.db_commands init-sample-data
-  
   # Dump current data to SQL file
   python -m utils.db_commands dump-data --output tests/fixtures/demo_data.sql
         """
@@ -312,15 +271,6 @@ Examples:
         '--preserve-auth',
         action='store_true',
         help='Preserve auth-related tables (login_credentials, user_license_cache, telegram_credentials)'
-    )
-    
-    # Init sample data command
-    init_parser = subparsers.add_parser('init-sample-data', help='Initialize database with sample data')
-    init_parser.add_argument(
-        '--sql-file',
-        type=str,
-        default='tests/fixtures/demo_data.sql',
-        help='Path to SQL file with sample data (default: tests/fixtures/demo_data.sql)'
     )
     
     # Dump data command
@@ -362,8 +312,6 @@ Examples:
             preserve_system=args.preserve_system,
             preserve_auth=args.preserve_auth
         )
-    elif args.command == 'init-sample-data':
-        success = init_sample_data(args.db_path, args.sql_file)
     elif args.command == 'dump-data':
         success = dump_data(
             args.db_path,

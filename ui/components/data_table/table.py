@@ -45,7 +45,19 @@ class DataTable(ft.Container):
         
         # Override search callback to update table
         if self.filtering.search_field:
-            self.filtering.search_field.on_change = self._on_search
+            # Store reference to original handler for chaining
+            original_on_change = self.filtering.search_field.on_change
+            
+            def wrapped_handler(e):
+                """Wrapper that updates helper text and calls table's search handler."""
+                # Update helper text
+                if hasattr(self.filtering, '_update_helper_text'):
+                    value = e.control.value or ""
+                    self.filtering._update_helper_text(value)
+                # Call table's search handler
+                self._on_search(e)
+            
+            self.filtering.search_field.on_change = wrapped_handler
         
         # Expose search field and clear filter button
         self.search_field = self.filtering.search_field

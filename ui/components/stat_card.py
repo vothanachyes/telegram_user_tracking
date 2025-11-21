@@ -42,14 +42,14 @@ class StatCard(ft.Container):
                 ft.Container(
                     content=ft.Icon(
                         name=icon,
-                        size=40,
+                        size=48,
                         color=ft.Colors.WHITE
                     ),
                     bgcolor=self.color,
                     border_radius=theme_manager.corner_radius,
                     padding=theme_manager.padding_sm,
-                    width=70,
-                    height=70,
+                    width=80,
+                    height=80,
                     alignment=ft.alignment.center
                 ),
                 theme_manager.spacing_container("md"),
@@ -71,7 +71,7 @@ class StatCard(ft.Container):
             border=ft.border.all(1, theme_manager.border_color),
             border_radius=theme_manager.corner_radius,
             padding=theme_manager.padding_md,
-            width=250,
+            width=300,
             shadow=[self._default_shadow],
             animate=ft.Animation(duration=300, curve=ft.AnimationCurve.EASE_IN_OUT),
             animate_scale=ft.Animation(duration=300, curve=ft.AnimationCurve.EASE_IN_OUT),

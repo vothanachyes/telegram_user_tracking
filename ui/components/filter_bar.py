@@ -73,8 +73,16 @@ class FilterBar:
                 border_radius=theme_manager.corner_radius,
                 on_change=self._on_search_change
             )
+            # Helper text below search field
+            self.search_helper_text = ft.Text(
+                "",
+                size=11,
+                color=theme_manager.text_secondary_color,
+                visible=False
+            )
         else:
             self.search_field = None
+            self.search_helper_text = None
         
         # Group selector
         group_options = [f"{g.group_name} ({g.group_id})" for g in groups]
@@ -102,7 +110,12 @@ class FilterBar:
             controls.extend([self.start_date_field, self.end_date_field, ft.Container(width=20)])
         
         if self.search_field:
-            controls.append(self.search_field)
+            # Wrap search field with helper text in a Column
+            search_container = ft.Column([
+                self.search_field,
+                self.search_helper_text if self.search_helper_text else ft.Container()
+            ], spacing=2, tight=True)
+            controls.append(search_container)
             if controls:  # Add spacing if there are other controls
                 controls.append(ft.Container(width=20))
         
@@ -153,6 +166,7 @@ class FilterBar:
             self.end_date_field.value = ""
         if self.search_field:
             self.search_field.value = ""
+            self._update_helper_text("")
     
     def _on_group_selected(self, e):
         """Handle group selection."""
@@ -176,6 +190,30 @@ class FilterBar:
     
     def _on_search_change(self, e):
         """Handle search field change."""
+        value = e.control.value or ""
+        
+        # Update helper text based on prefix
+        self._update_helper_text(value)
+        
         if self.on_search_change:
-            self.on_search_change(e.control.value or "")
+            self.on_search_change(value)
+    
+    def _update_helper_text(self, value: str):
+        """Update helper text based on search prefix."""
+        if not self.search_helper_text:
+            return
+        
+        if value.startswith('@'):
+            self.search_helper_text.value = theme_manager.t("searching_by_username")
+            self.search_helper_text.visible = True
+        elif value.startswith('#'):
+            self.search_helper_text.value = theme_manager.t("searching_by_tag")
+            self.search_helper_text.visible = True
+        else:
+            self.search_helper_text.visible = False
+        
+        try:
+            self.search_helper_text.update()
+        except (AssertionError, AttributeError):
+            pass
 

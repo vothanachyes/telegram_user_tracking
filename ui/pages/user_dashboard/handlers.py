@@ -141,9 +141,16 @@ class UserDashboardHandlers:
                 if self.page:
                     self.page.update()
     
-    def handle_export_excel(self, e):
+    def handle_export_excel(self, e=None):
         """Handle Excel export."""
-        if not self.page or not self.selected_user:
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        if not self.page:
+            logger.error("Page not set in UserDashboardHandlers")
+            return
+        
+        if not self.selected_user:
             theme_manager.show_snackbar(
                 self.page,
                 theme_manager.t("select_user_first"),
@@ -151,13 +158,25 @@ class UserDashboardHandlers:
             )
             return
         
-        if not hasattr(self.page, 'overlay') or self.page.overlay is None:
-            self.page.overlay = []
-        if self.excel_picker not in self.page.overlay:
-            self.page.overlay.append(self.excel_picker)
-        
-        default_name = f"user_{self.selected_user.user_id}_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         try:
+            if not hasattr(self.page, 'overlay') or self.page.overlay is None:
+                self.page.overlay = []
+            if self.excel_picker not in self.page.overlay:
+                self.page.overlay.append(self.excel_picker)
+            
+            # Set page reference on picker
+            self.excel_picker.page = self.page
+            self.page.update()
+            
+            # Small delay on macOS to ensure picker is ready
+            import time
+            time.sleep(0.1)
+            
+            default_name = f"user_{self.selected_user.user_id}_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            logger.info(f"Opening Excel export dialog for user {self.selected_user.user_id}")
+            
+            # File pickers use save_file() directly (not page.open() like dialogs)
+            # On macOS, ensure picker is in overlay and page is updated before calling save_file
             self.excel_picker.save_file(
                 dialog_title=theme_manager.t("export_to_excel"),
                 file_name=default_name,
@@ -165,15 +184,23 @@ class UserDashboardHandlers:
                 allowed_extensions=["xlsx"]
             )
         except Exception as ex:
+            logger.error(f"Error opening Excel export dialog: {ex}", exc_info=True)
             theme_manager.show_snackbar(
                 self.page,
                 f"Error: {str(ex)}",
                 bgcolor=ft.Colors.RED
             )
     
-    def handle_export_pdf(self, e):
+    def handle_export_pdf(self, e=None):
         """Handle PDF export."""
-        if not self.page or not self.selected_user:
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        if not self.page:
+            logger.error("Page not set in UserDashboardHandlers")
+            return
+        
+        if not self.selected_user:
             theme_manager.show_snackbar(
                 self.page,
                 theme_manager.t("select_user_first"),
@@ -181,13 +208,25 @@ class UserDashboardHandlers:
             )
             return
         
-        if not hasattr(self.page, 'overlay') or self.page.overlay is None:
-            self.page.overlay = []
-        if self.pdf_picker not in self.page.overlay:
-            self.page.overlay.append(self.pdf_picker)
-        
-        default_name = f"user_{self.selected_user.user_id}_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         try:
+            if not hasattr(self.page, 'overlay') or self.page.overlay is None:
+                self.page.overlay = []
+            if self.pdf_picker not in self.page.overlay:
+                self.page.overlay.append(self.pdf_picker)
+            
+            # Set page reference on picker
+            self.pdf_picker.page = self.page
+            self.page.update()
+            
+            # Small delay on macOS to ensure picker is ready
+            import time
+            time.sleep(0.1)
+            
+            default_name = f"user_{self.selected_user.user_id}_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            logger.info(f"Opening PDF export dialog for user {self.selected_user.user_id}")
+            
+            # File pickers use save_file() directly (not page.open() like dialogs)
+            # On macOS, ensure picker is in overlay and page is updated before calling save_file
             self.pdf_picker.save_file(
                 dialog_title=theme_manager.t("export_to_pdf"),
                 file_name=default_name,
@@ -195,6 +234,7 @@ class UserDashboardHandlers:
                 allowed_extensions=["pdf"]
             )
         except Exception as ex:
+            logger.error(f"Error opening PDF export dialog: {ex}", exc_info=True)
             theme_manager.show_snackbar(
                 self.page,
                 f"Error: {str(ex)}",

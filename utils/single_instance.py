@@ -34,7 +34,10 @@ class SingleInstance:
             # USER_DATA_DIR is already created in constants.py, so we can use it directly
             lock_file_path = USER_DATA_DIR / "app.lock"
         
-        self.lock_file_path = lock_file_path
+        # Convert to Path if it's a string, expand user home directory, and resolve to absolute path
+        if isinstance(lock_file_path, str):
+            lock_file_path = Path(lock_file_path)
+        self.lock_file_path = lock_file_path.expanduser().resolve()
         self.lock_file: Optional[object] = None
         self._is_locked = False
         self._system = platform.system()

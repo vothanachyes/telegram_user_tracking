@@ -5,18 +5,12 @@ Application constants and configuration.
 import os
 import sys
 import platform
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables FIRST
-load_dotenv()
-
-# Application Info
+# Application Info (needed for get_user_data_dir)
 APP_NAME = os.getenv("APP_NAME", "Telegram User Tracking")
-APP_VERSION = os.getenv("APP_VERSION", "1.0.0")
-DEVELOPER_NAME = os.getenv("DEVELOPER_NAME", "Vothana CHY")
-DEVELOPER_EMAIL = os.getenv("DEVELOPER_EMAIL", "vothanachy.es@gmail.com")
-DEVELOPER_CONTACT = os.getenv("DEVELOPER_CONTACT", "+85510826027")
 
 # Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -39,6 +33,29 @@ def get_user_data_dir() -> Path:
 # Get secure user data directory and ensure it exists
 USER_DATA_DIR = get_user_data_dir()
 USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# Load environment variables AFTER user data dir is defined
+# Priority: 1) User data directory .env (for bundled apps), 2) Current directory .env (for dev)
+if getattr(sys, 'frozen', False):
+    # Running from bundle - look for .env in user data directory
+    env_file = USER_DATA_DIR / ".env"
+    if env_file.exists():
+        load_dotenv(env_file)
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Loaded .env from user data directory: {env_file}")
+    else:
+        # Fallback to current directory (if .env exists there)
+        load_dotenv()
+else:
+    # Development - load from project root
+    load_dotenv()
+
+# Application Info (reload after .env is loaded)
+APP_NAME = os.getenv("APP_NAME", "Telegram User Tracking")
+APP_VERSION = os.getenv("APP_VERSION", "1.0.0")
+DEVELOPER_NAME = os.getenv("DEVELOPER_NAME", "Vothana CHY")
+DEVELOPER_EMAIL = os.getenv("DEVELOPER_EMAIL", "vothanachy.es@gmail.com")
+DEVELOPER_CONTACT = os.getenv("DEVELOPER_CONTACT", "+85510826027")
 
 def get_app_data_dir() -> Path:
     """

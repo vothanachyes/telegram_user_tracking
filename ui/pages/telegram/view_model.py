@@ -32,8 +32,17 @@ class TelegramViewModel:
             message_type_filter=message_type_filter
         )
     
-    def get_users_by_group(self, group_id: int) -> List:
-        """Get users by group."""
+    def get_users_by_group(self, group_id: int, include_all: bool = False) -> List:
+        """
+        Get users by group.
+        
+        Args:
+            group_id: Group ID
+            include_all: If True, include all users (even those without messages). 
+                       If False, only users who have sent messages.
+        """
+        if include_all:
+            return self.db_manager.get_all_users_in_group(group_id)
         return self.db_manager.get_users_by_group(group_id)
     
     def get_all_groups(self) -> List:

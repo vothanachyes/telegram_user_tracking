@@ -53,7 +53,8 @@ class TelegramPage(ft.Container):
             on_user_click=self._on_user_click,
             on_refresh=self._on_refresh_users,
             on_export_excel=self._on_export_users_excel,
-            on_export_pdf=self._on_export_users_pdf
+            on_export_pdf=self._on_export_users_pdf,
+            on_import_users=self._on_import_users
         )
         
         # Initialize handlers
@@ -105,6 +106,9 @@ class TelegramPage(ft.Container):
         """Set page reference and add file pickers to overlay."""
         self.page = page
         self.handlers.page = page
+        # Update page reference in import users handler
+        if hasattr(self.handlers, 'import_users_handler'):
+            self.handlers.import_users_handler.page = page
         
         if not hasattr(page, 'overlay') or page.overlay is None:
             page.overlay = []
@@ -167,4 +171,11 @@ class TelegramPage(ft.Container):
     def _on_users_pdf_picked(self, e: ft.FilePickerResultEvent):
         """Handle users PDF file picker result."""
         self.handlers.handle_users_pdf_picked(e)
+    
+    def _on_import_users(self):
+        """Handle import users button click."""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug("_on_import_users called in TelegramPage")
+        self.handlers.handle_import_users()
 

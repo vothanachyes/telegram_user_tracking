@@ -418,6 +418,41 @@ def build_executable():
             print(f"\nCleaning up obfuscation temp directory...")
             shutil.rmtree(OBFUSCATED_DIR)
         
+        # Step 4: Fix Info.plist for macOS (prevent duplicate dock icons)
+        if system == 'Darwin':
+            print("\n" + "=" * 60)
+            print("Step 4: Updating Info.plist for macOS...")
+            print("=" * 60)
+            info_plist = PROJECT_ROOT / 'dist' / 'TelegramUserTracking.app' / 'Contents' / 'Info.plist'
+            if info_plist.exists():
+                try:
+                    import plistlib
+                    # Read existing plist
+                    with open(info_plist, 'rb') as f:
+                        plist = plistlib.load(f)
+                    
+                    # Set proper bundle identifier (reverse domain format)
+                    plist['CFBundleIdentifier'] = 'com.telegramusertracking.app'
+                    
+                    # Add LSApplicationCategoryType to prevent duplicate icons
+                    plist['LSApplicationCategoryType'] = 'public.app-category.utilities'
+                    
+                    # Add LSUIElement to prevent showing in dock (if you want background app)
+                    # But we want it in dock, so don't set this
+                    # plist['LSUIElement'] = False
+                    
+                    # Add NSHighResolutionCapable if not present
+                    if 'NSHighResolutionCapable' not in plist:
+                        plist['NSHighResolutionCapable'] = True
+                    
+                    # Write back
+                    with open(info_plist, 'wb') as f:
+                        plistlib.dump(plist, f)
+                    
+                    print("  ✅ Updated Info.plist with proper bundle identifier")
+                except Exception as e:
+                    print(f"  ⚠️  Could not update Info.plist: {e}")
+        
         print("\n" + "=" * 60)
         print("Build completed successfully!")
         print("=" * 60)

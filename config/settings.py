@@ -13,7 +13,7 @@ from database.models import AppSettings
 from utils.constants import (
     DATABASE_PATH, DEFAULT_DOWNLOAD_DIR, PRIMARY_COLOR,
     APP_NAME, APP_VERSION, DEVELOPER_NAME, DEVELOPER_EMAIL, DEVELOPER_CONTACT,
-    SAMPLE_DATABASE_PATH
+    SAMPLE_DATABASE_PATH, USER_DATA_DIR
 )
 from config.app_config import app_config
 
@@ -50,10 +50,53 @@ class Settings:
             if app_config.is_sample_db_mode():
                 db_path = SAMPLE_DATABASE_PATH
             else:
-                # Use custom path from settings if available, otherwise use default
-                db_path = DATABASE_PATH
-                if self._app_settings and self._app_settings.db_path:
-                    db_path = self._app_settings.db_path
+                # Check if user is logged in and use their database path
+                try:
+                    from services.auth_service import auth_service
+                    user_db_path = auth_service.get_user_database_path()
+                    if user_db_path:
+                        # User is logged in - use their database path
+                        db_path = user_db_path
+                    else:
+                        # No user logged in - check if Firebase is configured
+                        from config.firebase_config import firebase_config
+                        from utils.constants import FIREBASE_PROJECT_ID, FIREBASE_WEB_API_KEY
+                        firebase_available = getattr(firebase_config, 'is_available', False)
+                        firebase_configured = bool(FIREBASE_PROJECT_ID and FIREBASE_WEB_API_KEY)
+                        
+                        if firebase_available and firebase_configured:
+                            # Firebase is configured but user not logged in
+                            import sys
+                            is_development = not getattr(sys, 'frozen', False)
+                            
+                            if is_development:
+                                # In development: allow using DATABASE_PATH from .env to skip login
+                                dev_db_path = os.getenv("DATABASE_PATH", "").strip()
+                                if dev_db_path and dev_db_path != str(USER_DATA_DIR / "app.db"):
+                                    # Handle directory-only paths
+                                    if dev_db_path.endswith('/') or dev_db_path.endswith('\\'):
+                                        from pathlib import Path
+                                        dev_db_path = str(Path(dev_db_path) / "app.db")
+                                    db_path = dev_db_path
+                                    logger.debug(f"Development mode: Using DATABASE_PATH from .env: {db_path}")
+                                else:
+                                    # No explicit DATABASE_PATH in .env - use fallback path
+                                    from utils.database_path import get_user_database_path
+                                    db_path = get_user_database_path(None)
+                            else:
+                                # Production: use fallback path (don't use DATABASE_PATH from .env)
+                                from utils.database_path import get_user_database_path
+                                db_path = get_user_database_path(None)
+                        else:
+                            # Firebase not configured - use DATABASE_PATH or custom path
+                            db_path = DATABASE_PATH
+                            if self._app_settings and self._app_settings.db_path:
+                                db_path = self._app_settings.db_path
+                except Exception:
+                    # Fallback if auth_service is not available
+                    db_path = DATABASE_PATH
+                    if self._app_settings and self._app_settings.db_path:
+                        db_path = self._app_settings.db_path
             self._db_manager = DatabaseManager(db_path)
         return self._db_manager
     
@@ -63,7 +106,7 @@ class Settings:
         Used when database path is changed.
         
         Args:
-            new_path: New database path (if None, uses path from settings or sample_db)
+            new_path: New database path (if None, uses path from settings, user path, or sample_db)
         """
         # Close existing connection if any
         if self._db_manager:
@@ -75,10 +118,24 @@ class Settings:
             db_path = new_path
         elif app_config.is_sample_db_mode():
             db_path = SAMPLE_DATABASE_PATH
-        elif self._app_settings and self._app_settings.db_path:
-            db_path = self._app_settings.db_path
         else:
-            db_path = DATABASE_PATH
+            # Check if user is logged in and use their database path
+            try:
+                from services.auth_service import auth_service
+                user_db_path = auth_service.get_user_database_path()
+                if user_db_path:
+                    # User is logged in - use their database path
+                    db_path = user_db_path
+                elif self._app_settings and self._app_settings.db_path:
+                    db_path = self._app_settings.db_path
+                else:
+                    db_path = DATABASE_PATH
+            except Exception:
+                # Fallback if auth_service is not available
+                if self._app_settings and self._app_settings.db_path:
+                    db_path = self._app_settings.db_path
+                else:
+                    db_path = DATABASE_PATH
         
         # Create new manager
         self._db_manager = DatabaseManager(db_path)

@@ -19,6 +19,7 @@ from config.firebase_config import firebase_config
 from utils.constants import FIREBASE_WEB_API_KEY
 from database.db_manager import DatabaseManager
 from services.license_service import LicenseService
+from utils.database_path import get_user_database_path
 
 logger = logging.getLogger(__name__)
 
@@ -214,6 +215,22 @@ class AuthService:
         if self.current_user:
             return self.current_user.get('display_name')
         return None
+    
+    def get_user_database_path(self) -> Optional[str]:
+        """
+        Get user-specific database path for current logged-in user.
+        
+        Returns:
+            Path to user-specific database file, or None if not logged in.
+        """
+        if not self.current_user:
+            return None
+        
+        uid = self.current_user.get('uid')
+        if not uid:
+            return None
+        
+        return get_user_database_path(uid)
 
 
 # Global auth service instance (will be initialized with db_manager in app)

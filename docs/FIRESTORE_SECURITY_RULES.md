@@ -29,6 +29,18 @@ service cloud.firestore {
       allow write: if false;
     }
     
+    // Public notifications - all authenticated users can read
+    match /notifications/{notificationId} {
+      allow read: if request.auth != null;
+      // Deny all writes - only admin can write via Admin SDK
+      allow write: if false;
+    }
+    
+    // User notification read status - users can read/write their own
+    match /user_notifications/{userId}/notifications/{notificationId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
     // Deny all other collections
     match /{document=**} {
       allow read, write: if false;

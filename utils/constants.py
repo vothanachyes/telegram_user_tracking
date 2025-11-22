@@ -87,6 +87,9 @@ def get_app_data_dir() -> Path:
 APP_DATA_DIR = get_app_data_dir()
 
 # Database path: Use env var if set (for development), otherwise use secure directory
+# NOTE: For authenticated users, per-user databases are stored in USER_DATA_DIR/databases/app_{firebase_uid}.db
+# This DATABASE_PATH is used as a fallback for non-authenticated users or when Firebase is not configured.
+# See utils/database_path.py for per-user database path generation.
 DATABASE_PATH = os.getenv("DATABASE_PATH", str(USER_DATA_DIR / "app.db"))
 
 # Sample database path
@@ -245,5 +248,7 @@ DEFAULT_LICENSE_TIER = LICENSE_TIER_PREMIUM
 UPDATE_CHECK_INTERVAL_SECONDS = 3600  # 1 hour
 UPDATES_DIR_NAME = "updates"
 FIREBASE_APP_UPDATES_COLLECTION = "app_updates"
+FIRESTORE_NOTIFICATIONS_COLLECTION = "notifications"
+FIRESTORE_USER_NOTIFICATIONS_COLLECTION = "user_notifications"
 FIREBASE_APP_UPDATES_DOCUMENT = "latest"
 

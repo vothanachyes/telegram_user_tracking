@@ -24,20 +24,65 @@ class TelegramUserTrackingApp:
     
     def __init__(self, page: ft.Page):
         self.page = page
-        # Use sample_db path if in sample_db mode
-        if app_config.is_sample_db_mode():
-            from utils.constants import SAMPLE_DATABASE_PATH
-            self.db_manager = DatabaseManager(SAMPLE_DATABASE_PATH)
-        else:
-            self.db_manager = DatabaseManager()
         self.is_logged_in = False
         self.connectivity_banner: Optional[ft.Container] = None
         
-        # Initialize service initializer
-        self.service_initializer = ServiceInitializer(self.db_manager)
-        self.telegram_service = self.service_initializer.initialize_all(
-            on_connectivity_change=self._on_connectivity_change
-        )
+        # Check if Firebase is configured
+        from config.firebase_config import firebase_config
+        from utils.constants import FIREBASE_PROJECT_ID, FIREBASE_WEB_API_KEY
+        firebase_available = getattr(firebase_config, 'is_available', False)
+        firebase_configured = bool(FIREBASE_PROJECT_ID and FIREBASE_WEB_API_KEY)
+        
+        # Check if we're in development mode
+        import sys
+        is_development = not getattr(sys, 'frozen', False)
+        
+        # Use sample_db path if in sample_db mode (no changes)
+        if app_config.is_sample_db_mode():
+            from utils.constants import SAMPLE_DATABASE_PATH
+            self.db_manager = DatabaseManager(SAMPLE_DATABASE_PATH)
+        elif firebase_available and firebase_configured:
+            # Firebase is configured - check if we should use fallback database for development
+            if is_development:
+                # In development: allow using DATABASE_PATH from .env to skip login
+                # This is useful for faster development/testing
+                import os
+                from utils.constants import DATABASE_PATH
+                dev_db_path = os.getenv("DATABASE_PATH", "").strip()
+                
+                # If DATABASE_PATH is explicitly set in .env, use it (development convenience)
+                from utils.constants import USER_DATA_DIR
+                if dev_db_path and dev_db_path != str(USER_DATA_DIR / "app.db"):
+                    # Handle directory-only paths
+                    if dev_db_path.endswith('/') or dev_db_path.endswith('\\'):
+                        from pathlib import Path
+                        dev_db_path = str(Path(dev_db_path) / "app.db")
+                    logger.info(f"Development mode: Using DATABASE_PATH from .env: {dev_db_path}")
+                    self.db_manager = DatabaseManager(dev_db_path)
+                else:
+                    # No explicit DATABASE_PATH in .env - wait for login (per-user database)
+                    logger.info("Development mode: Firebase configured, waiting for login to create user database")
+                    self.db_manager = None
+            else:
+                # Production: don't create database yet, wait for login
+                # Database will be created in _on_login_success with user-specific path
+                self.db_manager = None
+        else:
+            # Firebase not configured - use fallback database path
+            from utils.database_path import get_user_database_path
+            fallback_db_path = get_user_database_path(None)
+            self.db_manager = DatabaseManager(fallback_db_path)
+        
+        # Initialize service initializer only if db_manager exists
+        if self.db_manager:
+            self.service_initializer = ServiceInitializer(self.db_manager)
+            self.telegram_service = self.service_initializer.initialize_all(
+                on_connectivity_change=self._on_connectivity_change
+            )
+        else:
+            # Will be initialized after login
+            self.service_initializer = None
+            self.telegram_service = None
         
         # Configure page
         PageConfig.configure_page(self.page)
@@ -45,7 +90,8 @@ class TelegramUserTrackingApp:
         # Set up window close handler
         self._setup_window_close_handler()
         
-        # Initialize router and page factory
+        # Initialize router and page factory (may need db_manager and telegram_service)
+        # If db_manager is None, these will be updated after login
         self.page_factory = PageFactory(
             page=self.page,
             db_manager=self.db_manager,
@@ -58,7 +104,8 @@ class TelegramUserTrackingApp:
         
         # Initialize update service
         self.update_service = None
-        self._init_update_service()
+        if self.db_manager:
+            self._init_update_service()
         
         # Build UI
         self._build_ui()
@@ -171,6 +218,10 @@ class TelegramUserTrackingApp:
     def _check_saved_credentials(self):
         """Check if saved credentials exist."""
         try:
+            # If db_manager is None (Firebase configured, not logged in yet), no saved credentials
+            if self.db_manager is None:
+                return None, None
+            
             from utils.credential_storage import credential_storage
             credential = self.db_manager.get_login_credential()
             if credential:
@@ -187,6 +238,58 @@ class TelegramUserTrackingApp:
         """Handle successful login."""
         self.is_logged_in = True
         
+        # Switch to user-specific database if Firebase is configured
+        from services.auth_service import auth_service
+        user_db_path = auth_service.get_user_database_path()
+        
+        if user_db_path:
+            # User is logged in - switch to user-specific database
+            logger.info(f"Switching to user-specific database: {user_db_path}")
+            
+            # Create new database manager with user-specific path
+            # DatabaseManager automatically initializes the database if it doesn't exist
+            try:
+                new_db_manager = DatabaseManager(user_db_path)
+                
+                # Verify database file was actually created
+                from pathlib import Path
+                actual_db_path = Path(new_db_manager.db_path)
+                if not actual_db_path.exists():
+                    error_msg = f"Database file was not created at {actual_db_path}. Check permissions and disk space."
+                    logger.error(error_msg)
+                    self._show_error_ui(error_msg)
+                    return
+                
+                logger.info(f"User database initialized successfully: {actual_db_path}")
+            except Exception as e:
+                logger.error(f"Failed to initialize user database at {user_db_path}: {e}", exc_info=True)
+                self._show_error_ui(f"Failed to initialize database: {str(e)}")
+                return
+            
+            # Reinitialize ServiceInitializer with new database manager
+            self.service_initializer = ServiceInitializer(new_db_manager)
+            self.telegram_service = self.service_initializer.initialize_all(
+                on_connectivity_change=self._on_connectivity_change
+            )
+            
+            # Update PageFactory with new db_manager and telegram_service
+            self.page_factory = PageFactory(
+                page=self.page,
+                db_manager=new_db_manager,
+                telegram_service=self.telegram_service,
+                on_settings_changed=self._on_settings_changed,
+                on_logout=self._on_logout
+            )
+            
+            # Update router with new page factory
+            self.router = Router(self.page, self.page_factory)
+            
+            # Update db_manager reference
+            self.db_manager = new_db_manager
+            
+            # Reinitialize update service with new database manager
+            self._init_update_service()
+        
         # Start update service
         self._start_update_service()
         
@@ -200,6 +303,12 @@ class TelegramUserTrackingApp:
                 # PIN dialog will be shown as a modal, so we need a clean background
                 self.page.controls = []
                 self.page.update()
+        
+        # Ensure db_manager is available before proceeding
+        if self.db_manager is None:
+            logger.error("Database manager is None after login - cannot proceed")
+            self._show_error_ui("Database initialization failed after login")
+            return
         
         # Check if PIN is enabled
         settings = self.db_manager.get_settings()
@@ -216,6 +325,11 @@ class TelegramUserTrackingApp:
         from ui.dialogs.pin_dialog import PinEntryDialog
         from utils.pin_validator import verify_pin
         from utils.pin_attempt_manager import PinAttemptManager
+        
+        # Ensure db_manager is available
+        if self.db_manager is None:
+            logger.error("Database manager is None - cannot show PIN dialog")
+            return
         
         # Get settings from database (includes PIN fields)
         settings = self.db_manager.get_settings()
@@ -324,15 +438,35 @@ class TelegramUserTrackingApp:
     
     def _on_logout(self):
         """Handle logout."""
-        try:
-            self.db_manager.delete_login_credential()
-        except Exception:
-            pass  # Silently fail
+        # Call auth_service.logout() to clear current user
+        from services.auth_service import auth_service
+        auth_service.logout()
+        
+        # Delete saved login credentials if db_manager exists
+        if self.db_manager:
+            try:
+                self.db_manager.delete_login_credential()
+            except Exception:
+                pass  # Silently fail
         
         # Stop update service
         self._stop_update_service()
         
         self.is_logged_in = False
+        
+        # Reset db_manager to None if Firebase is configured (will be recreated on next login)
+        from config.firebase_config import firebase_config
+        from utils.constants import FIREBASE_PROJECT_ID, FIREBASE_WEB_API_KEY
+        firebase_available = getattr(firebase_config, 'is_available', False)
+        firebase_configured = bool(FIREBASE_PROJECT_ID and FIREBASE_WEB_API_KEY)
+        
+        if firebase_available and firebase_configured:
+            # Reset services - will be reinitialized on next login
+            self.db_manager = None
+            self.service_initializer = None
+            self.telegram_service = None
+            self.update_service = None
+        
         self._show_login()
     
     def _navigate_to_fetch_data(self):
@@ -411,6 +545,19 @@ class TelegramUserTrackingApp:
     
     def _init_update_service(self):
         """Initialize update service."""
+        # Stop existing update service if any (e.g., when switching databases)
+        if self.update_service:
+            try:
+                import asyncio
+                async def stop_old():
+                    await self.update_service.stop()
+                if hasattr(self.page, 'run_task'):
+                    self.page.run_task(stop_old)
+                else:
+                    asyncio.create_task(stop_old())
+            except Exception as e:
+                logger.debug(f"Error stopping old update service: {e}")
+        
         try:
             from services.update_service import UpdateService
             from services.auth_service import auth_service

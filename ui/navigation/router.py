@@ -138,13 +138,17 @@ class Router:
         # Start fetch indicator updates
         if self.page and hasattr(self.page, 'run_task'):
             self.page.run_task(top_header.start_fetch_indicator_updates)
+            self.page.run_task(top_header.start_notification_badge_updates)
         else:
             import asyncio
             # Store task reference to prevent multiple instances
             if not hasattr(top_header, '_fetch_update_task') or top_header._fetch_update_task.done():
                 top_header._fetch_update_task = asyncio.create_task(top_header.start_fetch_indicator_updates())
+            if not hasattr(top_header, '_notification_update_task') or top_header._notification_update_task.done():
+                top_header._notification_update_task = asyncio.create_task(top_header.start_notification_badge_updates())
         # Initial update
         top_header.update_fetch_indicator()
+        top_header.update_notification_badge()
         
         # Main layout
         main_layout_column = ft.Column([

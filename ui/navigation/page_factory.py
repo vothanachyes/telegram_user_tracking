@@ -19,6 +19,7 @@ from ui.pages import (
     GroupsPage,
     ReportsPage
 )
+from ui.pages.notifications.page import NotificationsPage
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,8 @@ class PageFactory:
                 return self._create_fetch_data_page()
             elif page_id == "reports":
                 return self._create_reports_page()
+            elif page_id == "notifications":
+                return self._create_notifications_page()
             else:
                 return self._create_error_page(f"Page '{page_id}' not found")
         except Exception as e:
@@ -153,6 +156,11 @@ class PageFactory:
         )
         page_content.set_page(self.page)
         return page_content
+    
+    def _create_notifications_page(self) -> ft.Control:
+        """Create notifications page."""
+        page_content = NotificationsPage(self.page)
+        return page_content.build()
     
     def _create_error_page(self, error_message: str) -> ft.Container:
         """Create error page."""

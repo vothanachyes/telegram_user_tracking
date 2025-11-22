@@ -10,6 +10,7 @@ from typing import Callable, Optional
 from ui.theme import theme_manager
 from services.auth_service import auth_service
 from services.fetch_state_manager import fetch_state_manager
+from services.notification_service import notification_service
 
 
 class TopHeader(ft.Container):
@@ -59,6 +60,38 @@ class TopHeader(ft.Container):
             tooltip="Click to view fetch progress"
         )
         
+        # Notification icon with badge
+        self.notification_badge_text = ft.Text(
+            "0",
+            size=10,
+            color=ft.Colors.WHITE,
+            weight=ft.FontWeight.BOLD,
+        )
+        self.notification_badge = ft.Container(
+            content=self.notification_badge_text,
+            bgcolor=ft.Colors.RED,
+            border_radius=10,
+            width=20,
+            height=20,
+            alignment=ft.alignment.center,
+            visible=False,
+        )
+        self.notification_button = ft.Stack(
+            controls=[
+                ft.IconButton(
+                    icon=ft.Icons.NOTIFICATIONS,
+                    tooltip=theme_manager.t("notifications") or "Notifications",
+                    on_click=lambda e: self.on_navigate("notifications"),
+                    icon_color=theme_manager.text_color
+                ),
+                ft.Container(
+                    content=self.notification_badge,
+                    right=5,
+                    top=5,
+                ),
+            ],
+        )
+        
         # About button
         self.about_button = ft.IconButton(
             icon=ft.Icons.INFO_OUTLINE,
@@ -86,6 +119,7 @@ class TopHeader(ft.Container):
             ),
             ft.Container(expand=True),  # Spacer
             self.fetch_indicator,
+            self.notification_button,
             self.about_button
         ], 
         alignment=ft.MainAxisAlignment.START,
@@ -168,6 +202,37 @@ class TopHeader(ft.Container):
             except:
                 pass
     
+    def update_notification_badge(self):
+        """Update notification badge count."""
+        try:
+            current_user = auth_service.get_current_user()
+            if not current_user:
+                self.notification_badge.visible = False
+                return
+            
+            user_id = current_user.get("uid")
+            if not user_id:
+                self.notification_badge.visible = False
+                return
+            
+            # Get unread count
+            unread_count = notification_service.get_unread_count(user_id)
+            
+            if unread_count > 0:
+                self.notification_badge_text.value = str(unread_count) if unread_count <= 99 else "99+"
+                self.notification_badge.visible = True
+            else:
+                self.notification_badge.visible = False
+            
+            if hasattr(self, 'page') and self.page:
+                try:
+                    self.page.update()
+                except:
+                    pass
+        except Exception as e:
+            logger = __import__('logging').getLogger(__name__)
+            logger.debug(f"Error updating notification badge: {e}")
+    
     async def start_fetch_indicator_updates(self):
         """Start periodic updates for fetch indicator (async coroutine for page.run_task)."""
         # Check if already running using a flag
@@ -177,7 +242,7 @@ class TopHeader(ft.Container):
         self._fetch_updates_running = True
         
         try:
-            # Periodically update fetch indicator
+            # Periodically update fetch indicator and notification badge
             while True:
                 try:
                     await asyncio.sleep(0.5)  # Update every 0.5 seconds
@@ -189,4 +254,26 @@ class TopHeader(ft.Container):
                     pass
         finally:
             self._fetch_updates_running = False
+    
+    async def start_notification_badge_updates(self):
+        """Start periodic updates for notification badge (async coroutine for page.run_task)."""
+        # Check if already running using a flag
+        if hasattr(self, '_notification_updates_running') and self._notification_updates_running:
+            return  # Already running
+        
+        self._notification_updates_running = True
+        
+        try:
+            # Periodically update notification badge (every 30-60 seconds)
+            while True:
+                try:
+                    await asyncio.sleep(30)  # Update every 30 seconds
+                    if hasattr(self, 'page') and self.page:
+                        self.update_notification_badge()
+                except asyncio.CancelledError:
+                    break
+                except Exception:
+                    pass
+        finally:
+            self._notification_updates_running = False
 

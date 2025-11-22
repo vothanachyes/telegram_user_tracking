@@ -172,6 +172,18 @@ class UserManager(BaseDatabaseManager):
                 ))
             return users
     
+    def get_all_users_in_group(self, group_id: int, include_deleted: bool = False) -> List[TelegramUser]:
+        """
+        Get all users in a group (including those who haven't sent messages).
+        This is used for imported members.
+        """
+        encryption_service = self.get_encryption_service()
+        
+        # For now, we'll return all users since we don't have a direct group membership table
+        # In the future, we could add a group_members table to track membership
+        # For now, return all users (they can be filtered by group in the UI if needed)
+        return self.get_all_users(include_deleted=include_deleted)
+    
     def search_users(
         self,
         query: str,

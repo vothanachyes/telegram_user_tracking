@@ -19,15 +19,17 @@ class UsersTabComponent:
         on_user_click: Callable[[int], None],
         on_refresh: Optional[Callable[[], None]] = None,
         on_export_excel: Optional[Callable[[], None]] = None,
-        on_export_pdf: Optional[Callable[[], None]] = None
+        on_export_pdf: Optional[Callable[[], None]] = None,
+        on_import_users: Optional[Callable[[], None]] = None
     ):
         self.view_model = view_model
         self.on_user_click = on_user_click
         self.on_refresh = on_refresh
         self.on_export_excel = on_export_excel
         self.on_export_pdf = on_export_pdf
+        self.on_import_users = on_import_users
         
-        # Filters bar (no dates for users tab)
+        # Filters bar (no dates and no message type for users tab)
         groups = view_model.get_all_groups()
         # Auto-select first group if available
         default_group_id = groups[0].group_id if groups else None
@@ -35,6 +37,7 @@ class UsersTabComponent:
             groups=groups,
             on_group_change=self._on_group_change,
             show_dates=False,
+            show_message_type=False,
             default_group_id=default_group_id
         )
         
@@ -65,6 +68,17 @@ class UsersTabComponent:
             tooltip=theme_manager.t("refresh"),
             on_click=self._refresh_users
         )
+        
+        # Import Users button
+        self.import_users_btn = ft.ElevatedButton(
+            text="Import Users",
+            icon=ft.Icons.PEOPLE_OUTLINE,
+            tooltip="Import all members from selected group",
+            on_click=self._on_import_users,
+            bgcolor=theme_manager.primary_color,
+            color=ft.Colors.WHITE,
+            disabled=default_group_id is None
+        )
     
     def build(self) -> ft.Container:
         """Build the users tab."""
@@ -82,6 +96,7 @@ class UsersTabComponent:
                     self.filters_bar.build(),
                     self.refresh_btn,
                     self.export_menu,
+                    self.import_users_btn,
                 ], spacing=10, wrap=False),
                 
                 # Table
@@ -110,7 +125,8 @@ class UsersTabComponent:
             self.users_table.update_filter_state(self._has_filters())
             return
         
-        users = self.view_model.get_users_by_group(group_id)
+        # Get all users (including imported members who haven't sent messages)
+        users = self.view_model.get_users_by_group(group_id, include_all=True)
         
         rows = []
         row_metadata = []
@@ -185,6 +201,10 @@ class UsersTabComponent:
     
     def _on_group_change(self, group_id: Optional[int]):
         """Handle group change."""
+        # Enable/disable import button based on group selection
+        if self.import_users_btn:
+            self.import_users_btn.disabled = group_id is None
+        
         if self.on_refresh:
             self.on_refresh()
     
@@ -192,4 +212,14 @@ class UsersTabComponent:
         """Handle refresh button click."""
         if self.on_refresh:
             self.on_refresh()
+    
+    def _on_import_users(self, e):
+        """Handle import users button click."""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Import Users button clicked, on_import_users callback: {self.on_import_users}")
+        if self.on_import_users:
+            self.on_import_users()
+        else:
+            logger.warning("on_import_users callback is None")
 

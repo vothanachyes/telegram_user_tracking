@@ -177,6 +177,17 @@ class MemberFetcher:
                                         )
                                         conn.commit()
                                     logger.debug(f"Restored and saved user {user.id}: {full_name}")
+                                
+                                # Record user-group relationship
+                                try:
+                                    self.db_manager.save_user_group(
+                                        user_id=user.id,
+                                        group_id=group.group_id,
+                                        group_name=group.group_name,
+                                        group_username=group.group_username
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"Failed to save user-group relationship: {e}")
                                 else:
                                     logger.debug(f"Saved user {user.id}: {full_name}")
                                 

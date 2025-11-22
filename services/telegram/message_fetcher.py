@@ -194,6 +194,17 @@ class MessageFetcher:
                     if telegram_msg.sender:
                         await self.user_processor.process_user(telegram_msg.sender)
                         unique_users.add(telegram_msg.sender.id)
+                        
+                        # Record user-group relationship
+                        try:
+                            self.db_manager.save_user_group(
+                                user_id=telegram_msg.sender.id,
+                                group_id=group_id,
+                                group_name=group.group_name,
+                                group_username=group.group_username
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to save user-group relationship: {e}")
                     
                     message = await self.message_processor.process_message(
                         telegram_msg,
@@ -456,6 +467,17 @@ class MessageFetcher:
                     if telegram_msg.sender:
                         await self.user_processor.process_user(telegram_msg.sender)
                         unique_users.add(telegram_msg.sender.id)
+                        
+                        # Record user-group relationship
+                        try:
+                            self.db_manager.save_user_group(
+                                user_id=telegram_msg.sender.id,
+                                group_id=group_id,
+                                group_name=group.group_name,
+                                group_username=group.group_username
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to save user-group relationship: {e}")
                     
                     message = await self.message_processor.process_message(
                         telegram_msg,

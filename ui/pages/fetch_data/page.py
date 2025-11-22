@@ -19,6 +19,7 @@ from ui.dialogs.rate_limit_warning_dialog import RateLimitWarningDialog
 from ui.dialogs.fetch_configure_dialog import FetchConfigureDialog
 from services.license_service import LicenseService
 from config.settings import settings as app_settings
+from config.app_config import app_config
 
 logger = logging.getLogger(__name__)
 
@@ -153,13 +154,14 @@ class FetchDataPage(ft.Container):
     
     def _create_start_button(self) -> ft.ElevatedButton:
         """Create start button with proper styling for disabled state."""
+        is_sample_mode = app_config.is_sample_db_mode()
         self.start_button = ft.ElevatedButton(
             theme_manager.t("start_fetch") or "Start Fetch",
             icon=ft.Icons.PLAY_ARROW,
             on_click=self._on_start_fetch,
             bgcolor=theme_manager.primary_color,
             color=ft.Colors.WHITE,
-            disabled=fetch_state_manager.is_fetching or self.view_model.is_fetching
+            disabled=fetch_state_manager.is_fetching or self.view_model.is_fetching or is_sample_mode
         )
         return self.start_button
     
@@ -208,6 +210,18 @@ class FetchDataPage(ft.Container):
                     )
                 ], spacing=10)
             ),
+            
+            # Sample DB mode info
+            ft.Container(
+                content=ft.Text(
+                    "Fetching data is disabled in sample database mode.",
+                    size=12,
+                    color=theme_manager.text_secondary_color,
+                    visible=app_config.is_sample_db_mode()
+                ),
+                visible=app_config.is_sample_db_mode(),
+                padding=10
+            ) if app_config.is_sample_db_mode() else ft.Container(),
             
             ft.Container(height=20),
             

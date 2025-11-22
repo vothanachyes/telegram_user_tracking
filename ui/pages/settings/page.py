@@ -9,8 +9,9 @@ from database.models import AppSettings
 from ui.theme import theme_manager
 from config.settings import settings as app_settings
 from services.telegram import TelegramService
-from ui.pages.settings.tabs import GeneralTab, AuthenticateTab, ConfigureTab, SecurityTab
+from ui.pages.settings.tabs import GeneralTab, AuthenticateTab, ConfigureTab, SecurityTab, DataTab
 from ui.pages.settings.handlers import SettingsHandlers
+from config.app_config import app_config
 
 
 class SettingsPage(ft.Container):
@@ -63,6 +64,12 @@ class SettingsPage(ft.Container):
             on_settings_changed=self.on_settings_changed
         )
         
+        # Initialize data tab
+        self.data_tab = DataTab(
+            db_manager=self.db_manager,
+            page=None  # Will be set when page is assigned
+        )
+        
         # Update handlers reference
         self.handlers.authenticate_tab = self.authenticate_tab
         
@@ -77,36 +84,56 @@ class SettingsPage(ft.Container):
         """Build the tabbed interface."""
         def on_tab_change(e):
             """Handle tab change - auto-refresh accounts when Authenticate tab is selected."""
-            if e.control.selected_index == 1:  # Authenticate tab (index 1)
+            # Adjust index based on whether Security tab is visible
+            authenticate_index = 1
+            if e.control.selected_index == authenticate_index:
                 # Auto-refresh accounts list when user enters Authenticate tab
                 self.authenticate_tab.update_accounts_list()
         
+        # Build tabs list
+        tabs_list = [
+            ft.Tab(
+                text=theme_manager.t("general"),
+                icon=ft.Icons.SETTINGS,
+                content=self.general_tab.build()
+            ),
+            ft.Tab(
+                text=theme_manager.t("authenticate"),
+                icon=ft.Icons.VERIFIED_USER,
+                content=self.authenticate_tab.build()
+            ),
+            ft.Tab(
+                text=theme_manager.t("configure"),
+                icon=ft.Icons.TUNE,
+                content=self.configure_tab.build()
+            ),
+        ]
+        
+        # Add Security tab only if not in sample_db mode
+        is_sample_mode = app_config.is_sample_db_mode()
+        if not is_sample_mode:
+            tabs_list.append(
+                ft.Tab(
+                    text=theme_manager.t("security"),
+                    icon=ft.Icons.SECURITY,
+                    content=self.security_tab.build()
+                )
+            )
+        
+        # Add Data tab (always visible)
+        tabs_list.append(
+            ft.Tab(
+                text=theme_manager.t("data_tab") or "Data",
+                icon=ft.Icons.DATA_OBJECT,  # Use DATA_OBJECT icon for data generation
+                content=self.data_tab.build()
+            )
+        )
+        
         self.tabs_widget = ft.Tabs(
-                selected_index=0,
-                animation_duration=300,
+            selected_index=0,
+            animation_duration=300,
             on_change=on_tab_change,
-                tabs=[
-                    ft.Tab(
-                        text=theme_manager.t("general"),
-                        icon=ft.Icons.SETTINGS,
-                        content=self.general_tab.build()
-                    ),
-                    ft.Tab(
-                        text=theme_manager.t("authenticate"),
-                        icon=ft.Icons.VERIFIED_USER,
-                        content=self.authenticate_tab.build()
-                    ),
-                    ft.Tab(
-                        text=theme_manager.t("configure"),
-                        icon=ft.Icons.TUNE,
-                        content=self.configure_tab.build()
-                    ),
-                    ft.Tab(
-                        text=theme_manager.t("security"),
-                        icon=ft.Icons.SECURITY,
-                        content=self.security_tab.build()
-                    ),
-                ],
+            tabs=tabs_list,
             expand=True
         )
         
@@ -139,4 +166,5 @@ class SettingsPage(ft.Container):
         self.authenticate_tab.page = page
         self.configure_tab.page = page
         self.security_tab.page = page
+        self.data_tab.page = page
 

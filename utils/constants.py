@@ -89,6 +89,9 @@ APP_DATA_DIR = get_app_data_dir()
 # Database path: Use env var if set (for development), otherwise use secure directory
 DATABASE_PATH = os.getenv("DATABASE_PATH", str(USER_DATA_DIR / "app.db"))
 
+# Sample database path
+SAMPLE_DATABASE_PATH = str(APP_DATA_DIR / "sample_db" / "app.db")
+
 # Downloads: Can also use secure directory or keep in project for development
 DEFAULT_DOWNLOAD_DIR = os.getenv("DEFAULT_DOWNLOAD_DIR", str(USER_DATA_DIR / "downloads"))
 

@@ -14,6 +14,7 @@ from database.db_manager import DatabaseManager
 from ui.initialization import PageConfig, ServiceInitializer
 from ui.navigation import Router, PageFactory
 from services.fetch_state_manager import fetch_state_manager
+from config.app_config import app_config
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,12 @@ class TelegramUserTrackingApp:
     
     def __init__(self, page: ft.Page):
         self.page = page
-        self.db_manager = DatabaseManager()
+        # Use sample_db path if in sample_db mode
+        if app_config.is_sample_db_mode():
+            from utils.constants import SAMPLE_DATABASE_PATH
+            self.db_manager = DatabaseManager(SAMPLE_DATABASE_PATH)
+        else:
+            self.db_manager = DatabaseManager()
         self.is_logged_in = False
         self.connectivity_banner: Optional[ft.Container] = None
         
@@ -60,6 +66,13 @@ class TelegramUserTrackingApp:
     def _build_ui(self):
         """Build main UI."""
         try:
+            # Check if in sample_db mode - skip login if so
+            if app_config.is_sample_db_mode():
+                logger.info("Sample database mode enabled, skipping login")
+                self.is_logged_in = True
+                self._show_main_app()
+                return
+            
             # Check if Firebase is available and properly configured
             from config.firebase_config import firebase_config
             from utils.constants import FIREBASE_PROJECT_ID, FIREBASE_WEB_API_KEY

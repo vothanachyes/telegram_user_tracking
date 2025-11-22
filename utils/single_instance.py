@@ -120,24 +120,47 @@ class SingleInstance:
             return False
     
     def release(self):
-        """Release the lock file."""
+        """
+        Release the lock file.
+        
+        Cross-platform implementation that handles cleanup gracefully.
+        Errors during release are non-critical (file may already be unlocked,
+        process terminated, etc.) and are logged as debug messages.
+        """
         if self.lock_file and self._is_locked:
             try:
                 if self._system == "Windows":
                     import msvcrt
-                    msvcrt.locking(
-                        self.lock_file.fileno(),
-                        msvcrt.LK_UNLCK,  # Unlock
-                        1
-                    )
+                    try:
+                        msvcrt.locking(
+                            self.lock_file.fileno(),
+                            msvcrt.LK_UNLCK,  # Unlock
+                            1
+                        )
+                    except (IOError, OSError) as e:
+                        # On Windows, msvcrt.locking can raise IOError or OSError
+                        # if file is already unlocked or process terminated
+                        logger.debug(f"Could not unlock file on Windows (may already be unlocked): {e}")
                 else:
+                    # Unix (macOS, Linux): use fcntl
                     import fcntl
-                    fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_UN)
+                    try:
+                        fcntl.flock(self.lock_file.fileno(), fcntl.LOCK_UN)
+                    except (IOError, OSError) as e:
+                        # On Unix, fcntl.flock can raise IOError or OSError
+                        # if file is already unlocked or process terminated
+                        logger.debug(f"Could not unlock file on Unix (may already be unlocked): {e}")
                 
-                self.lock_file.close()
+                # Always try to close the file, even if unlock failed
+                try:
+                    self.lock_file.close()
+                except Exception:
+                    pass  # Ignore errors when closing
+                
+                # Mark as unlocked to prevent retry loops
                 self._is_locked = False
                 
-                # Optionally remove the lock file
+                # Optionally remove the lock file (best effort)
                 try:
                     if self.lock_file_path.exists():
                         self.lock_file_path.unlink()
@@ -145,8 +168,18 @@ class SingleInstance:
                     pass  # Ignore errors when removing lock file
                     
             except Exception as e:
-                logger.error(f"Error releasing lock: {e}", exc_info=True)
+                # Catch-all for any other unexpected errors during cleanup
+                # This is non-critical cleanup code, so log as debug
+                logger.debug(f"Unexpected error during lock release (non-critical): {e}")
+                # Still mark as unlocked and try to close file
+                self._is_locked = False
+                try:
+                    if self.lock_file:
+                        self.lock_file.close()
+                except Exception:
+                    pass
             finally:
+                # Always clear the file reference, even if errors occurred
                 self.lock_file = None
     
     def __enter__(self):

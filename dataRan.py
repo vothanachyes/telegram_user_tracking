@@ -6,7 +6,7 @@ Supports Khmer and English content generation with AI-powered realistic data.
 """
 
 import flet as ft
-from data_ran.ui.main_ui import DataGeneratorApp
+from ui.data_generator import DataGeneratorApp
 
 
 def main(page: ft.Page):

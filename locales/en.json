@@ -361,6 +361,19 @@
   "pin_recovery_data_copied": "PIN recovery data copied to clipboard",
   "pin_recovery_not_available": "PIN recovery is only available when PIN is enabled",
   "searching_by_username": "Searching by username",
-  "searching_by_tag": "Searching by tag"
+  "searching_by_tag": "Searching by tag",
+  "data_tab": "Data",
+  "sample_db_mode": "Sample Database Mode",
+  "switch_to_sample_db": "Switch to Sample Database",
+  "switch_to_production_db": "Switch to Production Database",
+  "current_database_mode": "Current Database Mode",
+  "production_database": "Production Database",
+  "sample_database": "Sample Database",
+  "generate_test_data": "Generate Test Data",
+  "sample_db_warning_title": "Close Application?",
+  "sample_db_warning_message": "Warning: Switching to sample database mode will disable real account login, logout functionality, and hide the Security tab. This mode is for testing data generation only. You need to close and restart the application for changes to take effect.",
+  "close_app": "Close App",
+  "sample_db_restart_required": "Please restart the application to complete the database switch.",
+  "sample_db_switch_back_warning": "Switching back to production database will restore all functionality. You will need to restart the application."
 }
 

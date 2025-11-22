@@ -107,6 +107,7 @@ class AuthenticateTabComponents:
                     self.tab.refresh_loading,
                 ], spacing=5, tight=True),
             ], spacing=10),
+            self.tab.sample_db_info if hasattr(self.tab, 'sample_db_info') else ft.Container(),
             self.tab.accounts_list,
             self.tab.error_text,
         ], scroll=ft.ScrollMode.AUTO, spacing=15, expand=True)

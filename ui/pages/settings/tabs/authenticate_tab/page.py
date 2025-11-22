@@ -12,6 +12,7 @@ from config.settings import settings as app_settings
 from ui.pages.settings.tabs.authenticate_tab.components import AuthenticateTabComponents
 from ui.pages.settings.tabs.authenticate_tab.view_model import AuthenticateTabViewModel
 from ui.pages.settings.tabs.authenticate_tab.utils import AuthenticateTabUtils
+from config.app_config import app_config
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,9 @@ class AuthenticateTab:
         self.telegram_service = telegram_service
         self.db_manager = db_manager
         self.handlers = handlers
+        
+        # Check sample_db mode early (used in multiple places)
+        is_sample_mode = app_config.is_sample_db_mode()
         
         # Initialize sub-components
         self.components = AuthenticateTabComponents(self)
@@ -166,7 +170,8 @@ class AuthenticateTab:
             text=theme_manager.t("connect_to_telegram"),
             icon=ft.Icons.LINK,
             on_click=self._handle_telegram_connect,
-            style="primary"
+            style="primary",
+            disabled=is_sample_mode  # Disable in sample_db mode
         )
         
         self.login_method.on_change = self._on_login_method_change
@@ -213,7 +218,16 @@ class AuthenticateTab:
             text=theme_manager.t("add_account"),
             icon=ft.Icons.ADD,
             on_click=self._handle_add_account,
-            style="primary"
+            style="primary",
+            disabled=is_sample_mode  # Disable in sample_db mode
+        )
+        
+        # Info message for sample_db mode
+        self.sample_db_info = ft.Text(
+            "Account management is disabled in sample database mode.",
+            size=12,
+            color=theme_manager.text_secondary_color,
+            visible=is_sample_mode
         )
         # Loading indicator for add account button
         self.add_account_loading = ft.ProgressRing(

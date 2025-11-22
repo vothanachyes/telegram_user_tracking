@@ -12,8 +12,10 @@ from database.db_manager import DatabaseManager
 from database.models import AppSettings
 from utils.constants import (
     DATABASE_PATH, DEFAULT_DOWNLOAD_DIR, PRIMARY_COLOR,
-    APP_NAME, APP_VERSION, DEVELOPER_NAME, DEVELOPER_EMAIL, DEVELOPER_CONTACT
+    APP_NAME, APP_VERSION, DEVELOPER_NAME, DEVELOPER_EMAIL, DEVELOPER_CONTACT,
+    SAMPLE_DATABASE_PATH
 )
+from config.app_config import app_config
 
 # Load environment variables
 load_dotenv()
@@ -44,10 +46,14 @@ class Settings:
     def db_manager(self) -> DatabaseManager:
         """Get database manager instance."""
         if self._db_manager is None:
-            # Use custom path from settings if available, otherwise use default
-            db_path = DATABASE_PATH
-            if self._app_settings and self._app_settings.db_path:
-                db_path = self._app_settings.db_path
+            # Check if in sample_db mode first
+            if app_config.is_sample_db_mode():
+                db_path = SAMPLE_DATABASE_PATH
+            else:
+                # Use custom path from settings if available, otherwise use default
+                db_path = DATABASE_PATH
+                if self._app_settings and self._app_settings.db_path:
+                    db_path = self._app_settings.db_path
             self._db_manager = DatabaseManager(db_path)
         return self._db_manager
     
@@ -57,7 +63,7 @@ class Settings:
         Used when database path is changed.
         
         Args:
-            new_path: New database path (if None, uses path from settings)
+            new_path: New database path (if None, uses path from settings or sample_db)
         """
         # Close existing connection if any
         if self._db_manager:
@@ -67,6 +73,8 @@ class Settings:
         # Determine path to use
         if new_path:
             db_path = new_path
+        elif app_config.is_sample_db_mode():
+            db_path = SAMPLE_DATABASE_PATH
         elif self._app_settings and self._app_settings.db_path:
             db_path = self._app_settings.db_path
         else:

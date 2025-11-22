@@ -6,6 +6,7 @@ import flet as ft
 from typing import Callable, Optional
 from ui.theme import theme_manager
 from utils.helpers import safe_page_update
+from config.app_config import app_config
 
 
 class Sidebar(ft.Container):
@@ -32,7 +33,7 @@ class Sidebar(ft.Container):
             self._create_nav_button("reports", ft.Icons.ASSESSMENT, theme_manager.t("reports")),
             self._create_nav_button("settings", ft.Icons.SETTINGS, theme_manager.t("settings")),
             ft.Container(expand=True),  # Spacer
-            self._create_fetch_button(),
+            self._create_fetch_button(),  # This will show fetch or dump data based on sample_db mode
             self._create_nav_button("profile", ft.Icons.PERSON, theme_manager.t("profile")),
         ]
         
@@ -111,20 +112,39 @@ class Sidebar(ft.Container):
             logger.error(f"Error handling navigation click to '{page_id}': {e}", exc_info=True)
     
     def _create_fetch_button(self) -> ft.Container:
-        """Create the fetch data button."""
-        icon_button = ft.IconButton(
-            icon=ft.Icons.DOWNLOAD,
-            icon_color=ft.Colors.WHITE,
-            icon_size=24,
-            tooltip=theme_manager.t("fetch_data"),
-            on_click=lambda e: self._handle_fetch_click(),
-            disabled=False,  # Allow clicking fetch button even during fetch
-            style=ft.ButtonStyle(
-                bgcolor=ft.Colors.GREEN,
-                shape=ft.RoundedRectangleBorder(radius=theme_manager.corner_radius),
-                padding=12  # Padding to center the icon
+        """Create the fetch data button or dump data button based on sample_db mode."""
+        is_sample_mode = app_config.is_sample_db_mode()
+        
+        if is_sample_mode:
+            # Show "Generate Test Data" button in sample_db mode
+            icon_button = ft.IconButton(
+                icon=ft.Icons.ADD_CIRCLE,  # Use ADD_CIRCLE icon for data generation
+                icon_color=ft.Colors.WHITE,
+                icon_size=24,
+                tooltip=theme_manager.t("generate_test_data") or "Generate Test Data",
+                on_click=lambda e: self._handle_dump_data_click(),
+                disabled=False,
+                style=ft.ButtonStyle(
+                    bgcolor=ft.Colors.BLUE,
+                    shape=ft.RoundedRectangleBorder(radius=theme_manager.corner_radius),
+                    padding=12  # Padding to center the icon
+                )
             )
-        )
+        else:
+            # Show "Fetch Data" button in production mode
+            icon_button = ft.IconButton(
+                icon=ft.Icons.DOWNLOAD,
+                icon_color=ft.Colors.WHITE,
+                icon_size=24,
+                tooltip=theme_manager.t("fetch_data"),
+                on_click=lambda e: self._handle_fetch_click(),
+                disabled=False,  # Allow clicking fetch button even during fetch
+                style=ft.ButtonStyle(
+                    bgcolor=ft.Colors.GREEN,
+                    shape=ft.RoundedRectangleBorder(radius=theme_manager.corner_radius),
+                    padding=12  # Padding to center the icon
+                )
+            )
         
         # Wrap in Container for sizing only - IconButton handles clicks and tooltips
         return ft.Container(
@@ -134,6 +154,110 @@ class Sidebar(ft.Container):
             alignment=ft.alignment.center,
             ink=False
         )
+    
+    def _handle_dump_data_click(self, e=None):
+        """Handle dump data button click - open data generator dialog directly."""
+        try:
+            # Get page reference - sidebar has page set by router
+            page = None
+            if hasattr(self, 'page') and self.page:
+                page = self.page
+            elif e:
+                # Try to get from event
+                if hasattr(e, 'page') and e.page:
+                    page = e.page
+                elif hasattr(e, 'control'):
+                    # Walk up control tree to find page
+                    control = e.control
+                    while control:
+                        if hasattr(control, 'page') and control.page:
+                            page = control.page
+                            break
+                        control = getattr(control, 'parent', None)
+            
+            if not page:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error("Could not get page reference for data generator dialog")
+                return
+            
+            # Import here to avoid circular imports
+            from ui.data_generator import DataGeneratorApp
+            from utils.constants import SAMPLE_DATABASE_PATH
+            import flet as ft
+            from ui.theme import theme_manager
+            import logging
+            
+            logger = logging.getLogger(__name__)
+            
+            # Create data generator instance (don't build UI automatically)
+            data_gen = DataGeneratorApp(page, db_path=SAMPLE_DATABASE_PATH, build_ui=False)
+            
+            # Build the content for the dialog
+            dialog_content = data_gen.build_content()
+            
+            # Add date pickers to page overlay if not already added
+            if data_gen.start_date_picker not in page.overlay:
+                page.overlay.extend([data_gen.start_date_picker, data_gen.end_date_picker])
+                page.update()
+            
+            # Create close button
+            def close_dialog(close_e):
+                """Close the data generator dialog."""
+                try:
+                    if hasattr(self, '_data_generator_dialog') and self._data_generator_dialog:
+                        page.close(self._data_generator_dialog)
+                except Exception:
+                    # Fallback
+                    if hasattr(self, '_data_generator_dialog'):
+                        self._data_generator_dialog.open = False
+                        page.update()
+            
+            close_btn = ft.TextButton(
+                theme_manager.t("close") or "Close",
+                on_click=close_dialog
+            )
+            
+            # Create dialog with data generator content
+            dialog = ft.AlertDialog(
+                modal=True,
+                title=ft.Text(theme_manager.t("generate_test_data") or "Generate Test Data"),
+                content=dialog_content,
+                actions=[close_btn],
+                actions_alignment=ft.MainAxisAlignment.END
+            )
+            
+            # Store dialog reference for closing
+            self._data_generator_dialog = dialog
+            self._data_generator_app = data_gen
+            
+            # Open dialog using page.open()
+            try:
+                dialog.page = page
+                page.open(dialog)
+            except Exception as ex:
+                logger.error(f"Error opening data generator dialog: {ex}")
+                # Fallback
+                page.dialog = dialog
+                dialog.open = True
+                page.update()
+            
+        except Exception as ex:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error opening data generator from sidebar: {ex}", exc_info=True)
+            # Try to show error message
+            try:
+                from ui.theme import theme_manager
+                import flet as ft
+                if hasattr(self, 'page') and self.page:
+                    theme_manager.show_snackbar(
+                        self.page,
+                        f"Error opening data generator: {str(ex)}",
+                        bgcolor=ft.Colors.RED
+                    )
+            except:
+                pass
     
     def _handle_fetch_click(self):
         """Handle fetch data button click."""
@@ -159,7 +283,7 @@ class Sidebar(ft.Container):
                 self._create_nav_button("reports", ft.Icons.ASSESSMENT, theme_manager.t("reports")),
                 self._create_nav_button("settings", ft.Icons.SETTINGS, theme_manager.t("settings")),
                 ft.Container(expand=True),
-                self._create_fetch_button(),
+                self._create_fetch_button(),  # This will show fetch or dump data based on sample_db mode
                 self._create_nav_button("profile", ft.Icons.PERSON, theme_manager.t("profile")),
             ]
             self.content.controls = self._nav_buttons

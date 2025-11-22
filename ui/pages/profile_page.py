@@ -12,6 +12,7 @@ from services.license_service import LicenseService
 from database.db_manager import DatabaseManager
 from config.settings import settings
 from utils.constants import LICENSE_PRICING
+from config.app_config import app_config
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +29,14 @@ class ProfilePage:
         if db_manager:
             self.license_service = LicenseService(db_manager)
         
-        # Create logout button
+        # Create logout button (disabled in sample_db mode)
+        is_sample_mode = app_config.is_sample_db_mode()
         self.logout_button = theme_manager.create_button(
             text=theme_manager.t("logout"),
             icon=ft.Icons.LOGOUT,
             on_click=self._handle_logout,
-            style="error"
+            style="error",
+            disabled=is_sample_mode  # Disable in sample_db mode
         )
     
     def _build_profile_card(self) -> ft.Container:
@@ -71,6 +74,12 @@ class ProfilePage:
                 ], spacing=theme_manager.spacing_lg),
                 ft.Divider(),
                 self.logout_button,
+                ft.Text(
+                    "Logout is disabled in sample database mode.",
+                    size=12,
+                    color=theme_manager.text_secondary_color,
+                    visible=app_config.is_sample_db_mode()
+                ) if app_config.is_sample_db_mode() else ft.Container(),
             ], spacing=theme_manager.spacing_md),
             width=500
         )

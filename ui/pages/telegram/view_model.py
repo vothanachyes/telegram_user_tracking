@@ -56,4 +56,45 @@ class TelegramViewModel:
     def get_all_users(self):
         """Get all users."""
         return self.db_manager.get_all_users()
+    
+    def get_users_with_group_counts(
+        self,
+        group_ids: Optional[List[int]] = None,
+        search_query: Optional[str] = None
+    ) -> List[dict]:
+        """
+        Get users with their group counts, optionally filtered by groups and search query.
+        
+        Args:
+            group_ids: Optional list of group IDs to filter by
+            search_query: Optional search query to filter users by name/username
+            
+        Returns:
+            List of dictionaries with user_id, full_name, username, group_count
+        """
+        return self.db_manager.get_users_with_group_counts(group_ids, search_query)
+    
+    def get_user_groups(self, user_id: int) -> List[dict]:
+        """
+        Get all groups for a user.
+        
+        Args:
+            user_id: Telegram user ID
+            
+        Returns:
+            List of group dictionaries with group_id, group_name, group_username
+        """
+        return self.db_manager.get_user_groups(user_id)
+    
+    def get_groups_with_user_counts(self, group_ids: Optional[List[int]] = None) -> List[dict]:
+        """
+        Get groups with user counts for filtering.
+        
+        Args:
+            group_ids: Optional list of group IDs to filter by
+            
+        Returns:
+            List of dictionaries with group_id, group_name, group_username, user_count
+        """
+        return self.db_manager.get_groups_with_user_counts(group_ids)
 

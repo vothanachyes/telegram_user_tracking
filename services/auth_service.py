@@ -138,15 +138,8 @@ class AuthService:
             # Note: Can't check if user is disabled without Admin SDK
             # This would need to be handled server-side or via custom claims
             
-            # Implement single-device enforcement
-            # Get current device ID from custom claims (if set by admin)
-            current_device = decoded_token.get('device_id')
-            
-            if current_device and current_device != self.device_id:
-                # User is logged in on another device
-                return False, "This account is already logged in on another device. Please logout from the other device first."
-            
             # Check device limit if license service is available
+            # Device limits are enforced by license service based on license tier and active devices in Firestore
             if self.license_service:
                 can_add, error_msg, active_devices = self.license_service.can_add_device(
                     self.device_id, user_email=email, uid=uid

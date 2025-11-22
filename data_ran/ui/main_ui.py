@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 import flet as ft
+from config.app_config import app_config
 from data_ran.pattern.registry import FeatureRegistry
 from data_ran.pattern.orchestrator import DataGeneratorOrchestrator
 from data_ran.script.db_dumper import DatabaseDumper
@@ -26,13 +27,14 @@ logger = logging.getLogger(__name__)
 class DataGeneratorApp:
     """Main application UI for data generator."""
     
-    def __init__(self, page: ft.Page):
+    def __init__(self, page: ft.Page, db_path: Optional[str] = None):
         """Initialize the application."""
         self.page = page
         self.page.title = "Test Data Generator"
         self.page.window.width = 900
         self.page.window.height = 800
         self.page.scroll = ft.ScrollMode.AUTO
+        self.db_path = db_path  # Store db_path for use in database dumper
         
         # Initialize registry and orchestrator
         self.registry = FeatureRegistry()
@@ -110,7 +112,9 @@ class DataGeneratorApp:
         self.deleted_percentage = ft.TextField(label="Deleted Items %", value="5", width=200)
         
         # Output options
-        self.output_json = ft.Checkbox(label="Generate JSON File", value=True)
+        # Hide JSON option in production mode (only show in sample_db mode)
+        is_sample_mode = app_config.is_sample_db_mode()
+        self.output_json = ft.Checkbox(label="Generate JSON File", value=True, visible=is_sample_mode)
         self.output_db = ft.Checkbox(label="Direct Database Dump", value=False)
         self.db_path_input = ft.TextField(label="Database Path", value="./data/app.db", width=300)
         self.clear_db_first = ft.Checkbox(label="Clear Database First", value=False)
@@ -335,8 +339,8 @@ class DataGeneratorApp:
             
             data = self.orchestrator.generate(config)
             
-            # Save JSON if requested
-            if self.output_json.value:
+            # Save JSON if requested (only in sample_db mode)
+            if self.output_json.visible and self.output_json.value:
                 self.status_text.value = "Saving JSON file..."
                 self.page.update()
                 self._save_json(data)
@@ -436,7 +440,11 @@ class DataGeneratorApp:
     def _dump_to_database(self, data: dict, config: dict):
         """Dump data directly to database."""
         try:
-            db_path = self.db_path_input.value or "./data/app.db"
+            # Use provided db_path if available, otherwise use input field value
+            db_path = self.db_path or self.db_path_input.value or "./data/app.db"
+            # Update input field to show the path being used
+            if self.db_path:
+                self.db_path_input.value = self.db_path
             dumper = DatabaseDumper(db_path)
             
             clear_first = self.clear_db_first.value

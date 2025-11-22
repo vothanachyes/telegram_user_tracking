@@ -17,6 +17,22 @@ from utils.constants import (
     MIN_WINDOW_HEIGHT
 )
 
+# Try to import screen size utilities
+try:
+    import tkinter as tk
+    _tkinter_available = True
+except ImportError:
+    _tkinter_available = False
+
+if platform.system() == 'Windows':
+    try:
+        import ctypes
+        _ctypes_available = True
+    except ImportError:
+        _ctypes_available = False
+else:
+    _ctypes_available = False
+
 # Get the correct base directory for assets (works in both dev and bundle)
 def get_assets_base_dir():
     """Get the base directory for assets, handling both dev and PyInstaller bundle."""
@@ -36,6 +52,49 @@ def get_assets_base_dir():
 logger = logging.getLogger(__name__)
 
 
+def _get_screen_size() -> tuple[int, int]:
+    """
+    Get screen width and height in pixels.
+    
+    Returns:
+        Tuple of (width, height) in pixels
+    """
+    try:
+        if platform.system() == 'Windows' and _ctypes_available:
+            # Windows: Use ctypes to get screen size (most efficient, no visible window)
+            user32 = ctypes.windll.user32
+            width = user32.GetSystemMetrics(0)  # SM_CXSCREEN
+            height = user32.GetSystemMetrics(1)  # SM_CYSCREEN
+            return width, height
+        elif _tkinter_available:
+            # Cross-platform: Use tkinter (works on Windows, macOS, Linux)
+            # Create root window but keep it completely hidden to avoid flicker
+            try:
+                root = tk.Tk()
+                root.withdraw()  # Hide the window immediately
+                # Try to make it completely invisible (may not work on all platforms)
+                try:
+                    root.attributes('-alpha', 0)
+                    root.overrideredirect(True)
+                except:
+                    pass  # Some platforms don't support these attributes
+                # Get screen size quickly
+                width = root.winfo_screenwidth()
+                height = root.winfo_screenheight()
+                root.destroy()
+                return width, height
+            except Exception as e:
+                logger.warning(f"Tkinter screen size detection failed: {e}")
+                return 1920, 1080
+        else:
+            # Fallback: Return default screen size
+            logger.warning("Could not determine screen size, using default 1920x1080")
+            return 1920, 1080
+    except Exception as e:
+        logger.warning(f"Error getting screen size: {e}, using default 1920x1080")
+        return 1920, 1080
+
+
 class PageConfig:
     """Handles page configuration and setup."""
     
@@ -47,15 +106,22 @@ class PageConfig:
         Args:
             page: Flet page instance to configure
         """
-        page.title = settings.app_name
-        page.theme_mode = theme_manager.theme_mode
-        page.theme = theme_manager.get_theme()
-        
+        # Window position is set in main() function before this is called
+        # Here we just ensure window size constraints are set
         try:
             page.window.width = DEFAULT_WINDOW_WIDTH
             page.window.height = DEFAULT_WINDOW_HEIGHT
             page.window.min_width = MIN_WINDOW_WIDTH
             page.window.min_height = MIN_WINDOW_HEIGHT
+        except (AttributeError, Exception) as e:
+            logger.warning(f"Could not set window size: {e}")
+        
+        # Set other page properties
+        page.title = settings.app_name
+        page.theme_mode = theme_manager.theme_mode
+        page.theme = theme_manager.get_theme()
+        
+        try:
             
             # Set window icon from assets/icons directory
             system = platform.system()
@@ -101,6 +167,7 @@ class PageConfig:
         from ui.components.toast import toast
         toast.initialize(page, position="top-right")
         
+        # Update once after all properties are set to minimize flickering
         page.update()
     
     @staticmethod

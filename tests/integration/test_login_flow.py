@@ -267,8 +267,11 @@ class TestLoginFlow:
                         assert success is False
                         assert 'device limit' in error.lower()
     
-    def test_login_with_single_device_conflict(self, test_db_manager, mock_firebase_config, mock_requests_post):
-        """Test login with single-device conflict."""
+    def test_login_with_custom_claim_device_id(self, test_db_manager, mock_firebase_config, mock_requests_post):
+        """Test login when token has custom claim device_id (should not block login).
+        
+        Custom claim device_id is ignored - device limits are enforced by license service.
+        """
         uid = 'test_user_123'
         email = 'test@example.com'
         password = 'password123'
@@ -288,7 +291,7 @@ class TestLoginFlow:
         })
         mock_requests_post.return_value = mock_response
         
-        # Token has different device_id (user logged in on another device)
+        # Token has different device_id in custom claim (this is now ignored)
         decoded_token = {
             'uid': uid,
             'email': email,
@@ -310,8 +313,10 @@ class TestLoginFlow:
                         
                         success, error = auth_service.login(email, password)
                         
-                        assert success is False
-                        assert 'already logged in on another device' in error
+                        # Login should succeed - custom claim device_id is ignored
+                        # Device limits are enforced by license service instead
+                        assert success is True
+                        assert error is None
     
     def test_credential_encryption_decryption(self):
         """Test credential encryption and decryption."""

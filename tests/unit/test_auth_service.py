@@ -191,26 +191,41 @@ class TestAuthService:
             assert success is False
             assert 'User account is disabled' in error
     
-    def test_login_single_device_enforcement(self, test_db_manager, mock_firebase_config, sample_decoded_token):
-        """Test single-device enforcement on login."""
+    def test_login_custom_claim_device_id_ignored(self, test_db_manager, mock_firebase_config, sample_decoded_token):
+        """Test that custom claim device_id in token does not block login.
+        
+        Device limits are now enforced by license service, not custom claims.
+        Custom claims cannot be managed by the desktop app (requires Admin SDK).
+        """
         uid = sample_decoded_token['uid']
         email = sample_decoded_token['email']
         
-        # Set device_id in token to different device
+        # Set device_id in token to different device (this would have blocked login before)
         sample_decoded_token['device_id'] = 'other_device_456'
         
         mock_firebase_config.initialize()
         mock_firebase_config.verify_token = Mock(return_value=sample_decoded_token)
+        mock_firebase_config.get_user = Mock(return_value={
+            'uid': uid,
+            'email': email,
+            'disabled': False
+        })
+        # Mock license service to allow login (device limit check passes)
+        mock_firebase_config.get_active_devices = Mock(return_value=[])
+        mock_firebase_config.create_mock_license(uid, tier='silver', max_devices=1, active_device_ids=[])
         
         with patch('services.auth_service.firebase_config', mock_firebase_config):
-            with patch.object(AuthService, 'device_id', 'test_device_123'):
-                auth_service = AuthService(test_db_manager)
-                auth_service.initialize()
-                
-                success, error = auth_service.login(email, 'password123', id_token='test_token')
-                
-                assert success is False
-                assert 'already logged in on another device' in error
+            with patch('services.license_service.firebase_config', mock_firebase_config):
+                with patch.object(AuthService, 'device_id', 'test_device_123'):
+                    auth_service = AuthService(test_db_manager)
+                    auth_service.initialize()
+                    
+                    success, error = auth_service.login(email, 'password123', id_token='test_token')
+                    
+                    # Login should succeed - custom claim device_id is ignored
+                    # Device limits are enforced by license service instead
+                    assert success is True
+                    assert error is None
     
     def test_login_device_limit_reached(self, test_db_manager, mock_firebase_config, sample_user_data, sample_decoded_token):
         """Test login when device limit is reached."""

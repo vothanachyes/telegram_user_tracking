@@ -22,23 +22,46 @@ python scripts/build.py
 pip install pyarmor  # Required for obfuscation
 ```
 
+**Windows Installer (Optional):**
+For Windows builds, the script can automatically create a professional installer using Inno Setup:
+1. Download and install [Inno Setup](https://jrsoftware.org/isinfo.php) (version 5 or 6) (Or winget install --id JRSoftware.InnoSetup -e -s winget -i #window)
+2. The installer will be automatically created after the executable build completes
+3. Installer includes: desktop shortcut, Start Menu entry, uninstaller, and user-selectable installation directory
+
 **Output:**
-- Windows: `dist/TelegramUserTracking.exe`
+- Windows: 
+  - `dist/TelegramUserTracking.exe` (standalone executable)
+  - `dist/TelegramUserTracking-Setup-v{version}.exe` (installer, if Inno Setup is installed)
 - macOS: `dist/TelegramUserTracking.app`
 - Linux: `dist/TelegramUserTracking`
 
 **Configuration:**
-Edit `scripts/build.py` to enable/disable protection layers:
+Edit `scripts/build.py` to enable/disable protection layers and installer:
 ```python
 USE_PYARMOR = True              # Enable/disable PyArmor obfuscation
 USE_BYTECODE_ENCRYPTION = True  # Enable/disable bytecode encryption
 REMOVE_SOURCE_FILES = True      # Enable/disable source file removal
+USE_INSTALLER = True            # Enable/disable Inno Setup installer creation (Windows only)
 ```
 
 **Important Notes:**
 - 🔑 Encryption key is auto-generated and stored in `.build_key` (keep secure!)
 - 📦 PyArmor is optional - build will continue without it if not installed
+- 📦 Inno Setup is optional - build will continue without it if not installed (Windows only)
 - ⚠️ See [Code Protection Guide](../docs/CODE_PROTECTION_GUIDE.md) for detailed documentation
+
+**Installer Features:**
+- User-selectable installation directory (defaults to Program Files or Local AppData)
+- Desktop shortcut (optional, user can deselect)
+- Start Menu entry (optional, user can deselect)
+- Uninstaller for clean removal
+- Application icon and version information
+- Professional installation wizard
+
+**Troubleshooting Installer:**
+- **Inno Setup not found**: Install Inno Setup from https://jrsoftware.org/isinfo.php and ensure `iscc.exe` is in PATH or in default installation location
+- **Installer creation skipped**: Check that `USE_INSTALLER = True` in `scripts/build.py`
+- **Installer compilation fails**: Check Inno Setup installation and ensure executable was built successfully first
 
 ### `deploy_update.py`
 

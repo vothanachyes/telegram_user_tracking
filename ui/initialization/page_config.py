@@ -116,13 +116,36 @@ class PageConfig:
         except (AttributeError, Exception) as e:
             logger.warning(f"Could not set window size: {e}")
         
+        # Configure custom fonts first (before setting theme)
+        try:
+            assets_base = get_assets_base_dir()
+            fonts_dir = assets_base / 'assets' / 'fonts'
+            
+            # Register Kantumruy Pro font for Khmer text
+            kantumruy_pro_regular = fonts_dir / 'KantumruyPro-Regular.ttf'
+            kantumruy_pro_bold = fonts_dir / 'KantumruyPro-Bold.ttf'
+            
+            page.fonts = {}
+            
+            if kantumruy_pro_regular.exists():
+                page.fonts["KantumruyPro"] = str(kantumruy_pro_regular.resolve())
+                logger.info(f"Kantumruy Pro Regular font loaded: {kantumruy_pro_regular}")
+            else:
+                logger.warning(f"Kantumruy Pro Regular font not found at: {kantumruy_pro_regular}")
+            
+            if kantumruy_pro_bold.exists():
+                # Flet supports font families with variants
+                # For bold, we can use the same family name and Flet will handle weight
+                logger.info(f"Kantumruy Pro Bold font found: {kantumruy_pro_bold}")
+        except Exception as e:
+            logger.warning(f"Could not load custom fonts: {e}")
+        
         # Set other page properties
         page.title = settings.app_name
         page.theme_mode = theme_manager.theme_mode
         page.theme = theme_manager.get_theme()
         
         try:
-            
             # Set window icon from assets/icons directory
             system = platform.system()
             assets_base = get_assets_base_dir()

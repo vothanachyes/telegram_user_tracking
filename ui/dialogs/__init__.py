@@ -13,6 +13,7 @@ from .group_detail_dialog import GroupDetailDialog
 from .rate_limit_warning_dialog import RateLimitWarningDialog
 from .active_users_dialog import ActiveUsersDialog
 from .sample_db_warning_dialog import SampleDbWarningDialog
+from .import_users_dialog import ImportUsersDialog
 from .dialog import dialog_manager, DialogManager
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     'RateLimitWarningDialog',
     'ActiveUsersDialog',
     'SampleDbWarningDialog',
+    'ImportUsersDialog',
     'dialog_manager',
     'DialogManager'
 ]

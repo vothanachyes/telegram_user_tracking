@@ -18,6 +18,7 @@ class FiltersBarComponent:
         on_date_change: Optional[Callable[[], None]] = None,
         on_message_type_change: Optional[Callable[[Optional[str]], None]] = None,
         show_dates: bool = True,
+        show_message_type: bool = True,
         default_group_id: Optional[int] = None,
         message_type_filter: Optional[str] = None
     ):
@@ -26,6 +27,7 @@ class FiltersBarComponent:
         self.on_message_type_change = on_message_type_change
         self.selected_group: Optional[int] = default_group_id
         self.selected_message_type: Optional[str] = message_type_filter
+        self.show_message_type = show_message_type
         
         # Date filters (default: current month)
         if show_dates:
@@ -69,51 +71,56 @@ class FiltersBarComponent:
             width=250
         )
         
-        # Message type filter dropdown
-        message_type_options = [
-            theme_manager.t("all_types"),
-            theme_manager.t("voice"),
-            theme_manager.t("audio_file"),
-            theme_manager.t("photos"),
-            theme_manager.t("videos"),
-            theme_manager.t("files"),
-            theme_manager.t("link"),
-            theme_manager.t("tag"),
-            theme_manager.t("poll"),
-            theme_manager.t("location"),
-            theme_manager.t("mention")
-        ]
-        
-        # Map display values to filter values
-        self.message_type_map = {
-            theme_manager.t("all_types"): None,
-            theme_manager.t("voice"): "voice",
-            theme_manager.t("audio_file"): "audio",
-            theme_manager.t("photos"): "photos",
-            theme_manager.t("videos"): "videos",
-            theme_manager.t("files"): "files",
-            theme_manager.t("link"): "link",
-            theme_manager.t("tag"): "tag",
-            theme_manager.t("poll"): "poll",
-            theme_manager.t("location"): "location",
-            theme_manager.t("mention"): "mention"
-        }
-        
-        # Reverse map for getting display value from filter value
-        self.message_type_reverse_map = {v: k for k, v in self.message_type_map.items()}
-        
-        default_message_type_value = (
-            self.message_type_reverse_map.get(message_type_filter, theme_manager.t("all_types"))
-            if message_type_filter else theme_manager.t("all_types")
-        )
-        
-        self.message_type_dropdown = theme_manager.create_dropdown(
-            label=theme_manager.t("filter_by_type"),
-            options=message_type_options,
-            value=default_message_type_value,
-            on_change=self._on_message_type_selected,
-            width=180
-        )
+        # Message type filter dropdown (only for messages tab)
+        if show_message_type:
+            message_type_options = [
+                theme_manager.t("all_types"),
+                theme_manager.t("voice"),
+                theme_manager.t("audio_file"),
+                theme_manager.t("photos"),
+                theme_manager.t("videos"),
+                theme_manager.t("files"),
+                theme_manager.t("link"),
+                theme_manager.t("tag"),
+                theme_manager.t("poll"),
+                theme_manager.t("location"),
+                theme_manager.t("mention")
+            ]
+            
+            # Map display values to filter values
+            self.message_type_map = {
+                theme_manager.t("all_types"): None,
+                theme_manager.t("voice"): "voice",
+                theme_manager.t("audio_file"): "audio",
+                theme_manager.t("photos"): "photos",
+                theme_manager.t("videos"): "videos",
+                theme_manager.t("files"): "files",
+                theme_manager.t("link"): "link",
+                theme_manager.t("tag"): "tag",
+                theme_manager.t("poll"): "poll",
+                theme_manager.t("location"): "location",
+                theme_manager.t("mention"): "mention"
+            }
+            
+            # Reverse map for getting display value from filter value
+            self.message_type_reverse_map = {v: k for k, v in self.message_type_map.items()}
+            
+            default_message_type_value = (
+                self.message_type_reverse_map.get(message_type_filter, theme_manager.t("all_types"))
+                if message_type_filter else theme_manager.t("all_types")
+            )
+            
+            self.message_type_dropdown = theme_manager.create_dropdown(
+                label=theme_manager.t("filter_by_type"),
+                options=message_type_options,
+                value=default_message_type_value,
+                on_change=self._on_message_type_selected,
+                width=180
+            )
+        else:
+            self.message_type_dropdown = None
+            self.message_type_map = {}
+            self.message_type_reverse_map = {}
     
     def build(self) -> ft.Row:
         """Build the filter bar."""
@@ -123,7 +130,10 @@ class FiltersBarComponent:
             controls.extend([self.start_date_field, self.end_date_field, ft.Container(width=20)])
         
         controls.append(self.group_dropdown)
-        controls.append(self.message_type_dropdown)
+        
+        # Only add message type dropdown if enabled
+        if self.message_type_dropdown:
+            controls.append(self.message_type_dropdown)
         
         # Trigger callback if default group was set (for auto-selection)
         if self.selected_group is not None and self.on_group_change:
@@ -159,6 +169,8 @@ class FiltersBarComponent:
     
     def get_message_type_filter(self) -> Optional[str]:
         """Get selected message type filter."""
+        if not self.show_message_type:
+            return None
         return self.selected_message_type
     
     def clear_filters(self):

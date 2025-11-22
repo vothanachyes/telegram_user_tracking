@@ -129,6 +129,10 @@ class DatabaseManager(BaseDatabaseManager):
     def get_users_by_group(self, group_id, include_deleted=False):
         return self._user.get_users_by_group(group_id, include_deleted)
     
+    def get_all_users_in_group(self, group_id, include_deleted=False):
+        """Get all users (including imported members who haven't sent messages)."""
+        return self._user.get_all_users_in_group(group_id, include_deleted=include_deleted)
+    
     def search_users(self, query, limit=10, include_deleted=False):
         return self._user.search_users(query, limit, include_deleted)
     
@@ -140,10 +144,11 @@ class DatabaseManager(BaseDatabaseManager):
         return self._message.save_message(message)
     
     def get_messages(self, group_id=None, group_ids=None, user_id=None, start_date=None, end_date=None,
-                     include_deleted=False, limit=None, offset=0, tags=None):
+                     include_deleted=False, limit=None, offset=0, tags=None, message_type_filter=None):
         return self._message.get_messages(group_id=group_id, group_ids=group_ids, user_id=user_id, 
                                          start_date=start_date, end_date=end_date,
-                                         include_deleted=include_deleted, limit=limit, offset=offset, tags=tags)
+                                         include_deleted=include_deleted, limit=limit, offset=offset, tags=tags,
+                                         message_type_filter=message_type_filter)
     
     def get_message_count(self, group_id=None, user_id=None, include_deleted=False):
         return self._message.get_message_count(group_id, user_id, include_deleted)

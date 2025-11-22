@@ -287,12 +287,33 @@ class ThemeManager:
         """Set corner radius."""
         self._corner_radius = radius
     
+    @property
+    def khmer_font_family(self) -> str:
+        """Get font family for Khmer text (Kantumruy Pro)."""
+        return "KantumruyPro"
+    
     def get_theme(self) -> ft.Theme:
         """Get Flet theme configuration."""
-        return ft.Theme(
+        theme = ft.Theme(
             color_scheme_seed=self.primary_color,
             use_material3=True
         )
+        
+        # Set default font family for Khmer language
+        if self._current_language == "km":
+            theme.text_theme = ft.TextTheme(
+                body_large=ft.TextStyle(font_family=self.khmer_font_family),
+                body_medium=ft.TextStyle(font_family=self.khmer_font_family),
+                body_small=ft.TextStyle(font_family=self.khmer_font_family),
+                title_large=ft.TextStyle(font_family=self.khmer_font_family),
+                title_medium=ft.TextStyle(font_family=self.khmer_font_family),
+                title_small=ft.TextStyle(font_family=self.khmer_font_family),
+                label_large=ft.TextStyle(font_family=self.khmer_font_family),
+                label_medium=ft.TextStyle(font_family=self.khmer_font_family),
+                label_small=ft.TextStyle(font_family=self.khmer_font_family),
+            )
+        
+        return theme
     
     def t(self, key: str) -> str:
         """

@@ -8,7 +8,7 @@ from datetime import datetime
 from admin.config.admin_config import admin_config
 from admin.utils.constants import (
     FIRESTORE_USER_LICENSES_COLLECTION,
-    LICENSE_TIERS
+    LICENSE_TIERS  # Fallback if Firestore tiers not available
 )
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,32 @@ class AdminLicenseService:
             logger.error(f"Error getting license for {uid}: {e}", exc_info=True)
             return None
     
+    def get_tier_definition(self, tier_key: str) -> Optional[dict]:
+        """Get tier definition from Firestore (or fallback to constants)."""
+        try:
+            from admin.services.admin_license_tier_service import admin_license_tier_service
+            tier = admin_license_tier_service.get_tier(tier_key)
+            if tier:
+                return tier
+        except Exception as e:
+            logger.debug(f"Could not get tier from Firestore: {e}")
+        
+        # Fallback to constants
+        try:
+            import sys
+            from pathlib import Path
+            project_root = Path(__file__).parent.parent.parent
+            sys.path.insert(0, str(project_root))
+            from utils.constants import LICENSE_PRICING
+            if tier_key in LICENSE_PRICING:
+                tier_data = LICENSE_PRICING[tier_key].copy()
+                tier_data["tier_key"] = tier_key
+                return tier_data
+        except Exception as e:
+            logger.debug(f"Could not get tier from constants: {e}")
+        
+        return None
+    
     def create_license(self, uid: str, license_data: dict) -> bool:
         """Create new license."""
         if not self._ensure_initialized():
@@ -79,9 +105,21 @@ class AdminLicenseService:
                 logger.error("License tier is required")
                 return False
             
-            if license_data["tier"] not in LICENSE_TIERS:
-                logger.error(f"Invalid license tier: {license_data['tier']}")
+            tier_key = license_data["tier"]
+            
+            # Validate tier exists (check Firestore first, then constants)
+            tier_definition = self.get_tier_definition(tier_key)
+            if not tier_definition:
+                logger.error(f"Invalid license tier: {tier_key}")
                 return False
+            
+            # Use tier definition defaults if not provided
+            if "max_devices" not in license_data:
+                license_data["max_devices"] = tier_definition.get("max_devices", 1)
+            if "max_groups" not in license_data:
+                license_data["max_groups"] = tier_definition.get("max_groups", 1)
+            if "max_accounts" not in license_data:
+                license_data["max_accounts"] = tier_definition.get("max_accounts", 1)
             
             # Set defaults
             license_data.setdefault("created_at", datetime.utcnow().isoformat() + "Z")
@@ -107,9 +145,12 @@ class AdminLicenseService:
         
         try:
             # Validate tier if provided
-            if "tier" in license_data and license_data["tier"] not in LICENSE_TIERS:
-                logger.error(f"Invalid license tier: {license_data['tier']}")
-                return False
+            if "tier" in license_data:
+                tier_key = license_data["tier"]
+                tier_definition = self.get_tier_definition(tier_key)
+                if not tier_definition:
+                    logger.error(f"Invalid license tier: {tier_key}")
+                    return False
             
             doc_ref = self._db.collection(FIRESTORE_USER_LICENSES_COLLECTION).document(uid)
             doc_ref.update(license_data)
@@ -148,7 +189,16 @@ class AdminLicenseService:
             "expired": 0,
         }
         
-        for tier in LICENSE_TIERS:
+        # Get tiers from Firestore or fallback to constants
+        try:
+            from admin.services.admin_license_tier_service import admin_license_tier_service
+            tiers = admin_license_tier_service.get_all_tiers()
+            tier_keys = [t.get("tier_key") for t in tiers if t.get("tier_key")]
+        except Exception:
+            tier_keys = LICENSE_TIERS  # Fallback
+        
+        # Initialize tier counts
+        for tier in tier_keys:
             stats["by_tier"][tier] = 0
         
         now = datetime.utcnow()

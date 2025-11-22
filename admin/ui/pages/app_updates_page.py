@@ -149,7 +149,9 @@ class AdminAppUpdatesPage(ft.Container):
             else:
                 self.current_info_text.value = "No update info found. Create new update info."
             
-            self.update()
+            # Only update if control is on the page
+            if hasattr(self, 'page') and self.page:
+                self.update()
             
         except Exception as e:
             import logging

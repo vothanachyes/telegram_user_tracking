@@ -25,10 +25,23 @@ class AdminAnalyticsService:
             
             total_users = len(users)
             active_users = sum(1 for u in users if not u.get("disabled", False))
-            new_users = sum(
-                1 for u in users
-                if u.get("created_at") and u["created_at"] >= thirty_days_ago
-            )
+            
+            # Count new users (created_at is Unix timestamp in milliseconds)
+            new_users = 0
+            for u in users:
+                created_at = u.get("created_at")
+                if created_at:
+                    # Convert timestamp to datetime if needed
+                    if isinstance(created_at, (int, float)):
+                        # Firebase timestamps are in milliseconds
+                        created_dt = datetime.fromtimestamp(created_at / 1000.0)
+                    elif isinstance(created_at, datetime):
+                        created_dt = created_at
+                    else:
+                        continue
+                    
+                    if created_dt >= thirty_days_ago:
+                        new_users += 1
             
             return {
                 "total": total_users,

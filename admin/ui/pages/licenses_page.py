@@ -3,9 +3,13 @@ Admin licenses management page.
 """
 
 import flet as ft
+import logging
 from typing import Optional
 from admin.services.admin_license_service import admin_license_service
 from admin.ui.components.data_table import DataTable
+from admin.ui.dialogs import LicenseFormDialog, DeleteConfirmDialog
+
+logger = logging.getLogger(__name__)
 
 
 class AdminLicensesPage(ft.Container):
@@ -121,7 +125,9 @@ class AdminLicensesPage(ft.Container):
             )
             
             self.content.controls.append(self.data_table)
-            self.update()
+            # Only update if control is on the page
+            if hasattr(self, 'page') and self.page:
+                self.update()
             
         except Exception as e:
             import logging
@@ -130,31 +136,157 @@ class AdminLicensesPage(ft.Container):
     
     def _on_create_license(self, e: ft.ControlEvent):
         """Handle create license button click."""
-        # TODO: Open create license dialog
-        self.page.snack_bar = ft.SnackBar(
-            content=ft.Text("Create license dialog - to be implemented"),
-            bgcolor="#333333",
+        dialog = LicenseFormDialog(
+            license_data=None,
+            user_uid=None,
+            on_submit=self._handle_create_license,
         )
-        self.page.snack_bar.open = True
-        self.page.update()
+        dialog.page = self.page
+        try:
+            self.page.open(dialog)
+        except Exception as ex:
+            logger.error(f"Error opening create license dialog: {ex}")
+            self.page.dialog = dialog
+            dialog.open = True
+            self.page.update()
     
     def _on_edit_license(self, license_data: dict):
         """Handle edit license action."""
-        # TODO: Open edit license dialog
-        self.page.snack_bar = ft.SnackBar(
-            content=ft.Text(f"Edit license: {license_data.get('uid')} - to be implemented"),
-            bgcolor="#333333",
+        full_license_data = license_data.get("_license_data", license_data)
+        user_uid = full_license_data.get("uid")
+        dialog = LicenseFormDialog(
+            license_data=full_license_data,
+            on_submit=lambda user_uid_param, license_data_param: self._handle_update_license(user_uid_param, license_data_param),
         )
-        self.page.snack_bar.open = True
-        self.page.update()
+        dialog.page = self.page
+        try:
+            self.page.open(dialog)
+        except Exception as ex:
+            logger.error(f"Error opening edit license dialog: {ex}")
+            self.page.dialog = dialog
+            dialog.open = True
+            self.page.update()
     
     def _on_delete_license(self, license_data: dict):
         """Handle delete license action."""
-        # TODO: Open delete confirmation dialog
-        self.page.snack_bar = ft.SnackBar(
-            content=ft.Text(f"Delete license: {license_data.get('uid')} - to be implemented"),
-            bgcolor="#333333",
+        full_license_data = license_data.get("_license_data", license_data)
+        user_uid = full_license_data.get("uid", "unknown")
+        tier = full_license_data.get("tier", "unknown").capitalize()
+        
+        dialog = DeleteConfirmDialog(
+            title="Delete License",
+            message=f"Are you sure you want to delete the {tier} license for user '{user_uid}'? This action cannot be undone.",
+            item_name=user_uid,
+            on_confirm=lambda: self._handle_delete_license(user_uid),
         )
-        self.page.snack_bar.open = True
-        self.page.update()
+        dialog.page = self.page
+        try:
+            self.page.open(dialog)
+        except Exception as ex:
+            logger.error(f"Error opening delete confirmation dialog: {ex}")
+            self.page.dialog = dialog
+            dialog.open = True
+            self.page.update()
+    
+    def _handle_create_license(self, user_uid: str, license_data: dict):
+        """Handle license creation."""
+        try:
+            success = admin_license_service.create_license(user_uid, license_data)
+            
+            if success:
+                # Reload licenses
+                self._reload_licenses()
+                
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text(f"License created successfully for user: {user_uid}"),
+                    bgcolor="#4caf50",
+                )
+            else:
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text("Failed to create license. Please check logs."),
+                    bgcolor="#f44336",
+                )
+            
+            self.page.snack_bar.open = True
+            self.page.update()
+            
+        except Exception as e:
+            logger.error(f"Error creating license: {e}", exc_info=True)
+            self.page.snack_bar = ft.SnackBar(
+                content=ft.Text(f"Error creating license: {str(e)}"),
+                bgcolor="#f44336",
+            )
+            self.page.snack_bar.open = True
+            self.page.update()
+    
+    def _handle_update_license(self, user_uid: str, license_data: dict):
+        """Handle license update."""
+        try:
+            success = admin_license_service.update_license(user_uid, license_data)
+            
+            if success:
+                # Reload licenses
+                self._reload_licenses()
+                
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text("License updated successfully"),
+                    bgcolor="#4caf50",
+                )
+            else:
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text("Failed to update license. Please check logs."),
+                    bgcolor="#f44336",
+                )
+            
+            self.page.snack_bar.open = True
+            self.page.update()
+            
+        except Exception as e:
+            logger.error(f"Error updating license: {e}", exc_info=True)
+            self.page.snack_bar = ft.SnackBar(
+                content=ft.Text(f"Error updating license: {str(e)}"),
+                bgcolor="#f44336",
+            )
+            self.page.snack_bar.open = True
+            self.page.update()
+    
+    def _handle_delete_license(self, user_uid: str):
+        """Handle license deletion."""
+        try:
+            success = admin_license_service.delete_license(user_uid)
+            
+            if success:
+                # Reload licenses
+                self._reload_licenses()
+                
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text("License deleted successfully"),
+                    bgcolor="#4caf50",
+                )
+            else:
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text("Failed to delete license. Please check logs."),
+                    bgcolor="#f44336",
+                )
+            
+            self.page.snack_bar.open = True
+            self.page.update()
+            
+        except Exception as e:
+            logger.error(f"Error deleting license: {e}", exc_info=True)
+            self.page.snack_bar = ft.SnackBar(
+                content=ft.Text(f"Error deleting license: {str(e)}"),
+                bgcolor="#f44336",
+            )
+            self.page.snack_bar.open = True
+            self.page.update()
+    
+    def _reload_licenses(self):
+        """Reload licenses table."""
+        # Remove old table
+        if self.data_table and self.data_table in self.content.controls:
+            self.content.controls.remove(self.data_table)
+        
+        # Load new data
+        self._load_licenses()
 

@@ -2,9 +2,26 @@
 Admin login page.
 """
 
+import os
 import flet as ft
 from typing import Callable, Optional
 from admin.services.admin_auth_service import admin_auth_service
+
+# Try to load .env file
+try:
+    from dotenv import load_dotenv
+    from pathlib import Path
+    # Load from project root .env file
+    project_root = Path(__file__).parent.parent.parent
+    env_file = project_root / ".env"
+    if env_file.exists():
+        load_dotenv(env_file)
+    else:
+        # Fallback to current directory
+        load_dotenv()
+except ImportError:
+    # dotenv not available, just use os.getenv
+    pass
 
 
 class AdminLoginPage(ft.Container):
@@ -22,30 +39,38 @@ class AdminLoginPage(ft.Container):
     def __init__(self, on_login_success: Callable[[], None]):
         self.on_login_success = on_login_success
         self.error_message = ft.Text("", color=self.ERROR_COLOR, size=12)
+        
+        # Get credentials from environment variables
+        admin_email = os.getenv("ADMIN_FIREBASE_ACC", "").strip()
+        admin_password = os.getenv("ADMIN_FIREBASE_PASS", "").strip()
+        
         self.email_field = ft.TextField(
             label="Email",
             hint_text="Enter your email",
+            value=admin_email,
             bgcolor=self.CARD_BG,
             color=self.TEXT_COLOR,
             border_color=self.BORDER_COLOR,
-            expand=True,
+            width=320,
         )
         self.password_field = ft.TextField(
             label="Password",
             hint_text="Enter your password",
+            value=admin_password,
             password=True,
             can_reveal_password=True,
             bgcolor=self.CARD_BG,
             color=self.TEXT_COLOR,
             border_color=self.BORDER_COLOR,
-            expand=True,
+            width=320,
         )
         self.login_button = ft.ElevatedButton(
             text="Login",
             bgcolor=self.PRIMARY_COLOR,
             color=self.TEXT_COLOR,
             on_click=self._handle_login,
-            expand=True,
+            width=320,
+            height=45,
         )
         
         super().__init__(
@@ -57,21 +82,25 @@ class AdminLoginPage(ft.Container):
                             size=32,
                             weight=ft.FontWeight.BOLD,
                             color=self.TEXT_COLOR,
+                            text_align=ft.TextAlign.CENTER,
                         ),
-                        ft.Divider(height=20, color="transparent"),
+                        ft.Divider(height=30, color="transparent"),
                         self.email_field,
+                        ft.Divider(height=5, color="transparent"),
                         self.password_field,
+                        ft.Divider(height=5, color="transparent"),
                         self.error_message,
-                        ft.Divider(height=10, color="transparent"),
+                        ft.Divider(height=15, color="transparent"),
                         self.login_button,
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    spacing=15,
+                    spacing=0,
+                    tight=True,
                 ),
-                padding=ft.padding.all(40),
+                padding=ft.padding.symmetric(horizontal=40, vertical=50),
                 bgcolor=self.CARD_BG,
                 border=ft.border.all(1, self.BORDER_COLOR),
-                border_radius=10,
+                border_radius=12,
                 width=400,
             ),
             alignment=ft.alignment.center,

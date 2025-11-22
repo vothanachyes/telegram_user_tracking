@@ -3,9 +3,13 @@ Admin users management page.
 """
 
 import flet as ft
+import logging
 from typing import Optional
 from admin.services.admin_user_service import admin_user_service
 from admin.ui.components.data_table import DataTable
+from admin.ui.dialogs import UserFormDialog, DeleteConfirmDialog
+
+logger = logging.getLogger(__name__)
 
 
 class AdminUsersPage(ft.Container):
@@ -101,7 +105,9 @@ class AdminUsersPage(ft.Container):
             )
             
             self.content.controls.append(self.data_table)
-            self.update()
+            # Only update if control is on the page
+            if hasattr(self, 'page') and self.page:
+                self.update()
             
         except Exception as e:
             import logging
@@ -110,31 +116,174 @@ class AdminUsersPage(ft.Container):
     
     def _on_create_user(self, e: ft.ControlEvent):
         """Handle create user button click."""
-        # TODO: Open create user dialog
-        self.page.snack_bar = ft.SnackBar(
-            content=ft.Text("Create user dialog - to be implemented"),
-            bgcolor="#333333",
+        dialog = UserFormDialog(
+            user_data=None,
+            on_submit=self._handle_create_user,
         )
-        self.page.snack_bar.open = True
-        self.page.update()
+        dialog.page = self.page
+        try:
+            self.page.open(dialog)
+        except Exception as ex:
+            logger.error(f"Error opening create user dialog: {ex}")
+            self.page.dialog = dialog
+            dialog.open = True
+            self.page.update()
     
     def _on_edit_user(self, user_data: dict):
         """Handle edit user action."""
-        # TODO: Open edit user dialog
-        self.page.snack_bar = ft.SnackBar(
-            content=ft.Text(f"Edit user: {user_data.get('email')} - to be implemented"),
-            bgcolor="#333333",
+        # Get full user data
+        full_user_data = user_data.get("_user_data", user_data)
+        dialog = UserFormDialog(
+            user_data=full_user_data,
+            on_submit=lambda **kwargs: self._handle_update_user(full_user_data.get("uid"), **kwargs),
         )
-        self.page.snack_bar.open = True
-        self.page.update()
+        dialog.page = self.page
+        try:
+            self.page.open(dialog)
+        except Exception as ex:
+            logger.error(f"Error opening edit user dialog: {ex}")
+            self.page.dialog = dialog
+            dialog.open = True
+            self.page.update()
     
     def _on_delete_user(self, user_data: dict):
         """Handle delete user action."""
-        # TODO: Open delete confirmation dialog
-        self.page.snack_bar = ft.SnackBar(
-            content=ft.Text(f"Delete user: {user_data.get('email')} - to be implemented"),
-            bgcolor="#333333",
+        full_user_data = user_data.get("_user_data", user_data)
+        user_email = full_user_data.get("email", "this user")
+        user_uid = full_user_data.get("uid")
+        
+        dialog = DeleteConfirmDialog(
+            title="Delete User",
+            message=f"Are you sure you want to delete user '{user_email}'? This action cannot be undone.",
+            item_name=user_email,
+            on_confirm=lambda: self._handle_delete_user(user_uid),
         )
-        self.page.snack_bar.open = True
-        self.page.update()
+        dialog.page = self.page
+        try:
+            self.page.open(dialog)
+        except Exception as ex:
+            logger.error(f"Error opening delete confirmation dialog: {ex}")
+            self.page.dialog = dialog
+            dialog.open = True
+            self.page.update()
+    
+    def _handle_create_user(self, email: str, password: str, display_name: Optional[str], disabled: bool):
+        """Handle user creation."""
+        try:
+            uid = admin_user_service.create_user(
+                email=email,
+                password=password,
+                display_name=display_name,
+            )
+            
+            if uid:
+                # Update disabled status if needed
+                if disabled:
+                    admin_user_service.update_user(uid, disabled=True)
+                
+                # Reload users
+                self._reload_users()
+                
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text(f"User created successfully: {email}"),
+                    bgcolor="#4caf50",
+                )
+            else:
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text("Failed to create user. Please check logs."),
+                    bgcolor="#f44336",
+                )
+            
+            self.page.snack_bar.open = True
+            self.page.update()
+            
+        except Exception as e:
+            logger.error(f"Error creating user: {e}", exc_info=True)
+            self.page.snack_bar = ft.SnackBar(
+                content=ft.Text(f"Error creating user: {str(e)}"),
+                bgcolor="#f44336",
+            )
+            self.page.snack_bar.open = True
+            self.page.update()
+    
+    def _handle_update_user(self, uid: str, email: str, password: Optional[str], display_name: Optional[str], disabled: bool):
+        """Handle user update."""
+        try:
+            update_data = {
+                "email": email,
+                "display_name": display_name,
+                "disabled": disabled,
+            }
+            
+            # Only update password if provided
+            if password:
+                update_data["password"] = password
+            
+            success = admin_user_service.update_user(uid, **update_data)
+            
+            if success:
+                # Reload users
+                self._reload_users()
+                
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text("User updated successfully"),
+                    bgcolor="#4caf50",
+                )
+            else:
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text("Failed to update user. Please check logs."),
+                    bgcolor="#f44336",
+                )
+            
+            self.page.snack_bar.open = True
+            self.page.update()
+            
+        except Exception as e:
+            logger.error(f"Error updating user: {e}", exc_info=True)
+            self.page.snack_bar = ft.SnackBar(
+                content=ft.Text(f"Error updating user: {str(e)}"),
+                bgcolor="#f44336",
+            )
+            self.page.snack_bar.open = True
+            self.page.update()
+    
+    def _handle_delete_user(self, uid: str):
+        """Handle user deletion."""
+        try:
+            success = admin_user_service.delete_user(uid)
+            
+            if success:
+                # Reload users
+                self._reload_users()
+                
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text("User deleted successfully"),
+                    bgcolor="#4caf50",
+                )
+            else:
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text("Failed to delete user. Please check logs."),
+                    bgcolor="#f44336",
+                )
+            
+            self.page.snack_bar.open = True
+            self.page.update()
+            
+        except Exception as e:
+            logger.error(f"Error deleting user: {e}", exc_info=True)
+            self.page.snack_bar = ft.SnackBar(
+                content=ft.Text(f"Error deleting user: {str(e)}"),
+                bgcolor="#f44336",
+            )
+            self.page.snack_bar.open = True
+            self.page.update()
+    
+    def _reload_users(self):
+        """Reload users table."""
+        # Remove old table
+        if self.data_table and self.data_table in self.content.controls:
+            self.content.controls.remove(self.data_table)
+        
+        # Load new data
+        self._load_users()
 

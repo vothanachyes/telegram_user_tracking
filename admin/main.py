@@ -18,13 +18,14 @@ from admin.ui.pages.login_page import AdminLoginPage
 from admin.ui.pages.dashboard_page import AdminDashboardPage
 from admin.ui.pages.users_page import AdminUsersPage
 from admin.ui.pages.licenses_page import AdminLicensesPage
+from admin.ui.pages.license_tiers_page import AdminLicenseTiersPage
 from admin.ui.pages.app_updates_page import AdminAppUpdatesPage
 from admin.ui.pages.devices_page import AdminDevicesPage
 from admin.ui.pages.activity_logs_page import AdminActivityLogsPage
 from admin.ui.pages.bulk_operations_page import AdminBulkOperationsPage
 from admin.ui.components.sidebar import AdminSidebar
 from admin.utils.constants import (
-    PAGE_LOGIN, PAGE_DASHBOARD, PAGE_USERS, PAGE_LICENSES,
+    PAGE_LOGIN, PAGE_DASHBOARD, PAGE_USERS, PAGE_LICENSES, PAGE_LICENSE_TIERS,
     PAGE_APP_UPDATES, PAGE_DEVICES, PAGE_ACTIVITY_LOGS, PAGE_BULK_OPERATIONS
 )
 
@@ -102,16 +103,23 @@ class AdminApp:
         else:
             # Show main pages with sidebar
             if not self.sidebar:
+                # Create sidebar with current page (constructor handles active state)
                 self.sidebar = AdminSidebar(
                     on_navigate=self._navigate_to,
                     on_logout=self._on_logout,
                     current_page=page_id,
                 )
                 self.page.controls[0].controls = [self.sidebar, self.content_area]
-            
-            # Update sidebar current page
-            if self.sidebar:
-                self.sidebar.set_current_page(page_id)
+            else:
+                # Sidebar already exists - recreate it with new current page
+                # This ensures the active state is correct
+                self.sidebar = AdminSidebar(
+                    on_navigate=self._navigate_to,
+                    on_logout=self._on_logout,
+                    current_page=page_id,
+                )
+                # Replace sidebar in page controls
+                self.page.controls[0].controls[0] = self.sidebar
             
             # Load page content
             page_content = self._create_page_content(page_id)
@@ -127,6 +135,8 @@ class AdminApp:
             return AdminUsersPage(self.page)
         elif page_id == PAGE_LICENSES:
             return AdminLicensesPage(self.page)
+        elif page_id == PAGE_LICENSE_TIERS:
+            return AdminLicenseTiersPage(self.page)
         elif page_id == PAGE_APP_UPDATES:
             return AdminAppUpdatesPage(self.page)
         elif page_id == PAGE_DEVICES:

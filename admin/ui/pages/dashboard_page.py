@@ -99,7 +99,9 @@ class AdminDashboardPage(ft.Container):
             ]
             
             self.stats_cards.controls = cards
-            self.stats_cards.update()
+            # Only update if control is on the page
+            if hasattr(self, 'page') and self.page:
+                self.update()
             
         except Exception as e:
             import logging

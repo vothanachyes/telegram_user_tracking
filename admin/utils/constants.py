@@ -4,6 +4,7 @@ Admin-specific constants.
 
 # Firestore Collections
 FIRESTORE_USER_LICENSES_COLLECTION = "user_licenses"
+FIRESTORE_LICENSE_TIERS_COLLECTION = "license_tiers"
 FIRESTORE_APP_UPDATES_COLLECTION = "app_updates"
 FIRESTORE_APP_UPDATES_DOCUMENT = "latest"
 
@@ -15,6 +16,7 @@ PAGE_LOGIN = "login"
 PAGE_DASHBOARD = "dashboard"
 PAGE_USERS = "users"
 PAGE_LICENSES = "licenses"
+PAGE_LICENSE_TIERS = "license_tiers"
 PAGE_APP_UPDATES = "app_updates"
 PAGE_DEVICES = "devices"
 PAGE_ACTIVITY_LOGS = "activity_logs"

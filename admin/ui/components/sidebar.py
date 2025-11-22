@@ -5,8 +5,8 @@ Admin sidebar navigation component.
 import flet as ft
 from typing import Callable, Optional
 from admin.utils.constants import (
-    PAGE_DASHBOARD, PAGE_USERS, PAGE_LICENSES, PAGE_APP_UPDATES,
-    PAGE_DEVICES, PAGE_ACTIVITY_LOGS, PAGE_BULK_OPERATIONS
+    PAGE_DASHBOARD, PAGE_USERS, PAGE_LICENSES, PAGE_LICENSE_TIERS,
+    PAGE_APP_UPDATES, PAGE_DEVICES, PAGE_ACTIVITY_LOGS, PAGE_BULK_OPERATIONS
 )
 
 
@@ -37,6 +37,7 @@ class AdminSidebar(ft.Container):
             (PAGE_DASHBOARD, ft.Icons.DASHBOARD, "Dashboard"),
             (PAGE_USERS, ft.Icons.PEOPLE, "Users"),
             (PAGE_LICENSES, ft.Icons.CARD_MEMBERSHIP, "Licenses"),
+            (PAGE_LICENSE_TIERS, ft.Icons.STAR, "License Tiers"),
             (PAGE_APP_UPDATES, ft.Icons.UPDATE, "App Updates"),
             (PAGE_DEVICES, ft.Icons.DEVICES, "Devices"),
             (PAGE_ACTIVITY_LOGS, ft.Icons.HISTORY, "Activity Logs"),
@@ -118,7 +119,7 @@ class AdminSidebar(ft.Container):
     def set_current_page(self, page_id: str):
         """Update current page highlight."""
         self.current_page = page_id
-        # Rebuild buttons to update active state
-        # In a real implementation, you'd update the existing buttons
-        self.update()
+        # Only update if control is already on the page
+        if hasattr(self, 'page') and self.page:
+            self.update()
 

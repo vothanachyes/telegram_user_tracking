@@ -9,6 +9,9 @@ from ui.theme import theme_manager
 from ui.components import DataTable, ModernTabs
 from utils.helpers import format_datetime, get_telegram_user_link
 from ui.pages.telegram.components.filters_bar import FiltersBarComponent
+from ui.components.top_users_certificate import TopUsersCertificate
+from services.export.exporters.certificate_exporter import CertificateExporter
+from datetime import datetime
 
 
 class ReportsPage(ft.Container):
@@ -36,9 +39,29 @@ class ReportsPage(ft.Container):
             default_group_id=default_group_id
         )
         
+        # Create filters bar for certificate (with dates enabled, no message type filter)
+        self.certificate_filters_bar = FiltersBarComponent(
+            groups=groups,
+            on_group_change=self._on_certificate_group_change,
+            on_date_change=self._on_certificate_date_change,
+            show_dates=True,
+            show_message_type=False,  # Remove Filter By Type for certificate
+            default_group_id=default_group_id
+        )
+        
         # Create tables
         self.active_users_table = self._create_active_users_table()
         self.group_summary_table = self._create_group_summary_table()
+        
+        # Create certificate component
+        self.certificate_component = TopUsersCertificate()
+        
+        # Create certificate exporter
+        self.certificate_exporter = CertificateExporter()
+        
+        # File pickers for exports
+        self.certificate_pdf_picker = ft.FilePicker(on_result=self._on_certificate_pdf_picked)
+        self.certificate_image_picker = ft.FilePicker(on_result=self._on_certificate_image_picked)
         
         # Create tab definitions
         tabs = [
@@ -54,6 +77,13 @@ class ReportsPage(ft.Container):
                 'label': 'group_summary',
                 'icon': ft.Icons.GROUP,
                 'content': self._build_group_summary_tab(),
+                'enabled': True
+            },
+            {
+                'id': 'top_users_certificate',
+                'label': 'top_users_certificate',
+                'icon': ft.Icons.CARD_GIFTCARD,
+                'content': self._build_certificate_tab(),
                 'enabled': True
             }
         ]
@@ -87,10 +117,21 @@ class ReportsPage(ft.Container):
         # Load initial data
         self._refresh_active_users()
         self._refresh_group_summary()
+        self._refresh_certificate()
     
     def set_page(self, page: ft.Page):
         """Set page reference."""
         self.page = page
+        self.certificate_component.set_page(page)
+        
+        # Add file pickers to overlay
+        if not hasattr(page, 'overlay') or page.overlay is None:
+            page.overlay = []
+        
+        pickers = [self.certificate_pdf_picker, self.certificate_image_picker]
+        for picker in pickers:
+            if picker not in page.overlay:
+                page.overlay.append(picker)
     
     def _on_tab_change(self, index: int):
         """Handle tab change."""
@@ -106,6 +147,18 @@ class ReportsPage(ft.Container):
     def _on_active_users_date_change(self):
         """Handle date change for active users."""
         self._refresh_active_users()
+        if self.page:
+            self.page.update()
+    
+    def _on_certificate_group_change(self, group_id: Optional[int]):
+        """Handle group change for certificate."""
+        self._refresh_certificate()
+        if self.page:
+            self.page.update()
+    
+    def _on_certificate_date_change(self):
+        """Handle date change for certificate."""
+        self._refresh_certificate()
         if self.page:
             self.page.update()
     
@@ -404,4 +457,370 @@ class ReportsPage(ft.Container):
         dialog.page = self.page
         # Trigger export directly
         dialog._export_pdf(e)
+    
+    def _build_certificate_tab(self) -> ft.Container:
+        """Build certificate tab content."""
+        # Export buttons
+        export_pdf_btn = ft.ElevatedButton(
+            text=theme_manager.t("export_to_pdf"),
+            icon=ft.Icons.PICTURE_AS_PDF,
+            on_click=self._export_certificate_pdf
+        )
+        
+        export_image_btn = ft.ElevatedButton(
+            text=theme_manager.t("export_to_image"),
+            icon=ft.Icons.IMAGE,
+            on_click=self._export_certificate_image
+        )
+        
+        refresh_btn = ft.IconButton(
+            icon=ft.Icons.REFRESH,
+            tooltip=theme_manager.t("refresh"),
+            on_click=lambda e: self._refresh_certificate()
+        )
+        
+        return ft.Container(
+            content=ft.Column([
+                # Controls row
+                ft.Row([
+                    self.certificate_filters_bar.build(),
+                    refresh_btn,
+                    export_pdf_btn,
+                    export_image_btn,
+                ], spacing=10, wrap=False),
+                # Certificate
+                ft.Container(
+                    content=self.certificate_component,
+                    expand=True,
+                    alignment=ft.alignment.center,
+                ),
+            ], spacing=15, expand=True),
+            padding=10,
+            expand=True
+        )
+    
+    def _refresh_certificate(self):
+        """Refresh certificate with current filter data."""
+        group_id = self.certificate_filters_bar.get_selected_group()
+        
+        if not group_id:
+            self.certificate_component.update_users([], "", None)
+            return
+        
+        # Get date range from filters bar
+        start_date = self.certificate_filters_bar.get_start_date()
+        end_date = self.certificate_filters_bar.get_end_date()
+        
+        # Get top 5 users
+        users = self.db_manager.get_top_active_users_by_group(group_id, limit=5)
+        
+        # Filter by date range if provided
+        if start_date or end_date:
+            filtered_users = []
+            for user_data in users:
+                # Get user messages count for date range
+                user_id = user_data['user_id']
+                messages = self.db_manager.get_messages(
+                    group_id=group_id,
+                    user_id=user_id,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+                if messages:
+                    user_data['message_count'] = len(messages)
+                    filtered_users.append(user_data)
+            users = filtered_users
+            # Re-sort by message count
+            users.sort(key=lambda x: x.get('message_count', 0), reverse=True)
+            users = users[:5]  # Limit to top 5
+        
+        # Get group name
+        groups = self.db_manager.get_all_groups()
+        group_name = "Unknown"
+        for group in groups:
+            if group.group_id == group_id:
+                group_name = group.group_name
+                break
+        
+        # Format date range
+        date_range = None
+        if start_date or end_date:
+            start_str = start_date.strftime("%Y-%m-%d") if start_date else "Beginning"
+            end_str = end_date.strftime("%Y-%m-%d") if end_date else "Now"
+            date_range = f"{start_str} to {end_str}"
+        
+        # Update certificate
+        self.certificate_component.update_users(users, group_name, date_range)
+    
+    def _export_certificate_pdf(self, e):
+        """Export certificate to PDF."""
+        group_id = self.certificate_filters_bar.get_selected_group()
+        if not self.page or not group_id:
+            theme_manager.show_snackbar(
+                self.page,
+                theme_manager.t("select_group_first"),
+                bgcolor=ft.Colors.ORANGE
+            )
+            return
+        
+        try:
+            # Ensure overlay exists
+            if not hasattr(self.page, 'overlay') or self.page.overlay is None:
+                self.page.overlay = []
+            
+            # Add picker to overlay if not already there
+            if self.certificate_pdf_picker not in self.page.overlay:
+                self.page.overlay.append(self.certificate_pdf_picker)
+            
+            # Set page reference on picker
+            self.certificate_pdf_picker.page = self.page
+            
+            # Verify picker is in overlay
+            if self.certificate_pdf_picker not in self.page.overlay:
+                self.page.overlay.append(self.certificate_pdf_picker)
+            
+            # Update page to ensure overlay is ready
+            self.page.update()
+            
+            # Small delay on macOS to ensure picker is ready
+            import time
+            time.sleep(0.15)
+            
+            # Get group name
+            groups = self.db_manager.get_all_groups()
+            group_name = "Unknown"
+            for group in groups:
+                if group.group_id == group_id:
+                    group_name = group.group_name
+                    break
+            
+            default_name = f"top_users_certificate_{group_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            
+            # File pickers use save_file() directly (not page.open() like dialogs)
+            # On macOS, ensure picker is in overlay and page is updated before calling save_file
+            self.certificate_pdf_picker.save_file(
+                dialog_title=theme_manager.t("export_to_pdf"),
+                file_name=default_name,
+                file_type=ft.FilePickerFileType.CUSTOM,
+                allowed_extensions=["pdf"]
+            )
+        except Exception as ex:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error opening PDF export dialog: {ex}", exc_info=True)
+            theme_manager.show_snackbar(
+                self.page,
+                f"Error: {str(ex)}",
+                bgcolor=ft.Colors.RED
+            )
+    
+    def _export_certificate_image(self, e):
+        """Export certificate to image."""
+        group_id = self.certificate_filters_bar.get_selected_group()
+        if not self.page or not group_id:
+            theme_manager.show_snackbar(
+                self.page,
+                theme_manager.t("select_group_first"),
+                bgcolor=ft.Colors.ORANGE
+            )
+            return
+        
+        try:
+            # Ensure overlay exists
+            if not hasattr(self.page, 'overlay') or self.page.overlay is None:
+                self.page.overlay = []
+            
+            # Add picker to overlay if not already there
+            if self.certificate_image_picker not in self.page.overlay:
+                self.page.overlay.append(self.certificate_image_picker)
+            
+            # Set page reference on picker
+            self.certificate_image_picker.page = self.page
+            
+            # Verify picker is in overlay
+            if self.certificate_image_picker not in self.page.overlay:
+                self.page.overlay.append(self.certificate_image_picker)
+            
+            # Update page to ensure overlay is ready
+            self.page.update()
+            
+            # Small delay on macOS to ensure picker is ready
+            import time
+            time.sleep(0.15)
+            
+            # Get group name
+            groups = self.db_manager.get_all_groups()
+            group_name = "Unknown"
+            for group in groups:
+                if group.group_id == group_id:
+                    group_name = group.group_name
+                    break
+            
+            default_name = f"top_users_certificate_{group_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            
+            # File pickers use save_file() directly (not page.open() like dialogs)
+            # On macOS, ensure picker is in overlay and page is updated before calling save_file
+            self.certificate_image_picker.save_file(
+                dialog_title=theme_manager.t("export_to_image"),
+                file_name=default_name,
+                file_type=ft.FilePickerFileType.CUSTOM,
+                allowed_extensions=["png", "jpg", "jpeg"]
+            )
+        except Exception as ex:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error opening image export dialog: {ex}", exc_info=True)
+            theme_manager.show_snackbar(
+                self.page,
+                f"Error: {str(ex)}",
+                bgcolor=ft.Colors.RED
+            )
+    
+    def _on_certificate_pdf_picked(self, e: ft.FilePickerResultEvent):
+        """Handle PDF file picker result."""
+        if not self.page or not e.path:
+            return
+        
+        try:
+            group_id = self.certificate_filters_bar.get_selected_group()
+            if not group_id:
+                return
+            
+            # Get top 5 users
+            users = self.db_manager.get_top_active_users_by_group(group_id, limit=5)
+            
+            # Filter by date range if provided
+            start_date = self.certificate_filters_bar.get_start_date()
+            end_date = self.certificate_filters_bar.get_end_date()
+            
+            if start_date or end_date:
+                filtered_users = []
+                for user_data in users:
+                    user_id = user_data['user_id']
+                    messages = self.db_manager.get_messages(
+                        group_id=group_id,
+                        user_id=user_id,
+                        start_date=start_date,
+                        end_date=end_date
+                    )
+                    if messages:
+                        user_data['message_count'] = len(messages)
+                        filtered_users.append(user_data)
+                users = filtered_users
+                users.sort(key=lambda x: x.get('message_count', 0), reverse=True)
+                users = users[:5]
+            
+            # Get group name
+            groups = self.db_manager.get_all_groups()
+            group_name = "Unknown"
+            for group in groups:
+                if group.group_id == group_id:
+                    group_name = group.group_name
+                    break
+            
+            # Format date range
+            date_range = None
+            if start_date or end_date:
+                start_str = start_date.strftime("%Y-%m-%d") if start_date else "Beginning"
+                end_str = end_date.strftime("%Y-%m-%d") if end_date else "Now"
+                date_range = f"{start_str} to {end_str}"
+            
+            # Export
+            if self.certificate_exporter.export_to_pdf(
+                users,
+                e.path,
+                group_name=group_name,
+                date_range=date_range
+            ):
+                theme_manager.show_snackbar(
+                    self.page,
+                    f"{theme_manager.t('export_success')}: {e.path}",
+                    bgcolor=ft.Colors.GREEN
+                )
+            else:
+                theme_manager.show_snackbar(
+                    self.page,
+                    theme_manager.t("export_error"),
+                    bgcolor=ft.Colors.RED
+                )
+        except Exception as ex:
+            theme_manager.show_snackbar(
+                self.page,
+                f"{theme_manager.t('export_error')}: {str(ex)}",
+                bgcolor=ft.Colors.RED
+            )
+    
+    def _on_certificate_image_picked(self, e: ft.FilePickerResultEvent):
+        """Handle image file picker result."""
+        if not self.page or not e.path:
+            return
+        
+        try:
+            group_id = self.certificate_filters_bar.get_selected_group()
+            if not group_id:
+                return
+            
+            # Get top 5 users
+            users = self.db_manager.get_top_active_users_by_group(group_id, limit=5)
+            
+            # Filter by date range if provided
+            start_date = self.certificate_filters_bar.get_start_date()
+            end_date = self.certificate_filters_bar.get_end_date()
+            
+            if start_date or end_date:
+                filtered_users = []
+                for user_data in users:
+                    user_id = user_data['user_id']
+                    messages = self.db_manager.get_messages(
+                        group_id=group_id,
+                        user_id=user_id,
+                        start_date=start_date,
+                        end_date=end_date
+                    )
+                    if messages:
+                        user_data['message_count'] = len(messages)
+                        filtered_users.append(user_data)
+                users = filtered_users
+                users.sort(key=lambda x: x.get('message_count', 0), reverse=True)
+                users = users[:5]
+            
+            # Get group name
+            groups = self.db_manager.get_all_groups()
+            group_name = "Unknown"
+            for group in groups:
+                if group.group_id == group_id:
+                    group_name = group.group_name
+                    break
+            
+            # Format date range
+            date_range = None
+            if start_date or end_date:
+                start_str = start_date.strftime("%Y-%m-%d") if start_date else "Beginning"
+                end_str = end_date.strftime("%Y-%m-%d") if end_date else "Now"
+                date_range = f"{start_str} to {end_str}"
+            
+            # Export
+            if self.certificate_exporter.export_to_image(
+                users,
+                e.path,
+                group_name=group_name,
+                date_range=date_range
+            ):
+                theme_manager.show_snackbar(
+                    self.page,
+                    f"{theme_manager.t('export_success')}: {e.path}",
+                    bgcolor=ft.Colors.GREEN
+                )
+            else:
+                theme_manager.show_snackbar(
+                    self.page,
+                    theme_manager.t("export_error"),
+                    bgcolor=ft.Colors.RED
+                )
+        except Exception as ex:
+            theme_manager.show_snackbar(
+                self.page,
+                f"{theme_manager.t('export_error')}: {str(ex)}",
+                bgcolor=ft.Colors.RED
+            )
 

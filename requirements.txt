@@ -8,7 +8,7 @@ pandas>=2.1.0
 telethon>=1.34.0
 
 # Firebase Authentication (using REST API - no Admin SDK needed in desktop app)
-# firebase-admin>=6.2.0  # Only needed for deployment scripts and admin interface, not desktop app
+firebase-admin>=6.2.0  # Only needed for deployment scripts and admin interface, not desktop app
 PyJWT>=2.8.0  # For decoding Firebase ID tokens
 
 # Export Libraries

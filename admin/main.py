@@ -23,10 +23,12 @@ from admin.ui.pages.app_updates_page import AdminAppUpdatesPage
 from admin.ui.pages.devices_page import AdminDevicesPage
 from admin.ui.pages.activity_logs_page import AdminActivityLogsPage
 from admin.ui.pages.bulk_operations_page import AdminBulkOperationsPage
+from admin.ui.pages.notifications_page import AdminNotificationsPage
 from admin.ui.components.sidebar import AdminSidebar
 from admin.utils.constants import (
     PAGE_LOGIN, PAGE_DASHBOARD, PAGE_USERS, PAGE_LICENSES, PAGE_LICENSE_TIERS,
-    PAGE_APP_UPDATES, PAGE_DEVICES, PAGE_ACTIVITY_LOGS, PAGE_BULK_OPERATIONS
+    PAGE_APP_UPDATES, PAGE_DEVICES, PAGE_ACTIVITY_LOGS, PAGE_BULK_OPERATIONS,
+    PAGE_NOTIFICATIONS
 )
 
 # Configure logging
@@ -145,6 +147,8 @@ class AdminApp:
             return AdminActivityLogsPage(self.page)
         elif page_id == PAGE_BULK_OPERATIONS:
             return AdminBulkOperationsPage(self.page)
+        elif page_id == PAGE_NOTIFICATIONS:
+            return AdminNotificationsPage(self.page)
         else:
             return ft.Container(
                 content=ft.Text(f"Page not found: {page_id}"),

@@ -3,6 +3,7 @@ Main database manager that composes all domain managers.
 """
 
 import sys
+from pathlib import Path
 from database.managers.base import BaseDatabaseManager
 
 # Import DATABASE_PATH from constants if available
@@ -24,6 +25,7 @@ from database.managers.license_manager import LicenseManager
 from database.managers.account_activity_manager import AccountActivityManager
 from database.managers.update_manager import UpdateManager
 from database.managers.tag_manager import TagManager
+from database.managers.user_group_manager import UserGroupManager
 
 
 class DatabaseManager(BaseDatabaseManager):
@@ -38,27 +40,36 @@ class DatabaseManager(BaseDatabaseManager):
         if db_path is None:
             if DATABASE_PATH is not None:
                 db_path = DATABASE_PATH
+                # If DATABASE_PATH is a directory (ends with / or \), append default filename
+                if db_path and (db_path.endswith('/') or db_path.endswith('\\')):
+                    db_path = str(Path(db_path) / "app.db")
             else:
                 # Fallback to default (for development)
                 db_path = "./data/app.db"
         # Initialize base class which sets up the database
+        # This will normalize and resolve the path, updating self.db_path
         super().__init__(db_path)
         
-        # Compose all domain managers
-        self._settings = SettingsManager(db_path)
-        self._telegram_credential = TelegramCredentialManager(db_path)
-        self._group = GroupManager(db_path)
-        self._fetch_history = FetchHistoryManager(db_path)
-        self._user = UserManager(db_path)
-        self._message = MessageManager(db_path)
-        self._media = MediaManager(db_path)
-        self._reaction = ReactionManager(db_path)
-        self._stats = StatsManager(db_path)
-        self._auth = AuthManager(db_path)
-        self._license = LicenseManager(db_path)
-        self._account_activity = AccountActivityManager(db_path)
-        self._update = UpdateManager(db_path)
-        self._tag = TagManager(db_path)
+        # Use the normalized path from base class (after _init_database normalizes it)
+        # This ensures all managers use the same resolved path
+        normalized_db_path = self.db_path
+        
+        # Compose all domain managers with normalized path
+        self._settings = SettingsManager(normalized_db_path)
+        self._telegram_credential = TelegramCredentialManager(normalized_db_path)
+        self._group = GroupManager(normalized_db_path)
+        self._fetch_history = FetchHistoryManager(normalized_db_path)
+        self._user = UserManager(normalized_db_path)
+        self._message = MessageManager(normalized_db_path)
+        self._media = MediaManager(normalized_db_path)
+        self._reaction = ReactionManager(normalized_db_path)
+        self._stats = StatsManager(normalized_db_path)
+        self._auth = AuthManager(normalized_db_path)
+        self._license = LicenseManager(normalized_db_path)
+        self._account_activity = AccountActivityManager(normalized_db_path)
+        self._update = UpdateManager(normalized_db_path)
+        self._tag = TagManager(normalized_db_path)
+        self._user_group = UserGroupManager(normalized_db_path)
     
     # Delegate all methods to composed managers
     # App Settings
@@ -288,4 +299,26 @@ class DatabaseManager(BaseDatabaseManager):
     
     def get_tag_counts_by_group(self, group_id):
         return self._tag.get_tag_counts_by_group(group_id)
+    
+    # User Groups
+    def save_user_group(self, user_id, group_id, group_name, group_username=None):
+        return self._user_group.save_user_group(user_id, group_id, group_name, group_username)
+    
+    def get_user_groups(self, user_id):
+        return self._user_group.get_user_groups(user_id)
+    
+    def get_users_by_group(self, group_id):
+        return self._user_group.get_users_by_group(group_id)
+    
+    def get_user_group_count(self, user_id):
+        return self._user_group.get_user_group_count(user_id)
+    
+    def delete_user_group(self, user_id, group_id):
+        return self._user_group.delete_user_group(user_id, group_id)
+    
+    def get_groups_with_user_counts(self, group_ids=None):
+        return self._user_group.get_groups_with_user_counts(group_ids)
+    
+    def get_users_with_group_counts(self, group_ids=None, search_query=None):
+        return self._user_group.get_users_with_group_counts(group_ids, search_query)
 

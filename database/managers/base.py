@@ -88,6 +88,9 @@ class BaseDatabaseManager:
             try:
                 from utils.constants import DATABASE_PATH
                 db_path = DATABASE_PATH
+                # If DATABASE_PATH is a directory (ends with / or \), append default filename
+                if db_path and (db_path.endswith('/') or db_path.endswith('\\')):
+                    db_path = str(Path(db_path) / "app.db")
             except (ImportError, AttributeError):
                 # Fallback to default (for development)
                 db_path = "./data/app.db"
@@ -125,11 +128,17 @@ class BaseDatabaseManager:
             # Ensure parent directory exists and is writable
             db_dir = Path(normalized_path).parent
             if not db_dir.exists():
+                logger.debug(f"Creating database directory: {db_dir}")
                 db_dir.mkdir(parents=True, exist_ok=True)
+                # Verify directory was created
+                if not db_dir.exists():
+                    raise OSError(f"Failed to create database directory: {db_dir}")
             
             # Check if directory is writable
             if not os.access(db_dir, os.W_OK):
                 raise PermissionError(f"Database directory is not writable: {db_dir}")
+            
+            logger.debug(f"Initializing database at: {normalized_path} (exists: {db_file_exists})")
             
             with sqlite3.connect(normalized_path) as conn:
                 # Enable WAL (Write-Ahead Logging) mode for better concurrency
@@ -155,13 +164,29 @@ class BaseDatabaseManager:
                     self._clear_user_data(conn)
                 
                 conn.commit()
+            
+            # After connection closes, verify database file was actually created
+            if not Path(normalized_path).exists():
+                raise FileNotFoundError(
+                    f"Database file was not created at {normalized_path}. "
+                    f"Directory exists: {db_dir.exists()}, Writable: {os.access(db_dir, os.W_OK) if db_dir.exists() else False}"
+                )
+            
+            # Verify we can read the file
+            try:
+                test_conn = sqlite3.connect(normalized_path)
+                test_conn.execute("SELECT 1")
+                test_conn.close()
+            except Exception as e:
+                raise IOError(f"Database file exists but cannot be accessed: {e}")
                 
                 # Only log once per database path
                 if is_first_init:
-                    logger.info("Database initialized successfully")
+                    file_size = Path(normalized_path).stat().st_size
+                    logger.info(f"Database initialized successfully at {normalized_path} (size: {file_size} bytes)")
                     _initialized_databases.add(normalized_path)
         except Exception as e:
-            logger.error(f"Error initializing database: {e}")
+            logger.error(f"Error initializing database at {normalized_path}: {e}", exc_info=True)
             raise
     
     def _clear_user_data(self, conn: sqlite3.Connection):
@@ -452,6 +477,26 @@ class BaseDatabaseManager:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_message_tags_group_tag ON message_tags(group_id, tag)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_message_tags_user_group_tag ON message_tags(user_id, group_id, tag)")
                 logger.info("Created message_tags table")
+            
+            # Check if user_groups table exists
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_groups'")
+            if not cursor.fetchone():
+                conn.execute("""
+                    CREATE TABLE user_groups (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        group_id INTEGER NOT NULL,
+                        group_name TEXT NOT NULL,
+                        group_username TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(user_id, group_id),
+                        FOREIGN KEY (user_id) REFERENCES telegram_users(user_id)
+                    )
+                """)
+                # Create indexes for user_groups
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_user_groups_user_id ON user_groups(user_id)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_user_groups_group_id ON user_groups(group_id)")
+                logger.info("Created user_groups table")
             
             # Create indexes if they don't exist
             conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_message_type ON messages(message_type)")

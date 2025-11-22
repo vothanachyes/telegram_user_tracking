@@ -184,6 +184,18 @@ CREATE TABLE IF NOT EXISTS message_tags (
     FOREIGN KEY (user_id) REFERENCES telegram_users(user_id)
 );
 
+-- User Groups Table (tracks which groups users have joined)
+CREATE TABLE IF NOT EXISTS user_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    group_name TEXT NOT NULL,
+    group_username TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, group_id),
+    FOREIGN KEY (user_id) REFERENCES telegram_users(user_id)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_messages_group_id ON messages(group_id);
 CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);
@@ -207,5 +219,7 @@ CREATE INDEX IF NOT EXISTS idx_message_tags_user_id ON message_tags(user_id);
 CREATE INDEX IF NOT EXISTS idx_message_tags_date_sent ON message_tags(date_sent);
 CREATE INDEX IF NOT EXISTS idx_message_tags_group_tag ON message_tags(group_id, tag);
 CREATE INDEX IF NOT EXISTS idx_message_tags_user_group_tag ON message_tags(user_id, group_id, tag);
+CREATE INDEX IF NOT EXISTS idx_user_groups_user_id ON user_groups(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_groups_group_id ON user_groups(group_id);
 """
 

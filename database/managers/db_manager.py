@@ -252,6 +252,29 @@ class DatabaseManager(BaseDatabaseManager):
         return self._update.has_user_installed_version(user_email, version)
     
     # Tags
+    def save_tags(
+        self,
+        message_id: int,
+        group_id: int,
+        user_id: int,
+        tags: list,
+        date_sent
+    ) -> bool:
+        """
+        Save tags for a message.
+        
+        Args:
+            message_id: Telegram message ID
+            group_id: Group ID
+            user_id: User ID
+            tags: List of normalized tags (without # prefix)
+            date_sent: Message date sent timestamp
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        return self._tag.save_tags(message_id, group_id, user_id, tags, date_sent)
+    
     def get_tag_suggestions(self, prefix, group_id=None, limit=10):
         return self._tag.get_tag_suggestions(prefix, group_id, limit)
     

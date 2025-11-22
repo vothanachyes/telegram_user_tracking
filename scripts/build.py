@@ -10,6 +10,15 @@ import subprocess
 import shutil
 from pathlib import Path
 
+# Import app metadata
+try:
+    from utils.constants import APP_NAME, APP_VERSION, DEVELOPER_NAME
+except ImportError:
+    # Fallback if constants not available
+    APP_NAME = "Telegram User Tracking"
+    APP_VERSION = "1.0.0"
+    DEVELOPER_NAME = "Vothana CHY"
+
 # Get project root (parent of scripts/ directory)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -17,6 +26,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 USE_PYARMOR = True  # Set to False to disable PyArmor obfuscation
 USE_BYTECODE_ENCRYPTION = False  # DISABLED: PyInstaller removed --key option in v6.0+
 REMOVE_SOURCE_FILES = True  # Remove .py files after build
+USE_INSTALLER = True  # Set to False to disable Inno Setup installer creation (Windows only)
 
 # Obfuscation temporary directory
 OBFUSCATED_DIR = PROJECT_ROOT / 'obfuscated_temp'
@@ -129,6 +139,221 @@ def obfuscate_code() -> bool:
         print(f"❌ PyArmor obfuscation failed: {e}")
         print("   Falling back to non-obfuscated build...")
         return False
+
+
+def find_inno_setup_compiler() -> Path:
+    """
+    Find Inno Setup Compiler (iscc.exe) in common installation locations.
+    
+    Returns:
+        Path to iscc.exe if found, None otherwise.
+    """
+    # Common installation paths for Inno Setup
+    common_paths = [
+        Path("C:/Program Files (x86)/Inno Setup 6/iscc.exe"),
+        Path("C:/Program Files/Inno Setup 6/iscc.exe"),
+        Path("C:/Program Files (x86)/Inno Setup 5/iscc.exe"),
+        Path("C:/Program Files/Inno Setup 5/iscc.exe"),
+    ]
+    
+    # Check if iscc is in PATH
+    try:
+        result = subprocess.run(
+            ['iscc'],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        # If command exists (even with error), return 'iscc' as it's in PATH
+        return Path('iscc')
+    except FileNotFoundError:
+        pass
+    
+    # Check common installation paths
+    for path in common_paths:
+        if path.exists():
+            return path
+    
+    return None
+
+
+def create_installer_script(
+    exe_path: Path,
+    output_dir: Path,
+    app_name: str,
+    app_version: str,
+    developer_name: str,
+    github_repo: str = ""
+) -> Path:
+    """
+    Create Inno Setup script (.iss) file with application metadata.
+    
+    Args:
+        exe_path: Path to the built executable
+        output_dir: Directory where installer will be created
+        app_name: Application name
+        app_version: Application version
+        developer_name: Developer/Publisher name
+        github_repo: GitHub repository (optional)
+    
+    Returns:
+        Path to the created .iss file
+    """
+    # Load template
+    template_path = PROJECT_ROOT / 'scripts' / 'TelegramUserTracking.iss'
+    if not template_path.exists():
+        raise FileNotFoundError(f"Inno Setup template not found: {template_path}")
+    
+    with open(template_path, 'r', encoding='utf-8') as f:
+        template = f.read()
+    
+    # Generate AppId from app name (for uninstaller tracking)
+    # Use a stable AppId format based on app name
+    app_id = app_name.replace(' ', '').replace('-', '')
+    
+    # Determine icon path
+    icon_path = PROJECT_ROOT / 'assets' / 'icons' / 'win' / 'icon.ico'
+    if not icon_path.exists():
+        icon_path = PROJECT_ROOT / 'assets' / 'icon.ico'
+    
+    # Generate installer output filename
+    version_clean = app_version.replace('.', '_')
+    output_base_file = f"TelegramUserTracking-Setup-v{version_clean}.exe"
+    
+    # Replace placeholders in template
+    replacements = {
+        '{APP_NAME}': app_name,
+        '{APP_VERSION}': app_version,
+        '{DEVELOPER_NAME}': developer_name,
+        '{GITHUB_REPO}': github_repo or 'telegram-user-tracking',
+        '{APP_ID}': app_id,
+        '{OUTPUT_DIR}': str(output_dir).replace('\\', '\\\\'),
+        '{OUTPUT_BASE_FILE}': output_base_file,
+        '{ICON_FILE}': str(icon_path).replace('\\', '\\\\') if icon_path.exists() else '',
+        '{SOURCE_EXE}': str(exe_path).replace('\\', '\\\\'),
+    }
+    
+    script_content = template
+    for placeholder, value in replacements.items():
+        script_content = script_content.replace(placeholder, value)
+    
+    # Handle empty icon file (remove SetupIconFile line if no icon)
+    if not icon_path.exists():
+        script_content = script_content.replace('SetupIconFile={#ICON_FILE}\n', '; SetupIconFile={#ICON_FILE}\n')
+    
+    # Write generated script
+    iss_file = PROJECT_ROOT / 'scripts' / 'TelegramUserTracking_generated.iss'
+    with open(iss_file, 'w', encoding='utf-8') as f:
+        f.write(script_content)
+    
+    return iss_file
+
+
+def build_installer(
+    exe_path: Path,
+    app_name: str,
+    app_version: str,
+    developer_name: str
+) -> Path:
+    """
+    Build Windows installer using Inno Setup.
+    
+    Args:
+        exe_path: Path to the built executable
+        app_name: Application name
+        app_version: Application version
+        developer_name: Developer/Publisher name
+    
+    Returns:
+        Path to the created installer .exe file, or None if failed
+    """
+    if not USE_INSTALLER:
+        print("Inno Setup installer creation is disabled")
+        return None
+    
+    print("\n" + "=" * 60)
+    print("Step 3: Creating Windows Installer with Inno Setup...")
+    print("=" * 60)
+    
+    # Find Inno Setup Compiler
+    iscc_path = find_inno_setup_compiler()
+    if not iscc_path:
+        print("⚠️  Inno Setup Compiler (iscc.exe) not found!")
+        print("   Install Inno Setup from: https://jrsoftware.org/isinfo.php")
+        print("   Or set USE_INSTALLER = False to skip installer creation")
+        return None
+    
+    print(f"  Found Inno Setup Compiler: {iscc_path}")
+    
+    # Check if executable exists
+    if not exe_path.exists():
+        print(f"❌ Executable not found: {exe_path}")
+        return None
+    
+    # Create output directory
+    output_dir = PROJECT_ROOT / 'dist'
+    output_dir.mkdir(exist_ok=True)
+    
+    # Generate installer script
+    try:
+        iss_file = create_installer_script(
+            exe_path=exe_path,
+            output_dir=output_dir,
+            app_name=app_name,
+            app_version=app_version,
+            developer_name=developer_name
+        )
+        print(f"  Generated installer script: {iss_file.name}")
+    except Exception as e:
+        print(f"❌ Failed to create installer script: {e}")
+        return None
+    
+    # Compile installer
+    try:
+        print("  Compiling installer...")
+        cmd = [str(iscc_path), str(iss_file)]
+        result = subprocess.run(
+            cmd,
+            check=True,
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True
+        )
+        
+        # Clean up generated script
+        if iss_file.exists():
+            iss_file.unlink()
+        
+        # Find the created installer
+        version_clean = app_version.replace('.', '_')
+        installer_name = f"TelegramUserTracking-Setup-v{version_clean}.exe"
+        installer_path = output_dir / installer_name
+        
+        if installer_path.exists():
+            installer_size = installer_path.stat().st_size / (1024 * 1024)  # MB
+            print(f"✅ Installer created successfully: {installer_path.name}")
+            print(f"   Size: {installer_size:.2f} MB")
+            return installer_path
+        else:
+            print(f"⚠️  Installer compilation completed but file not found: {installer_name}")
+            return None
+            
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Inno Setup compilation failed: {e}")
+        if e.stdout:
+            print(f"   Output: {e.stdout}")
+        if e.stderr:
+            print(f"   Error: {e.stderr}")
+        # Clean up generated script
+        if iss_file.exists():
+            iss_file.unlink()
+        return None
+    except Exception as e:
+        print(f"❌ Unexpected error during installer creation: {e}")
+        # Clean up generated script
+        if iss_file.exists():
+            iss_file.unlink()
+        return None
 
 
 def build_executable():
@@ -285,9 +510,10 @@ def build_executable():
     
     # Exclude unrelated code from build
     exclude_modules = [
-        'tests', 'z_sanbox', 'unused', 'scripts',
+        'tests', 'z_sanbox', 'unused', 'scripts', 'admin',
         'pytest', 'pytest_', 'test_single_instance_manual',
         'decrypt_pin', 'icon_maker',
+        'firebase_admin',  # Admin SDK not needed in desktop app (uses REST API)
     ]
     
     print("\nExcluding from build:")
@@ -297,9 +523,10 @@ def build_executable():
     
     # Hidden imports
     hidden_imports = [
-        'flet', 'telethon', 'firebase_admin', 'pandas',
+        'flet', 'telethon', 'pandas',
         'xlsxwriter', 'reportlab', 'PIL', 'dotenv', 'cryptography',
         'qrcode',  # QR code generation
+        # Note: firebase_admin excluded - desktop app uses REST API, not Admin SDK
         # UI components
         'ui.components.tag_autocomplete',
         # Utils modules (required for PyArmor obfuscated builds)
@@ -386,11 +613,13 @@ def build_executable():
         
         # Remove Firebase credentials JSON files (security - no Admin SDK in desktop app)
         # This applies to both obfuscated and non-obfuscated builds
+        resources_dir = None
         if system == 'Darwin':
             resources_dir = PROJECT_ROOT / 'dist' / 'TelegramUserTracking.app' / 'Contents' / 'Resources'
         elif system == 'Windows':
             if build_mode == '--onedir':
                 resources_dir = PROJECT_ROOT / 'dist' / 'TelegramUserTracking'
+            # For --onefile on Windows, files are embedded in exe, so no resources_dir
         else:
             resources_dir = PROJECT_ROOT / 'dist' / 'TelegramUserTracking'
         
@@ -453,6 +682,20 @@ def build_executable():
                 except Exception as e:
                     print(f"  ⚠️  Could not update Info.plist: {e}")
         
+        # Step 5: Create Windows Installer (Windows only)
+        installer_path = None
+        if system == 'Windows' and USE_INSTALLER:
+            exe_path = PROJECT_ROOT / 'dist' / 'TelegramUserTracking.exe'
+            if exe_path.exists():
+                installer_path = build_installer(
+                    exe_path=exe_path,
+                    app_name=APP_NAME,
+                    app_version=APP_VERSION,
+                    developer_name=DEVELOPER_NAME
+                )
+            else:
+                print("\n⚠️  Executable not found, skipping installer creation")
+        
         print("\n" + "=" * 60)
         print("Build completed successfully!")
         print("=" * 60)
@@ -477,12 +720,18 @@ def build_executable():
         # Show correct output location based on platform
         if system == 'Windows':
             output_path = "dist/TelegramUserTracking.exe"
+            if installer_path:
+                installer_size = installer_path.stat().st_size / (1024 * 1024)  # MB
+                print(f"\n📦 Executable location: {output_path}")
+                print(f"📦 Installer location: {installer_path.name} ({installer_size:.2f} MB)")
+            else:
+                print(f"\n📦 Executable location: {output_path}")
         elif system == 'Darwin':
             output_path = "dist/TelegramUserTracking.app"
+            print(f"\n📦 Executable location: {output_path}")
         else:
             output_path = "dist/TelegramUserTracking"
-        
-        print(f"\n📦 Executable location: {output_path}")
+            print(f"\n📦 Executable location: {output_path}")
         
         return 0
         

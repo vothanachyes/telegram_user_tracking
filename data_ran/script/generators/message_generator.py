@@ -12,9 +12,22 @@ from data_ran.script.ai_generator import AIContentGenerator
 class MessageGenerator(BaseGenerator):
     """Generates messages data."""
     
-    MESSAGE_TYPES = ['text', 'photo', 'video', 'sticker', 'document', 'audio']
+    MESSAGE_TYPES = ['text', 'photo', 'video', 'sticker', 'document', 'audio', 'voice', 'poll', 'location']
     MEDIA_TYPES = ['photo', 'video', 'document', 'audio']
     STICKER_EMOJIS = ['👍', '❤️', '🔥', '🎉', '😊', '😄', '😍', '🤔', '✅', '❌']
+    
+    # Map UI checkbox names to actual message types
+    TYPE_MAP = {
+        'text': 'text',
+        'voice': 'voice',
+        'audio': 'audio',
+        'photos': 'photo',
+        'videos': 'video',
+        'files': 'document',
+        'sticker': 'sticker',
+        'poll': 'poll',
+        'location': 'location'
+    }
     
     def __init__(self):
         """Initialize message generator."""
@@ -43,6 +56,7 @@ class MessageGenerator(BaseGenerator):
         date_range = config.get('date_range', {})
         languages = config.get('languages', ['english'])
         tag_config = config.get('tag_config', {})
+        message_types = config.get('message_types', None)  # None = all types, or list of selected types
         
         if isinstance(messages_per_group, dict):
             min_msg = messages_per_group.get('min', 50)
@@ -80,57 +94,130 @@ class MessageGenerator(BaseGenerator):
                 
                 user_id = user['user_id']
                 
-                # Determine message type
-                has_media = random.randint(1, 100) <= media_percentage
+                # Get available message types based on selection
+                available_types = self._get_available_types(message_types)
                 
-                if has_media:
-                    message_type = random.choice(self.MEDIA_TYPES)
-                    media_type = message_type
-                    media_count = 1
-                    content = None
-                    caption = None
-                else:
-                    # Text or sticker
-                    if random.random() < 0.1:  # 10% stickers
-                        message_type = 'sticker'
-                        media_type = None
-                        media_count = 0
-                        content = None
-                        caption = None
-                        has_sticker = True
-                        sticker_emoji = random.choice(self.STICKER_EMOJIS)
+                # Determine message type from available types
+                message_type = random.choice(available_types)
+                
+                # Initialize defaults
+                has_media = False
+                media_type = None
+                media_count = 0
+                content = None
+                caption = None
+                has_sticker = False
+                sticker_emoji = None
+                has_link = False
+                has_mention = False
+                tag_count = 0
+                
+                # Generate message based on type
+                if message_type == 'text':
+                    # Determine if we need tags (if 'tag' is selected, higher chance)
+                    needs_tag = False
+                    if message_types and 'tag' in message_types:
+                        # If 'tag' is selected, 70% chance to have tags
+                        needs_tag = random.random() < 0.7
+                    
+                    # Generate text message
+                    if needs_tag:
+                        tag_count = random.randint(
+                            max(1, tag_config.get('min_tags', 1) if tag_config else 1),
+                            tag_config.get('max_tags', 3) if tag_config else 3
+                        )
                     else:
-                        message_type = 'text'
-                        media_type = None
-                        media_count = 0
-                        has_sticker = False
-                        sticker_emoji = None
-                        
-                        # Generate message content
                         tag_count = random.randint(
                             tag_config.get('min_tags', 0),
                             tag_config.get('max_tags', 3)
                         ) if tag_config else 0
-                        
-                        # Determine language
+                    
+                    # Determine language
+                    if 'khmer' in languages and 'english' in languages:
+                        lang = random.choice(['khmer', 'english', 'mixed'])
+                    elif 'khmer' in languages:
+                        lang = 'khmer'
+                    else:
+                        lang = 'english'
+                    
+                    content = self.ai_generator.generate_message(
+                        lang, 
+                        include_tags=tag_count > 0,
+                        tag_count=tag_count
+                    )
+                    
+                    # Check for link requirement
+                    if message_types and 'link' in message_types:
+                        if random.random() < 0.5:  # 50% chance to add link
+                            content = (content or "") + " https://example.com"
+                            has_link = True
+                    elif content and ('http://' in content or 'https://' in content or 'www.' in content):
+                        has_link = True
+                    
+                    # Check for mention requirement
+                    if message_types and 'mention' in message_types:
+                        if random.random() < 0.5:  # 50% chance to add mention
+                            content = (content or "") + " @username"
+                            has_mention = True
+                    elif content and '@' in content:
+                        has_mention = True
+                
+                elif message_type == 'sticker':
+                    has_sticker = True
+                    sticker_emoji = random.choice(self.STICKER_EMOJIS)
+                
+                elif message_type in ['photo', 'video', 'document', 'audio']:
+                    has_media = True
+                    media_type = message_type
+                    media_count = 1
+                    # Optionally add caption
+                    if random.random() < 0.3:  # 30% chance for caption
                         if 'khmer' in languages and 'english' in languages:
-                            lang = random.choice(['khmer', 'english', 'mixed'])
+                            lang = random.choice(['khmer', 'english'])
                         elif 'khmer' in languages:
                             lang = 'khmer'
                         else:
                             lang = 'english'
-                        
-                        content = self.ai_generator.generate_message(
-                            lang, 
-                            include_tags=tag_count > 0,
-                            tag_count=tag_count
-                        )
-                        caption = None
+                        caption = self.ai_generator.generate_message(lang, include_tags=False, tag_count=0)
+                        # Check for link in caption
+                        if caption and ('http://' in caption or 'https://' in caption or 'www.' in caption):
+                            has_link = True
+                        # Check for mention in caption
+                        if caption and '@' in caption:
+                            has_mention = True
                 
-                # Check for links in content
-                has_link = False
-                if content and ('http://' in content or 'https://' in content or 'www.' in content):
+                elif message_type == 'voice':
+                    message_type = 'voice'
+                    has_media = True
+                    media_type = 'voice'
+                    media_count = 1
+                
+                elif message_type == 'poll':
+                    message_type = 'poll'
+                    content = "Poll: " + self.ai_generator.generate_message('english', include_tags=False, tag_count=0)
+                
+                elif message_type == 'location':
+                    message_type = 'location'
+                    content = "Location shared"
+                
+                # Handle tag requirement for non-text messages (if 'tag' is in selected types)
+                # Text messages already handled above
+                if message_types and 'tag' in message_types and message_type != 'text':
+                    # For media messages with captions, add tags to caption
+                    if message_type in ['photo', 'video', 'document', 'audio'] and caption:
+                        tag_count = random.randint(1, tag_config.get('max_tags', 3) if tag_config else 3)
+                        # Add tags to caption
+                        tag_words = ['tech', 'news', 'update', 'important', 'announcement', 'event']
+                        tags = ['#' + random.choice(tag_words) for _ in range(tag_count)]
+                        caption = caption + " " + " ".join(tags)
+                
+                # Final check for links if not already set
+                if not has_link and content and ('http://' in content or 'https://' in content or 'www.' in content):
                     has_link = True
+                
+                # Final check for mentions if not already set
+                if not has_mention and content and '@' in content:
+                    has_mention = True
                 
                 # Generate message link
                 group_username = group.get('group_username', 'group')
@@ -148,9 +235,9 @@ class MessageGenerator(BaseGenerator):
                     'media_count': media_count,
                     'message_link': message_link,
                     'message_type': message_type,
-                    'has_sticker': has_sticker if 'has_sticker' in locals() else False,
+                    'has_sticker': has_sticker,
                     'has_link': has_link,
-                    'sticker_emoji': sticker_emoji if 'sticker_emoji' in locals() else None,
+                    'sticker_emoji': sticker_emoji,
                     'is_deleted': False,
                     'created_at': date_sent.isoformat(),
                     'updated_at': date_sent.isoformat()
@@ -159,6 +246,34 @@ class MessageGenerator(BaseGenerator):
                 message_id_counter += 1
         
         return messages
+    
+    def _get_available_types(self, message_types: Any) -> List[str]:
+        """
+        Get available message types based on user selection.
+        
+        Args:
+            message_types: None for all types, or list of selected types from UI
+            
+        Returns:
+            List of available message type strings
+        """
+        if message_types is None:
+            # All types selected - return all base types
+            return self.MESSAGE_TYPES.copy()
+        
+        # Map UI checkbox names to actual message types
+        available = []
+        for ui_type in message_types:
+            if ui_type in self.TYPE_MAP:
+                mapped_type = self.TYPE_MAP[ui_type]
+                if mapped_type not in available:
+                    available.append(mapped_type)
+        
+        # If no valid types found, default to all types
+        if not available:
+            return self.MESSAGE_TYPES.copy()
+        
+        return available
     
     def get_dependencies(self) -> List[str]:
         """Messages depend on groups and users."""

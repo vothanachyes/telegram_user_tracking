@@ -35,6 +35,7 @@ class MessagesTabComponent:
             groups=groups,
             on_group_change=self._on_group_change,
             on_date_change=self._on_date_change,
+            on_message_type_change=self._on_message_type_change,
             show_dates=True,
             default_group_id=default_group_id
         )
@@ -122,12 +123,16 @@ class MessagesTabComponent:
         if hasattr(self.messages_table.filtering, 'tag_query') and self.messages_table.filtering.tag_query:
             tag_query = [self.messages_table.filtering.tag_query]
         
+        # Get message type filter
+        message_type_filter = self.filters_bar.get_message_type_filter()
+        
         messages = self.view_model.get_messages(
             group_id=group_id,
             start_date=self.filters_bar.get_start_date(),
             end_date=self.filters_bar.get_end_date(),
             limit=100,
-            tags=tag_query
+            tags=tag_query,
+            message_type_filter=message_type_filter
         )
         
         rows = []
@@ -179,7 +184,8 @@ class MessagesTabComponent:
             group_id=self.filters_bar.get_selected_group(),
             start_date=self.filters_bar.get_start_date(),
             end_date=self.filters_bar.get_end_date(),
-            limit=100
+            limit=100,
+            message_type_filter=self.filters_bar.get_message_type_filter()
         )
     
     def _create_messages_table(self) -> DataTable:
@@ -216,6 +222,7 @@ class MessagesTabComponent:
             self.filters_bar.get_selected_group() is not None or
             (self.filters_bar.get_start_date() is not None) or
             (self.filters_bar.get_end_date() is not None) or
+            (self.filters_bar.get_message_type_filter() is not None) or
             (self.messages_table.search_query if hasattr(self.messages_table, 'search_query') else False)
         )
     
@@ -242,4 +249,9 @@ class MessagesTabComponent:
         # Always refresh when tag changes (including clearing to None)
         # This is safe because reset() won't call this callback
         self.refresh_messages()
+    
+    def _on_message_type_change(self, message_type: Optional[str]):
+        """Handle message type filter change."""
+        if self.on_refresh:
+            self.on_refresh()
 

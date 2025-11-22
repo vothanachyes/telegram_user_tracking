@@ -102,7 +102,8 @@ class MessageManager(BaseDatabaseManager):
         include_deleted: bool = False,
         limit: Optional[int] = None,
         offset: int = 0,
-        tags: Optional[List[str]] = None
+        tags: Optional[List[str]] = None,
+        message_type_filter: Optional[str] = None
     ) -> List[Message]:
         """
         Get messages with filters.
@@ -117,7 +118,13 @@ class MessageManager(BaseDatabaseManager):
             limit: Maximum number of results
             offset: Offset for pagination
             tags: List of tags to filter by (normalized, without # prefix)
+            message_type_filter: Filter by message type (voice, audio, photos, videos, files, link, tag, poll, location, mention)
         """
+        # Determine if we need to use table alias (for tag filter or when tags are specified)
+        use_alias = False
+        if message_type_filter == "tag":
+            use_alias = True
+        
         # If tags are specified, we need to join with message_tags table
         if tags and len(tags) > 0:
             # Filter by tags - get messages that have ALL specified tags
@@ -132,6 +139,7 @@ class MessageManager(BaseDatabaseManager):
                     WHERE 1=1
                 """
                 params = []
+                use_alias = True
                 
                 # Add a condition for each tag using EXISTS subqueries
                 for tag in normalized_tags:
@@ -146,37 +154,79 @@ class MessageManager(BaseDatabaseManager):
                     params.append(tag)
             else:
                 # No valid tags, fall back to regular query
-                query = "SELECT * FROM messages WHERE 1=1"
+                if use_alias:
+                    query = "SELECT m.* FROM messages m WHERE 1=1"
+                else:
+                    query = "SELECT * FROM messages WHERE 1=1"
                 params = []
         else:
-            query = "SELECT * FROM messages WHERE 1=1"
+            if use_alias:
+                query = "SELECT m.* FROM messages m WHERE 1=1"
+            else:
+                query = "SELECT * FROM messages WHERE 1=1"
             params = []
         
         # Handle group filtering - use group_ids if provided, otherwise use group_id
+        table_prefix = "m." if use_alias else ""
         if group_ids and len(group_ids) > 0:
             placeholders = ",".join("?" * len(group_ids))
-            query += f" AND group_id IN ({placeholders})"
+            query += f" AND {table_prefix}group_id IN ({placeholders})"
             params.extend(group_ids)
         elif group_id:
-            query += " AND group_id = ?"
+            query += f" AND {table_prefix}group_id = ?"
             params.append(group_id)
         
         if user_id:
-            query += " AND user_id = ?"
+            query += f" AND {table_prefix}user_id = ?"
             params.append(user_id)
         
         if start_date:
-            query += " AND date_sent >= ?"
+            query += f" AND {table_prefix}date_sent >= ?"
             params.append(start_date)
         
         if end_date:
-            query += " AND date_sent <= ?"
+            query += f" AND {table_prefix}date_sent <= ?"
             params.append(end_date)
         
         if not include_deleted:
-            query += " AND is_deleted = 0"
+            query += f" AND {table_prefix}is_deleted = 0"
         
-        query += " ORDER BY date_sent DESC"
+        # Handle message type filtering
+        if message_type_filter:
+            if message_type_filter == "voice":
+                query += f" AND {table_prefix}message_type = 'voice'"
+            elif message_type_filter == "audio":
+                query += f" AND {table_prefix}message_type = 'audio'"
+            elif message_type_filter == "photos":
+                query += f" AND {table_prefix}message_type = 'photo'"
+            elif message_type_filter == "videos":
+                query += f" AND {table_prefix}message_type = 'video'"
+            elif message_type_filter == "files":
+                query += f" AND {table_prefix}message_type = 'document'"
+            elif message_type_filter == "link":
+                query += f" AND {table_prefix}has_link = 1"
+            elif message_type_filter == "poll":
+                query += f" AND {table_prefix}message_type = 'poll'"
+            elif message_type_filter == "location":
+                query += f" AND {table_prefix}message_type = 'location'"
+            elif message_type_filter == "tag":
+                # Filter messages that have at least one tag
+                # Ensure we use alias (should already be set, but safety check)
+                if not use_alias:
+                    # Need to rewrite query with alias
+                    query = query.replace("SELECT * FROM messages WHERE", "SELECT m.* FROM messages m WHERE")
+                    use_alias = True
+                    table_prefix = "m."
+                query += """
+                    AND EXISTS (
+                        SELECT 1 FROM message_tags mt
+                        WHERE mt.message_id = m.message_id
+                        AND mt.group_id = m.group_id
+                    )
+                """
+            # Note: "mention" filter is handled after decryption in Python
+        
+        query += f" ORDER BY {table_prefix}date_sent DESC"
         
         if limit:
             query += f" LIMIT {limit} OFFSET {offset}"
@@ -192,7 +242,7 @@ class MessageManager(BaseDatabaseManager):
                 caption = encryption_service.decrypt_field(row['caption']) if encryption_service else row['caption']
                 message_link = encryption_service.decrypt_field(row['message_link']) if encryption_service else row['message_link']
                 
-                messages.append(Message(
+                message = Message(
                     id=row['id'],
                     message_id=row['message_id'],
                     group_id=row['group_id'],
@@ -211,7 +261,20 @@ class MessageManager(BaseDatabaseManager):
                     is_deleted=bool(row['is_deleted']),
                     created_at=_parse_datetime(row['created_at']),
                     updated_at=_parse_datetime(row['updated_at'])
-                ))
+                )
+                
+                # Handle "@ Mention" filter after decryption
+                if message_type_filter == "mention":
+                    # Check if content or caption contains "@"
+                    has_mention = False
+                    if content and "@" in content:
+                        has_mention = True
+                    if caption and "@" in caption:
+                        has_mention = True
+                    if not has_mention:
+                        continue  # Skip this message
+                
+                messages.append(message)
             return messages
     
     def get_message_count(

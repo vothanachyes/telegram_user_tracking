@@ -96,6 +96,29 @@ class DataGeneratorApp:
             'english': ft.Checkbox(label="English", value=True)
         }
         
+        # Message type checkboxes
+        self.message_type_all = ft.Checkbox(
+            label="All Types (Random)",
+            value=True,
+            on_change=self._on_all_types_change
+        )
+        # When "All Types" is checked, individual checkboxes should be disabled
+        # Initialize all as disabled since "All Types" is True by default
+        self.message_type_checkboxes = {
+            'text': ft.Checkbox(label="Text", value=False, disabled=True, on_change=self._on_message_type_change),
+            'voice': ft.Checkbox(label="Voice", value=False, disabled=True, on_change=self._on_message_type_change),
+            'audio': ft.Checkbox(label="Audio", value=False, disabled=True, on_change=self._on_message_type_change),
+            'photos': ft.Checkbox(label="Photos", value=False, disabled=True, on_change=self._on_message_type_change),
+            'videos': ft.Checkbox(label="Videos", value=False, disabled=True, on_change=self._on_message_type_change),
+            'files': ft.Checkbox(label="Files", value=False, disabled=True, on_change=self._on_message_type_change),
+            'sticker': ft.Checkbox(label="Sticker", value=False, disabled=True, on_change=self._on_message_type_change),
+            'link': ft.Checkbox(label="Link", value=False, disabled=True, on_change=self._on_message_type_change),
+            'tag': ft.Checkbox(label="Tag", value=False, disabled=True, on_change=self._on_message_type_change),
+            'poll': ft.Checkbox(label="Poll", value=False, disabled=True, on_change=self._on_message_type_change),
+            'location': ft.Checkbox(label="Location", value=False, disabled=True, on_change=self._on_message_type_change),
+            'mention': ft.Checkbox(label="Mention (@)", value=False, disabled=True, on_change=self._on_message_type_change)
+        }
+        
         # Configuration inputs
         self.num_groups_input = ft.TextField(label="Number of Groups", value="3", width=200)
         self.num_groups_random = ft.Checkbox(label="Use Random Range", value=False)
@@ -190,6 +213,17 @@ class DataGeneratorApp:
             padding=10
         )
         
+        # Message type selection
+        message_type_section = ft.Container(
+            content=ft.Column([
+                ft.Text("Message Types", size=16, weight=ft.FontWeight.BOLD),
+                self.message_type_all,
+                ft.Divider(),
+                ft.Row([cb for cb in self.message_type_checkboxes.values()], wrap=True)
+            ]),
+            padding=10
+        )
+        
         # Configuration section
         config_section = ft.Container(
             content=ft.Column([
@@ -247,6 +281,7 @@ class DataGeneratorApp:
                 date_section,
                 feature_section,
                 language_section,
+                message_type_section,
                 config_section,
                 output_section,
                 ft.Row([
@@ -269,6 +304,38 @@ class DataGeneratorApp:
         self.num_groups_random.on_change = lambda e: self._toggle_random_range('groups', e.control.value)
         self.messages_random.on_change = lambda e: self._toggle_random_range('messages', e.control.value)
         self.date_range_type.on_change = lambda e: self._on_date_range_change(e.control.value)
+    
+    def _on_all_types_change(self, e):
+        """Handle 'All Types' checkbox change."""
+        if e.control.value:
+            # When "All Types" is checked, disable individual checkboxes
+            for checkbox in self.message_type_checkboxes.values():
+                checkbox.value = False
+                checkbox.disabled = True
+        else:
+            # When "All Types" is unchecked, enable individual checkboxes
+            for checkbox in self.message_type_checkboxes.values():
+                checkbox.disabled = False
+        if self.page:
+            self.page.update()
+    
+    def _on_message_type_change(self, e):
+        """Handle individual message type checkbox change."""
+        # If any individual checkbox is checked, uncheck "All Types"
+        if e.control.value and self.message_type_all.value:
+            self.message_type_all.value = False
+            # Enable all checkboxes
+            for checkbox in self.message_type_checkboxes.values():
+                checkbox.disabled = False
+        # Check if at least one type is selected
+        has_selection = any(cb.value for cb in self.message_type_checkboxes.values())
+        if not has_selection and not self.message_type_all.value:
+            # If nothing is selected, default to "All Types"
+            self.message_type_all.value = True
+            for checkbox in self.message_type_checkboxes.values():
+                checkbox.disabled = True
+        if self.page:
+            self.page.update()
     
     def _toggle_random_range(self, field: str, enabled: bool):
         """Toggle visibility of random range inputs."""
@@ -387,6 +454,20 @@ class DataGeneratorApp:
         if not languages:
             languages = ['english']  # Default
         
+        # Get message types
+        if self.message_type_all.value:
+            # "All Types" selected - use None to indicate random selection from all types
+            message_types = None
+        else:
+            # Get selected individual message types
+            message_types = [
+                msg_type for msg_type, checkbox in self.message_type_checkboxes.items()
+                if checkbox.value
+            ]
+            # If no types selected, default to all types
+            if not message_types:
+                message_types = None
+        
         # Get messages per group
         if self.messages_random.value:
             messages_per_group = {
@@ -411,6 +492,7 @@ class DataGeneratorApp:
             'num_groups': num_groups,
             'num_users': int(self.num_users_input.value or 10),
             'messages_per_group': messages_per_group,
+            'message_types': message_types,  # Add message types to config
             'reactions_per_message': {
                 'min': int(self.reactions_min.value or 0),
                 'max': int(self.reactions_max.value or 5)
@@ -566,6 +648,7 @@ class DataGeneratorApp:
                 date_section,
                 feature_section,
                 language_section,
+                message_type_section,
                 config_section,
                 output_section,
                 ft.Row([

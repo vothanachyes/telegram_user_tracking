@@ -52,6 +52,19 @@ class SessionManager:
                 is_default=True
             )
             self.db_manager.save_telegram_credential(credential)
+            
+            # Track account authentication
+            try:
+                from services.user_activities_service import user_activities_service
+                from services.auth_service import auth_service
+                current_user = auth_service.get_current_user()
+                if current_user:
+                    uid = current_user.get("uid")
+                    if uid:
+                        user_activities_service.increment_accounts_count(uid)
+            except Exception as e:
+                logger.error(f"Error tracking account authentication: {e}", exc_info=True)
+                # Don't fail if tracking fails
         
         return success, error
     
@@ -102,6 +115,19 @@ class SessionManager:
             )
             self.db_manager.save_telegram_credential(credential)
             logger.info(f"Saved QR login credential for {phone_number} with session: {session_file_path}")
+            
+            # Track account authentication
+            try:
+                from services.user_activities_service import user_activities_service
+                from services.auth_service import auth_service
+                current_user = auth_service.get_current_user()
+                if current_user:
+                    uid = current_user.get("uid")
+                    if uid:
+                        user_activities_service.increment_accounts_count(uid)
+            except Exception as e:
+                logger.error(f"Error tracking account authentication: {e}", exc_info=True)
+                # Don't fail if tracking fails
         
         return success, error, phone_number
     

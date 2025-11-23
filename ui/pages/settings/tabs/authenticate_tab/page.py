@@ -13,6 +13,7 @@ from ui.pages.settings.tabs.authenticate_tab.components import AuthenticateTabCo
 from ui.pages.settings.tabs.authenticate_tab.view_model import AuthenticateTabViewModel
 from ui.pages.settings.tabs.authenticate_tab.utils import AuthenticateTabUtils
 from config.app_config import app_config
+from ui.dialogs.api_credentials_instruction_dialog import APICredentialsInstructionDialog
 
 logger = logging.getLogger(__name__)
 
@@ -468,4 +469,36 @@ class AuthenticateTab:
             self.update_accounts_list()
             # Update account count
             self.view_model._update_account_count()
+    
+    def _show_api_instructions(self, e):
+        """Show API credentials instruction dialog."""
+        try:
+            # Get page reference
+            page = None
+            if hasattr(self, 'page') and self.page:
+                page = self.page
+            elif e and hasattr(e, 'control') and e.control.page:
+                page = e.control.page
+            elif hasattr(e, 'page') and e.page:
+                page = e.page
+            
+            if not page:
+                logger.error("Could not get page reference for API instructions dialog")
+                return
+            
+            # Create and open dialog
+            dialog = APICredentialsInstructionDialog()
+            dialog.page = page
+            
+            # Use page.open() as per project guidelines
+            try:
+                page.open(dialog)
+            except Exception as ex:
+                logger.error(f"Error opening API instructions dialog: {ex}")
+                # Fallback
+                page.dialog = dialog
+                dialog.open = True
+                page.update()
+        except Exception as ex:
+            logger.error(f"Error showing API instructions: {ex}", exc_info=True)
 

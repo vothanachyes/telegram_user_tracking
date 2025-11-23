@@ -81,6 +81,22 @@ class MessageFetcher:
         Fetch messages from a group using temporary client (connect on demand).
         Returns (success, message_count, error_message, skipped_count)
         """
+        # Check if device is revoked before starting fetch
+        try:
+            from services.device_manager_service import device_manager_service
+            from services.auth_service import auth_service
+            current_user = auth_service.get_current_user()
+            if current_user:
+                uid = current_user.get("uid")
+                if uid:
+                    is_revoked, error_msg = device_manager_service.check_device_status(uid)
+                    if is_revoked:
+                        logger.warning("Device is revoked, cannot fetch messages")
+                        return False, 0, error_msg or "Device has been revoked. Please contact admin.", 0
+        except Exception as e:
+            logger.error(f"Error checking device status: {e}", exc_info=True)
+            # Continue with fetch if check fails
+        
         temp_client = None
         try:
             # Get default credential

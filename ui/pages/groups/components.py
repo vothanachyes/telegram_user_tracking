@@ -18,7 +18,7 @@ class GroupsComponents:
     ):
         self.on_group_click = on_group_click
     
-    def build_group_list(self, groups: List[TelegramGroup]) -> ft.Column:
+    def build_group_list(self, groups: List[TelegramGroup]) -> ft.Control:
         """Build group list/cards."""
         if not groups:
             return self._build_empty_state()
@@ -28,7 +28,7 @@ class GroupsComponents:
             card = self._build_group_card(group)
             group_cards.append(card)
         
-        return ft.Column(group_cards, spacing=10, scroll=ft.ScrollMode.AUTO)
+        return ft.Column(group_cards, spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
     
     def _build_group_card(self, group: TelegramGroup) -> ft.Container:
         """Build a single group card."""
@@ -120,6 +120,7 @@ class GroupsComponents:
                 )
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
             alignment=ft.alignment.center,
-            padding=40
+            padding=40,
+            expand=True
         )
 

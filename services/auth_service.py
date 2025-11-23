@@ -158,8 +158,30 @@ class AuthService:
             # Note: Setting custom claims requires Admin SDK (admin-only operation)
             # Device enforcement should be handled server-side or via admin panel
             
-            # Store current user
+            # Store current user (after successful authentication)
             self.current_user = user_info
+            
+            # Check if device is revoked - if so, unrevoke it on successful login
+            from services.device_manager_service import device_manager_service
+            is_revoked, error_msg = device_manager_service.check_device_status(uid)
+            if is_revoked:
+                logger.info(f"Device {self.device_id} was revoked for user {email}, but login successful - unrevoking device")
+                # Device will be unrevoked when we register/update it below
+            
+            # Track device login and register device (this will unrevoke if it was revoked)
+            try:
+                from services.user_activities_service import user_activities_service
+                # Register/update device with Firebase (this will clear revoked_at and set is_active=True)
+                device_manager_service.register_device(uid)
+                # Increment devices count
+                user_activities_service.increment_devices_count(uid)
+                # Update app version
+                user_activities_service.update_app_version(uid)
+                if is_revoked:
+                    logger.info(f"Device {self.device_id} has been unrevoked for user {email}")
+            except Exception as e:
+                logger.error(f"Error tracking device login: {e}", exc_info=True)
+                # Don't fail login if tracking fails
             
             logger.info(f"User logged in: {email}")
             return True, None

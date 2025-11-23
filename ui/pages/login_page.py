@@ -8,6 +8,7 @@ import logging
 import threading
 import time
 import os
+import sys
 from pathlib import Path
 from typing import Callable, Optional, Tuple
 from ui.theme import theme_manager
@@ -35,14 +36,18 @@ class LoginPage(ft.Container):
         # Load saved credentials
         saved_email, saved_password = self._load_saved_credentials()
         
-        # In dev mode, check .env for Firebase credentials if no saved credentials
+        # Check if we're in development mode
+        is_development = not getattr(sys, 'frozen', False)
+        
+        # In dev mode only, check .env for Firebase credentials if no saved credentials
+        # In production, never prefill from .env (security)
         dev_email = None
         dev_password = None
-        if not saved_email or not saved_password:
+        if is_development and (not saved_email or not saved_password):
             dev_email = os.getenv("DEV_FIREBASE_ACC") or os.getenv("FIREBASE_ACC")
             dev_password = os.getenv("DEV_FIREBASE_PASS") or os.getenv("FIREBASE_PASS")
             if dev_email and dev_password:
-                logger.debug("Found DEV_FIREBASE_ACC and DEV_FIREBASE_PASS in .env")
+                logger.debug("Found DEV_FIREBASE_ACC and DEV_FIREBASE_PASS in .env (development mode)")
                 # Use dev credentials if no saved credentials
                 saved_email = dev_email
                 saved_password = dev_password
@@ -208,16 +213,24 @@ class LoginPage(ft.Container):
         """
         saved_email, saved_password = self._load_saved_credentials()
         
-        # If no saved credentials, check .env for dev credentials
+        # Check if we're in development mode
+        is_development = not getattr(sys, 'frozen', False)
+        
+        # If no saved credentials, check .env for dev credentials (development mode only)
         if not saved_email or not saved_password:
-            dev_email = os.getenv("DEV_FIREBASE_ACC") or os.getenv("FIREBASE_ACC")
-            dev_password = os.getenv("DEV_FIREBASE_PASS") or os.getenv("FIREBASE_PASS")
-            if dev_email and dev_password:
-                saved_email = dev_email
-                saved_password = dev_password
-                logger.debug("Using DEV_FIREBASE credentials from .env for auto-login")
+            if is_development:
+                dev_email = os.getenv("DEV_FIREBASE_ACC") or os.getenv("FIREBASE_ACC")
+                dev_password = os.getenv("DEV_FIREBASE_PASS") or os.getenv("FIREBASE_PASS")
+                if dev_email and dev_password:
+                    saved_email = dev_email
+                    saved_password = dev_password
+                    logger.debug("Using DEV_FIREBASE credentials from .env for auto-login (development mode)")
+                else:
+                    logger.warning("Auto-login: No saved credentials or dev credentials found")
+                    return  # No credentials to use
             else:
-                logger.warning("Auto-login: No saved credentials or dev credentials found")
+                # Production: no auto-login without saved credentials
+                logger.warning("Auto-login: No saved credentials found (production mode)")
                 return  # No credentials to use
         
         # Initialize auth service
@@ -246,17 +259,72 @@ class LoginPage(ft.Container):
         else:
             # Silent failure - user can manually login
             logger.warning(f"Auto-login failed: {error}")
-            # Hide splash and show login form (it will ensure minimum duration from config)
-            if self.splash_screen and self.page:
-                await self.splash_screen.hide(self.page)
-                # Show login page after splash fades out
-                await self._show_login_after_splash()
+            
+            # If device is revoked, delete saved credentials to prevent future auto-login attempts
+            if error and "revoked" in error.lower():
+                try:
+                    from config.settings import settings
+                    db_manager = settings.db_manager
+                    if db_manager:
+                        db_manager.delete_login_credential()
+                        logger.info("Deleted saved credentials due to device revocation during auto-login")
+                except Exception as e:
+                    logger.error(f"Error deleting credentials: {e}", exc_info=True)
+            
+            # Hide splash and show login form
+            # For device revocation, show login page immediately without waiting for splash
+            if error and "revoked" in error.lower():
+                # Device revoked - show login page immediately
+                if self.page:
+                    try:
+                        # Force replace splash with login page immediately
+                        self.page.controls = [self]
+                        self.page.update()
+                        self._set_loading(False)
+                        # Show error immediately
+                        self._show_error(error or "Device has been revoked. Please contact admin.")
+                        logger.info("Login page shown immediately due to device revocation")
+                    except Exception as e:
+                        logger.error(f"Error showing login page: {e}", exc_info=True)
+                # Also try to hide splash in background (non-blocking)
+                if self.splash_screen and self.page:
+                    try:
+                        # Hide splash without waiting
+                        asyncio.create_task(self.splash_screen.hide(self.page))
+                    except Exception as e:
+                        logger.debug(f"Could not hide splash screen: {e}")
+            elif self.splash_screen and self.page:
+                # Normal flow - hide splash then show login
+                try:
+                    await self.splash_screen.hide(self.page)
+                    # Show login page after splash fades out
+                    await self._show_login_after_splash()
+                except Exception as e:
+                    logger.error(f"Error hiding splash screen: {e}", exc_info=True)
+                    # If splash hide fails, show login page directly
+                    if self.page:
+                        self.page.controls = [self]
+                        self.page.update()
+                        self._set_loading(False)
+                        # Show error immediately
+                        if error and ("device" in error.lower() or "limit" in error.lower() or "disabled" in error.lower()):
+                            self._show_error(error)
             else:
+                # No splash screen, show login page directly
+                if self.page:
+                    self.page.controls = [self]
+                    self.page.update()
                 self._set_loading(False)
+            
             # Show error for specific cases (device enforcement, device limit, etc.)
             if error and ("device" in error.lower() or "limit" in error.lower() or "disabled" in error.lower()):
-                # Error will be shown after login page appears
-                self._pending_error = error
+                # Error will be shown after login page appears (or immediately if no splash)
+                if not (self.splash_screen and self.page):
+                    # No splash, show error immediately
+                    self._show_error(error)
+                else:
+                    # Store error to show after splash hides
+                    self._pending_error = error
     
     async def _hide_splash_and_login(self):
         """Hide splash screen and proceed to main app."""
@@ -266,16 +334,31 @@ class LoginPage(ft.Container):
     
     async def _show_login_after_splash(self):
         """Show login page after splash screen fades out."""
-        await asyncio.sleep(0.3)  # Wait for fade out animation
+        try:
+            # Wait for fade out animation, but with timeout
+            await asyncio.wait_for(asyncio.sleep(0.3), timeout=1.0)
+        except asyncio.TimeoutError:
+            logger.warning("Timeout waiting for splash fade out, showing login page anyway")
+        
         if self.page:
             # Replace splash with login page
-            self.page.controls = [self]
-            self.page.update()
-            self._set_loading(False)
-            # Show pending error if any
-            if hasattr(self, '_pending_error') and self._pending_error:
-                self._show_error(self._pending_error)
-                delattr(self, '_pending_error')
+            try:
+                self.page.controls = [self]
+                self.page.update()
+                self._set_loading(False)
+                # Show pending error if any
+                if hasattr(self, '_pending_error') and self._pending_error:
+                    self._show_error(self._pending_error)
+                    delattr(self, '_pending_error')
+            except Exception as e:
+                logger.error(f"Error showing login page after splash: {e}", exc_info=True)
+                # Force show login page even if update fails
+                try:
+                    if self.page:
+                        self.page.controls = [self]
+                        self.page.update()
+                except:
+                    pass
     
     def _handle_login(self, e):
         """Handle login button click."""
@@ -317,13 +400,25 @@ class LoginPage(ft.Container):
         """Show error message."""
         self.error_text.value = message
         self.error_text.visible = True
-        self.update()
+        # Only update if control is on the page
+        try:
+            if self.page:
+                self.update()
+        except AssertionError:
+            # Control not on page yet, will update when added
+            pass
     
     def _set_loading(self, loading: bool):
         """Set loading state."""
         self.loading_indicator.visible = loading
         self.login_button.disabled = loading
-        self.update()
+        # Only update if control is on the page
+        try:
+            if self.page:
+                self.update()
+        except AssertionError:
+            # Control not on page yet, will update when added
+            pass
     
     def _load_saved_credentials(self) -> Tuple[Optional[str], Optional[str]]:
         """Load saved login credentials from database."""

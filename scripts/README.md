@@ -383,6 +383,72 @@ When uploading to GitHub, files are renamed to:
 - **Checksums** ensure download integrity
 - Never commit tokens or credentials to version control
 
+### `decrypt_database_for_support.py`
+
+Support script to decrypt all encrypted fields in a user's database and create a new database with decrypted data. Used by support staff when troubleshooting user issues.
+
+**Usage:**
+
+```bash
+# With device info as arguments:
+python scripts/decrypt_database_for_support.py input.db output_decrypted.db \
+  --hostname "DESKTOP-ABC" --machine "AMD64" --system "Windows"
+
+# With device info from JSON file:
+python scripts/decrypt_database_for_support.py input.db output_decrypted.db \
+  --device-info device_info.json
+
+# Interactive mode (will prompt for device info):
+python scripts/decrypt_database_for_support.py input.db output_decrypted.db
+```
+
+**Prerequisites:**
+```bash
+pip install cryptography
+```
+
+**What it does:**
+1. Reads `encryption_key_hash` from `app_settings` table in the database
+2. Derives encryption key from device information (hostname, machine, system) + encryption key hash
+3. Decrypts all encrypted fields in:
+   - `telegram_credentials` (phone_number, session_string)
+   - `telegram_users` (username, first_name, last_name, full_name, phone, bio)
+   - `messages` (content, caption, message_link)
+   - `reactions` (message_link)
+   - `group_fetch_history` (account_phone_number, account_full_name, account_username)
+   - `account_activity_log` (phone_number)
+4. Creates a new database file with all decrypted data
+
+**Device Info JSON format:**
+```json
+{
+  "hostname": "DESKTOP-ABC",
+  "machine": "AMD64",
+  "system": "Windows"
+}
+```
+
+**Getting Device Info:**
+Users can find their device information in:
+- Settings → Security tab (device info should be displayed there)
+- Or by running Python:
+  ```python
+  import platform
+  print(f"Hostname: {platform.node()}")
+  print(f"Machine: {platform.machine()}")
+  print(f"System: {platform.system()}")
+  ```
+
+**Important Notes:**
+- ⚠️ The encryption key is device-specific - you MUST have the correct device information
+- 📦 The `encryption_key_hash` is automatically read from the database
+- 🔒 The output database contains unencrypted sensitive data - handle securely
+- ✅ Original database is not modified - a new decrypted copy is created
+
+### `decrypt_pin.py`
+
+Script to decrypt a PIN from exported recovery data. See script header for usage.
+
 ### Related Documentation
 
 - [Auto-Update System Guide](../docs/auto-update-system-guide.md) - Complete guide to the update system

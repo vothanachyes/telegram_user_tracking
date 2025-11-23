@@ -3,15 +3,22 @@ Reports page with active users and group summary tables.
 """
 
 import flet as ft
+import asyncio
+import logging
 from typing import Optional, Callable
 from database.db_manager import DatabaseManager
+from database.async_query_executor import async_query_executor
+from services.page_cache_service import page_cache_service
 from ui.theme import theme_manager
 from ui.components import DataTable, ModernTabs
+from ui.components.skeleton_loaders.reports_skeleton import ReportsSkeleton
 from utils.helpers import format_datetime, get_telegram_user_link
 from ui.pages.telegram.components.filters_bar import FiltersBarComponent
 from ui.components.top_users_certificate import TopUsersCertificate
 from services.export.exporters.certificate_exporter import CertificateExporter
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 class ReportsPage(ft.Container):
@@ -25,29 +32,38 @@ class ReportsPage(ft.Container):
         self.db_manager = db_manager
         self.page: Optional[ft.Page] = None
         self.on_navigate = on_navigate
+        self.is_loading = True
         
-        # Get groups and set default selected group
-        groups = self.db_manager.get_all_groups()
-        default_group_id = groups[0].group_id if groups else None
+        # Initialize groups state (will be loaded asynchronously)
+        self.groups = []
+        self.default_group_id = None
         
-        # Create filters bar for active users (with dates enabled)
+        # Create filters bar for active users (with dates enabled, no group dropdown) - will be updated when groups load
         self.active_users_filters_bar = FiltersBarComponent(
-            groups=groups,
+            groups=[],
             on_group_change=self._on_active_users_group_change,
             on_date_change=self._on_active_users_date_change,
             show_dates=True,
-            default_group_id=default_group_id
+            show_group=False,  # Group dropdown will be above filters
+            default_group_id=None
         )
         
-        # Create filters bar for certificate (with dates enabled, no message type filter)
+        # Group dropdown for active users (will be created when groups load)
+        self.active_users_group_dropdown = None
+        
+        # Create filters bar for certificate (with dates enabled, no message type filter, no group dropdown)
         self.certificate_filters_bar = FiltersBarComponent(
-            groups=groups,
+            groups=[],
             on_group_change=self._on_certificate_group_change,
             on_date_change=self._on_certificate_date_change,
             show_dates=True,
             show_message_type=False,  # Remove Filter By Type for certificate
-            default_group_id=default_group_id
+            show_group=False,  # Group dropdown will be above filters
+            default_group_id=None
         )
+        
+        # Group dropdown for certificate (will be created when groups load)
+        self.certificate_group_dropdown = None
         
         # Create tables
         self.active_users_table = self._create_active_users_table()
@@ -95,7 +111,9 @@ class ReportsPage(ft.Container):
             on_tab_change=self._on_tab_change
         )
         
-        # Build layout
+        # Build layout with loading indicator initially
+        self.loading_content = ReportsSkeleton.create()
+        
         super().__init__(
             content=ft.Column([
                 # Header
@@ -107,20 +125,15 @@ class ReportsPage(ft.Container):
                     ),
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, spacing=10),
                 theme_manager.spacing_container("md"),
-                # Tabs
-                self.modern_tabs,
+                # Loading indicator (will be replaced with tabs when groups load)
+                self.loading_content,
             ], spacing=theme_manager.spacing_sm, expand=True),
             padding=theme_manager.padding_lg,
             expand=True
         )
-        
-        # Load initial data
-        self._refresh_active_users()
-        self._refresh_group_summary()
-        self._refresh_certificate()
     
     def set_page(self, page: ft.Page):
-        """Set page reference."""
+        """Set page reference and load data asynchronously."""
         self.page = page
         self.certificate_component.set_page(page)
         
@@ -132,6 +145,94 @@ class ReportsPage(ft.Container):
         for picker in pickers:
             if picker not in page.overlay:
                 page.overlay.append(picker)
+        
+        # Load groups asynchronously
+        if page and hasattr(page, 'run_task'):
+            page.run_task(self._load_groups_async)
+        else:
+            asyncio.create_task(self._load_groups_async())
+    
+    async def _load_groups_async(self):
+        """Load groups asynchronously and initialize page."""
+        try:
+            # Check cache
+            cache_key = page_cache_service.generate_key("reports", type="groups")
+            groups = page_cache_service.get(cache_key)
+            
+            if not groups:
+                groups = await async_query_executor.execute(self.db_manager.get_all_groups)
+                if page_cache_service.is_enabled():
+                    page_cache_service.set(cache_key, groups, ttl=600)  # Cache for 10 minutes
+            
+            self.groups = groups
+            self.default_group_id = groups[0].group_id if groups else None
+            
+            # Create group dropdown for active users
+            group_options = [f"{g.group_name} ({g.group_id})" for g in groups]
+            if group_options and self.default_group_id:
+                default_group_value = next(
+                    (opt for opt in group_options if f"({self.default_group_id})" in opt),
+                    group_options[0] if group_options else None
+                )
+            else:
+                default_group_value = group_options[0] if group_options else None
+            
+            self.active_users_group_dropdown = theme_manager.create_dropdown(
+                label=theme_manager.t("select_group"),
+                options=group_options if group_options else ["No groups"],
+                value=default_group_value,
+                on_change=self._on_active_users_group_dropdown_change,
+                width=250
+            )
+            
+            # Create group dropdown for certificate
+            self.certificate_group_dropdown = theme_manager.create_dropdown(
+                label=theme_manager.t("select_group"),
+                options=group_options if group_options else ["No groups"],
+                value=default_group_value,
+                on_change=self._on_certificate_group_dropdown_change,
+                width=250
+            )
+            
+            # Update filters bars
+            self.active_users_filters_bar.groups = groups
+            self.active_users_filters_bar.default_group_id = self.default_group_id
+            self.certificate_filters_bar.groups = groups
+            self.certificate_filters_bar.default_group_id = self.default_group_id
+            
+            # Replace loading indicator with tabs
+            self.content.controls[2] = self.modern_tabs
+            
+            self.is_loading = False
+            
+            # Load initial data
+            await self._refresh_active_users_async()
+            await self._refresh_group_summary_async()
+            await self._refresh_certificate_async()
+            
+            if self.page:
+                self.page.update()
+                
+        except Exception as e:
+            logger.error(f"Error loading reports data: {e}", exc_info=True)
+            self.is_loading = False
+            if self.page:
+                self.page.update()
+    
+    async def _refresh_active_users_async(self):
+        """Refresh active users table asynchronously."""
+        # Run the synchronous method in executor
+        await async_query_executor.execute(self._refresh_active_users)
+    
+    async def _refresh_group_summary_async(self):
+        """Refresh group summary table asynchronously."""
+        # Run the synchronous method in executor
+        await async_query_executor.execute(self._refresh_group_summary)
+    
+    async def _refresh_certificate_async(self):
+        """Refresh certificate asynchronously."""
+        # Run the synchronous method in executor
+        await async_query_executor.execute(self._refresh_certificate)
     
     def _on_tab_change(self, index: int):
         """Handle tab change."""
@@ -144,6 +245,19 @@ class ReportsPage(ft.Container):
         if self.page:
             self.page.update()
     
+    def _on_active_users_group_dropdown_change(self, e):
+        """Handle group dropdown change for active users."""
+        if e.control.value and e.control.value != "No groups":
+            group_str = e.control.value
+            group_id = int(group_str.split("(")[-1].strip(")"))
+            self.active_users_filters_bar.selected_group = group_id
+            if self.active_users_filters_bar.on_group_change:
+                self.active_users_filters_bar.on_group_change(group_id)
+        else:
+            self.active_users_filters_bar.selected_group = None
+            if self.active_users_filters_bar.on_group_change:
+                self.active_users_filters_bar.on_group_change(None)
+    
     def _on_active_users_date_change(self):
         """Handle date change for active users."""
         self._refresh_active_users()
@@ -155,6 +269,19 @@ class ReportsPage(ft.Container):
         self._refresh_certificate()
         if self.page:
             self.page.update()
+    
+    def _on_certificate_group_dropdown_change(self, e):
+        """Handle group dropdown change for certificate."""
+        if e.control.value and e.control.value != "No groups":
+            group_str = e.control.value
+            group_id = int(group_str.split("(")[-1].strip(")"))
+            self.certificate_filters_bar.selected_group = group_id
+            if self.certificate_filters_bar.on_group_change:
+                self.certificate_filters_bar.on_group_change(group_id)
+        else:
+            self.certificate_filters_bar.selected_group = None
+            if self.certificate_filters_bar.on_group_change:
+                self.certificate_filters_bar.on_group_change(None)
     
     def _on_certificate_date_change(self):
         """Handle date change for certificate."""
@@ -194,14 +321,19 @@ class ReportsPage(ft.Container):
         
         return ft.Container(
             content=ft.Column([
-                # Filters row (same layout as Users table)
+                # Group selection, refresh, and export row (above filters)
+                ft.Row([
+                    self.active_users_group_dropdown if self.active_users_group_dropdown else ft.Container(),
+                    ft.Container(expand=True),  # Spacer
+                    refresh_btn,
+                    export_menu,
+                ], spacing=10, wrap=False, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                # Filters row
                 ft.Row([
                     clear_filter_btn if clear_filter_btn else ft.Container(),
                     search_field if search_field else ft.Container(),
                     ft.Container(width=20),
                     self.active_users_filters_bar.build(),
-                    refresh_btn,
-                    export_menu,
                 ], spacing=10, wrap=False),
                 # Table
                 ft.Container(
@@ -481,12 +613,17 @@ class ReportsPage(ft.Container):
         
         return ft.Container(
             content=ft.Column([
-                # Controls row
+                # Group selection, refresh, and export row (above filters)
                 ft.Row([
-                    self.certificate_filters_bar.build(),
+                    self.certificate_group_dropdown if self.certificate_group_dropdown else ft.Container(),
+                    ft.Container(expand=True),  # Spacer
                     refresh_btn,
                     export_pdf_btn,
                     export_image_btn,
+                ], spacing=10, wrap=False, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                # Filters row
+                ft.Row([
+                    self.certificate_filters_bar.build(),
                 ], spacing=10, wrap=False),
                 # Certificate
                 ft.Container(

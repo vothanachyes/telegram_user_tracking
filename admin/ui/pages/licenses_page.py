@@ -156,7 +156,8 @@ class AdminLicensesPage(ft.Container):
         user_uid = full_license_data.get("uid")
         dialog = LicenseFormDialog(
             license_data=full_license_data,
-            on_submit=lambda user_uid_param, license_data_param: self._handle_update_license(user_uid_param, license_data_param),
+            user_uid=user_uid,
+            on_submit=lambda user_uid=None, license_data=None: self._handle_update_license(user_uid, license_data),
         )
         dialog.page = self.page
         try:

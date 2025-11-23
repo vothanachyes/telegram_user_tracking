@@ -22,6 +22,21 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# Real-time Watch Services Configuration
+# Set to False to disable REST API and gRPC watch services (uses polling instead)
+ENABLE_REALTIME_WATCH_SERVICES = False
+
+# Background Polling Configuration
+# Notification polling interval in seconds (default: 120 seconds / 2 minutes)
+NOTIFICATION_POLLING_INTERVAL = 120
+
+# App update polling interval in seconds (default: 3600 seconds / 1 hour)
+UPDATE_POLLING_INTERVAL = 3600
+
+# Enable/disable polling services
+ENABLE_NOTIFICATION_POLLING = True
+ENABLE_UPDATE_POLLING = True
+
 
 class Settings:
     """Application settings manager."""
@@ -71,7 +86,10 @@ class Settings:
                             
                             if is_development:
                                 # In development: allow using DATABASE_PATH from .env to skip login
-                                dev_db_path = os.getenv("DATABASE_PATH", "").strip()
+                                # Use the constant which has auto-concatenation with APP_DATA_DIR
+                                from utils.constants import DATABASE_PATH
+                                dev_db_path = DATABASE_PATH
+                                # Check if it's different from default (meaning it was set in .env)
                                 if dev_db_path and dev_db_path != str(USER_DATA_DIR / "app.db"):
                                     # Handle directory-only paths
                                     if dev_db_path.endswith('/') or dev_db_path.endswith('\\'):
@@ -330,6 +348,53 @@ class Settings:
         """
         settings = self.load_settings()
         return settings.session_encryption_enabled
+    
+    def is_page_cache_enabled(self) -> bool:
+        """
+        Check if page caching is enabled.
+        
+        Returns:
+            True if page cache is enabled, False otherwise
+        """
+        settings = self.load_settings()
+        return settings.page_cache_enabled
+    
+    def get_page_cache_ttl(self) -> int:
+        """
+        Get page cache TTL in seconds.
+        
+        Returns:
+            TTL in seconds
+        """
+        settings = self.load_settings()
+        return settings.page_cache_ttl_seconds
+    
+    def configure_page_cache(self, enabled: bool, ttl_seconds: int = 300) -> bool:
+        """
+        Configure page cache settings.
+        
+        Args:
+            enabled: Whether to enable page caching
+            ttl_seconds: Time to live in seconds (default: 300)
+            
+        Returns:
+            True if configuration saved successfully, False otherwise
+        """
+        try:
+            settings = self.load_settings()
+            settings.page_cache_enabled = enabled
+            settings.page_cache_ttl_seconds = ttl_seconds
+            
+            if self.save_settings(settings):
+                # Update global cache service
+                from services.page_cache_service import page_cache_service
+                page_cache_service.configure(enabled=enabled, default_ttl=ttl_seconds)
+                logger.info(f"Page cache configured: enabled={enabled}, ttl={ttl_seconds}s")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error configuring page cache: {e}")
+            return False
 
 
 # Global settings instance

@@ -33,7 +33,8 @@ class PageFactory:
         db_manager: DatabaseManager,
         telegram_service: TelegramService,
         on_settings_changed: Optional[Callable[[], None]] = None,
-        on_logout: Optional[Callable[[], None]] = None
+        on_logout: Optional[Callable[[], None]] = None,
+        update_service=None
     ):
         """
         Initialize page factory.
@@ -44,10 +45,12 @@ class PageFactory:
             telegram_service: Telegram service instance
             on_settings_changed: Optional callback for settings changes
             on_logout: Optional callback for logout
+            update_service: Optional update service instance
         """
         self.page = page
         self.db_manager = db_manager
         self.telegram_service = telegram_service
+        self.update_service = update_service
         self.on_settings_changed = on_settings_changed
         self.on_logout = on_logout
     
@@ -127,7 +130,10 @@ class PageFactory:
     
     def _create_about_page(self) -> ft.Control:
         """Create about page."""
-        page_content = AboutPage(self.page, self.db_manager)
+        page_content = AboutPage(self.page, self.db_manager, update_service=self.update_service)
+        # Call set_page to trigger async loading
+        if hasattr(page_content, 'set_page'):
+            page_content.set_page(self.page)
         return page_content.build()
     
     def _create_fetch_data_page(self) -> FetchDataPage:
@@ -160,6 +166,9 @@ class PageFactory:
     def _create_notifications_page(self) -> ft.Control:
         """Create notifications page."""
         page_content = NotificationsPage(self.page)
+        # Call set_page to trigger async loading
+        if hasattr(page_content, 'set_page'):
+            page_content.set_page(self.page)
         return page_content.build()
     
     def _create_error_page(self, error_message: str) -> ft.Container:

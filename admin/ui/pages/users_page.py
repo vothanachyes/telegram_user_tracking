@@ -71,17 +71,35 @@ class AdminUsersPage(ft.Container):
                 {"key": "uid", "label": "UID", "width": 200},
                 {"key": "disabled", "label": "Status", "width": 100},
                 {"key": "license_tier", "label": "License Tier", "width": 120},
+                {"key": "scheduled_deletion", "label": "Scheduled Deletion", "width": 180},
             ]
             
             # Format data for table
             table_data = []
             for user in users:
+                # Format scheduled deletion date
+                scheduled_deletion_date = user.get("scheduled_deletion_date")
+                deletion_display = "N/A"
+                if scheduled_deletion_date:
+                    try:
+                        from datetime import datetime
+                        if isinstance(scheduled_deletion_date, str):
+                            dt = datetime.fromisoformat(scheduled_deletion_date.replace("Z", "+00:00"))
+                        elif hasattr(scheduled_deletion_date, "timestamp"):
+                            dt = scheduled_deletion_date.replace(tzinfo=None)
+                        else:
+                            dt = scheduled_deletion_date
+                        deletion_display = dt.strftime("%Y-%m-%d %H:%M UTC")
+                    except Exception:
+                        deletion_display = str(scheduled_deletion_date)
+                
                 table_data.append({
                     "email": user.get("email", ""),
                     "display_name": user.get("display_name", "N/A"),
                     "uid": user.get("uid", ""),
                     "disabled": "Disabled" if user.get("disabled") else "Active",
                     "license_tier": user.get("license_tier", "none").capitalize(),
+                    "scheduled_deletion": deletion_display,
                     "_user_data": user,  # Store full user data
                 })
             
@@ -152,11 +170,36 @@ class AdminUsersPage(ft.Container):
         user_email = full_user_data.get("email", "this user")
         user_uid = full_user_data.get("uid")
         
+        # Check if deletion is already scheduled
+        scheduled_deletion = admin_user_service.get_scheduled_deletion(user_uid)
+        if scheduled_deletion:
+            deletion_date = scheduled_deletion.get("deletion_date")
+            if isinstance(deletion_date, str):
+                from datetime import datetime
+                try:
+                    deletion_date = datetime.fromisoformat(deletion_date.replace("Z", "+00:00"))
+                except Exception:
+                    pass
+            
+            if deletion_date:
+                formatted_date = deletion_date.strftime("%B %d, %Y at %I:%M %p UTC") if hasattr(deletion_date, 'strftime') else str(deletion_date)
+                message = f"User '{user_email}' is already scheduled for deletion on {formatted_date}."
+            else:
+                message = f"User '{user_email}' is already scheduled for deletion."
+            
+            self.page.snack_bar = ft.SnackBar(
+                content=ft.Text(message),
+                bgcolor="#ff9800",
+            )
+            self.page.snack_bar.open = True
+            self.page.update()
+            return
+        
         dialog = DeleteConfirmDialog(
-            title="Delete User",
-            message=f"Are you sure you want to delete user '{user_email}'? This action cannot be undone.",
+            title="Schedule User Deletion",
+            message=f"Are you sure you want to schedule deletion for user '{user_email}'? The user will be notified and their account will be deleted in 24 hours. This action cannot be undone.",
             item_name=user_email,
-            on_confirm=lambda: self._handle_delete_user(user_uid),
+            on_confirm=lambda: self._handle_delete_user(user_uid, user_email, full_user_data.get("display_name")),
         )
         dialog.page = self.page
         try:
@@ -167,7 +210,7 @@ class AdminUsersPage(ft.Container):
             dialog.open = True
             self.page.update()
     
-    def _handle_create_user(self, email: str, password: str, display_name: Optional[str], disabled: bool):
+    def _handle_create_user(self, email: str, password: str, display_name: Optional[str], disabled: bool, license_tier: Optional[str] = None):
         """Handle user creation."""
         try:
             uid = admin_user_service.create_user(
@@ -180,6 +223,36 @@ class AdminUsersPage(ft.Container):
                 # Update disabled status if needed
                 if disabled:
                     admin_user_service.update_user(uid, disabled=True)
+                
+                # Create license if tier is selected
+                if license_tier and license_tier != "none":
+                    from admin.services.admin_license_service import admin_license_service
+                    from datetime import datetime, timedelta
+                    
+                    # Get tier definition to set expiration date
+                    tier_definition = admin_license_service.get_tier_definition(license_tier)
+                    period_days = tier_definition.get("period", 30) if tier_definition else 30
+                    
+                    license_data = {
+                        "tier": license_tier,
+                        "expiration_date": (datetime.utcnow() + timedelta(days=period_days)).isoformat() + "Z",
+                    }
+                    
+                    if not admin_license_service.create_license(uid, license_data):
+                        logger.warning(f"User created but failed to create license for {uid}")
+                
+                # Create welcome notification
+                try:
+                    from admin.services.admin_notification_service import admin_notification_service
+                    admin_notification_service.create_welcome_notification(
+                        uid=uid,
+                        email=email,
+                        display_name=display_name,
+                        license_tier=license_tier if license_tier and license_tier != "none" else None
+                    )
+                except Exception as e:
+                    # Don't block user creation if notification fails
+                    logger.error(f"Failed to create welcome notification for user {uid}: {e}", exc_info=True)
                 
                 # Reload users
                 self._reload_users()
@@ -206,7 +279,7 @@ class AdminUsersPage(ft.Container):
             self.page.snack_bar.open = True
             self.page.update()
     
-    def _handle_update_user(self, uid: str, email: str, password: Optional[str], display_name: Optional[str], disabled: bool):
+    def _handle_update_user(self, uid: str, email: str, password: Optional[str], display_name: Optional[str], disabled: bool, license_tier: Optional[str] = None):
         """Handle user update."""
         try:
             update_data = {
@@ -222,6 +295,34 @@ class AdminUsersPage(ft.Container):
             success = admin_user_service.update_user(uid, **update_data)
             
             if success:
+                # Update license if tier is provided
+                if license_tier is not None:
+                    from admin.services.admin_license_service import admin_license_service
+                    from datetime import datetime, timedelta
+                    
+                    existing_license = admin_license_service.get_license(uid)
+                    
+                    if license_tier == "none":
+                        # Delete license if "none" is selected
+                        if existing_license:
+                            admin_license_service.delete_license(uid)
+                    else:
+                        # Create or update license
+                        if existing_license:
+                            # Update existing license
+                            license_update = {"tier": license_tier}
+                            admin_license_service.update_license(uid, license_update)
+                        else:
+                            # Create new license
+                            tier_definition = admin_license_service.get_tier_definition(license_tier)
+                            period_days = tier_definition.get("period", 30) if tier_definition else 30
+                            
+                            license_data = {
+                                "tier": license_tier,
+                                "expiration_date": (datetime.utcnow() + timedelta(days=period_days)).isoformat() + "Z",
+                            }
+                            admin_license_service.create_license(uid, license_data)
+                
                 # Reload users
                 self._reload_users()
                 
@@ -247,22 +348,39 @@ class AdminUsersPage(ft.Container):
             self.page.snack_bar.open = True
             self.page.update()
     
-    def _handle_delete_user(self, uid: str):
-        """Handle user deletion."""
+    def _handle_delete_user(self, uid: str, email: str, display_name: Optional[str] = None):
+        """Handle user deletion scheduling."""
         try:
-            success = admin_user_service.delete_user(uid)
+            from datetime import datetime, timedelta
             
-            if success:
+            # Schedule deletion (24 hours from now)
+            deletion_date = admin_user_service.schedule_user_deletion(uid)
+            
+            if deletion_date:
+                # Send deletion warning notification
+                try:
+                    from admin.services.admin_notification_service import admin_notification_service
+                    admin_notification_service.create_deletion_warning_notification(
+                        uid=uid,
+                        email=email,
+                        display_name=display_name,
+                        deletion_date=deletion_date
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send deletion notification: {e}", exc_info=True)
+                    # Continue even if notification fails
+                
                 # Reload users
                 self._reload_users()
                 
+                formatted_date = deletion_date.strftime("%B %d, %Y at %I:%M %p UTC")
                 self.page.snack_bar = ft.SnackBar(
-                    content=ft.Text("User deleted successfully"),
+                    content=ft.Text(f"User deletion scheduled for {formatted_date}. User has been notified."),
                     bgcolor="#4caf50",
                 )
             else:
                 self.page.snack_bar = ft.SnackBar(
-                    content=ft.Text("Failed to delete user. Please check logs."),
+                    content=ft.Text("Failed to schedule user deletion. Please check logs."),
                     bgcolor="#f44336",
                 )
             
@@ -270,9 +388,9 @@ class AdminUsersPage(ft.Container):
             self.page.update()
             
         except Exception as e:
-            logger.error(f"Error deleting user: {e}", exc_info=True)
+            logger.error(f"Error scheduling user deletion: {e}", exc_info=True)
             self.page.snack_bar = ft.SnackBar(
-                content=ft.Text(f"Error deleting user: {str(e)}"),
+                content=ft.Text(f"Error scheduling user deletion: {str(e)}"),
                 bgcolor="#f44336",
             )
             self.page.snack_bar.open = True

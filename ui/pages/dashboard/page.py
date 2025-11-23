@@ -4,16 +4,23 @@ Dashboard page with statistics and activity feed.
 
 import flet as ft
 import asyncio
+import logging
 from typing import Optional, List
 from datetime import datetime, timedelta
 from ui.theme import theme_manager
 from ui.components import StatCard
+from ui.components.skeleton_loaders.dashboard_skeleton import DashboardSkeleton
+from ui.components.skeleton_loaders.base import SkeletonRow
 from database.db_manager import DatabaseManager
+from database.async_query_executor import async_query_executor
+from services.page_cache_service import page_cache_service
 from utils.constants import format_bytes
 from ui.pages.dashboard.components.group_selector import GroupSelectorComponent
-from ui.pages.dashboard.components.date_range_selector import DateRangeSelectorComponent
+from ui.components import DateRangeSelector
 from ui.pages.dashboard.components.active_users_list import ActiveUsersListComponent
 from ui.pages.dashboard.components.recent_messages import RecentMessagesComponent
+
+logger = logging.getLogger(__name__)
 
 
 class DashboardPage(ft.Container):
@@ -23,10 +30,12 @@ class DashboardPage(ft.Container):
         self.db_manager = db_manager
         self.page: Optional[ft.Page] = None
         
-        # Get groups and set default selected groups
-        groups = self.db_manager.get_all_groups()
-        self.selected_group_ids = [groups[0].group_id] if groups else []
-        self.selected_group_names = [groups[0].group_name] if groups else []
+        # Initialize data state
+        self.groups: List = []
+        self.selected_group_ids: List[int] = []
+        self.selected_group_names: List[str] = []
+        self.stats: dict = {}
+        self.is_loading = True
         
         # Initialize date range (default: 1 month - last 30 days)
         today = datetime.now()
@@ -34,18 +43,19 @@ class DashboardPage(ft.Container):
         self.start_date = one_month_ago.replace(hour=0, minute=0, second=0, microsecond=0)
         self.end_date = today
         
-        # Create components
+        # Create components (will be populated with data later)
         self.group_selector = GroupSelectorComponent(
-            groups=groups,
-            selected_group_ids=self.selected_group_ids,
-            selected_group_names=self.selected_group_names,
+            groups=[],
+            selected_group_ids=[],
+            selected_group_names=[],
             on_selection_changed=self._on_groups_changed
         )
         
-        self.date_range_selector = DateRangeSelectorComponent(
+        self.date_range_selector = DateRangeSelector(
             start_date=self.start_date,
             end_date=self.end_date,
-            on_date_range_changed=self._on_date_range_changed
+            on_date_range_changed=self._on_date_range_changed,
+            default_range="month"
         )
         
         self.active_users_component = ActiveUsersListComponent()
@@ -55,37 +65,29 @@ class DashboardPage(ft.Container):
         self.group_selector_widget = self.group_selector.build()
         self.date_range_selector_widget = self.date_range_selector.build()
         
-        # Create stat cards
-        stats = self.db_manager.get_dashboard_stats(
-            group_ids=self.selected_group_ids if self.selected_group_ids else None,
-            start_date=self.start_date,
-            end_date=self.end_date
-        )
-        
-        # Wrap stat cards in container with padding to prevent edge clipping on hover
-        # Make stat cards bigger and responsive
+        # Create placeholder stat cards (will be updated with real data)
         stat_cards_row = ft.Row([
             StatCard(
                 title=theme_manager.t("total_messages"),
-                value=str(stats['total_messages']),
+                value="...",
                 icon=ft.Icons.MESSAGE,
                 color=theme_manager.primary_color
             ),
             StatCard(
                 title=theme_manager.t("total_users"),
-                value=str(stats['total_users']),
+                value="...",
                 icon=ft.Icons.PEOPLE,
                 color=ft.Colors.BLUE
             ),
             StatCard(
                 title=theme_manager.t("total_groups"),
-                value=str(stats['total_groups']),
+                value="...",
                 icon=ft.Icons.GROUP,
                 color=ft.Colors.GREEN
             ),
             StatCard(
                 title=theme_manager.t("media_storage"),
-                value=format_bytes(stats['total_media_size']),
+                value="...",
                 icon=ft.Icons.STORAGE,
                 color=ft.Colors.ORANGE
             ),
@@ -97,7 +99,7 @@ class DashboardPage(ft.Container):
             padding=ft.padding.all(5)  # Add padding to allow scale effect without clipping
         )
         
-        # Monthly stats
+        # Monthly stats (placeholder)
         self.monthly_stats = self._create_modern_card(
             content=ft.Column([
                 ft.Text(
@@ -114,7 +116,7 @@ class DashboardPage(ft.Container):
                             color=theme_manager.text_secondary_color
                         ),
                         ft.Text(
-                            str(stats['messages_today']),
+                            "...",
                             size=theme_manager.font_size_large_number,
                             weight=ft.FontWeight.BOLD
                         )
@@ -127,7 +129,7 @@ class DashboardPage(ft.Container):
                             color=theme_manager.text_secondary_color
                         ),
                         ft.Text(
-                            str(stats['messages_this_month']),
+                            "...",
                             size=theme_manager.font_size_large_number,
                             weight=ft.FontWeight.BOLD
                         )
@@ -136,7 +138,7 @@ class DashboardPage(ft.Container):
             ], spacing=theme_manager.spacing_sm)
         )
         
-        # Recent activity
+        # Recent activity (placeholder)
         self.recent_activity = self._create_modern_card(
             content=ft.Column([
                 ft.Row([
@@ -153,15 +155,16 @@ class DashboardPage(ft.Container):
                     )
                 ]),
                 ft.Divider(),
-                self.recent_messages_component.build(
-                    self.db_manager.get_messages(
-                        group_ids=self.selected_group_ids if self.selected_group_ids else None,
-                        start_date=self.start_date,
-                        end_date=self.end_date,
-                        limit=10
-                    ),
-                    self.db_manager.get_user_by_id
-                )
+                # Skeleton rows for recent messages
+                ft.Column([
+                    SkeletonRow(
+                        height=60,
+                        item_widths=[40, None, 100],
+                        delay=200 + (i * 50),
+                        padding=ft.padding.all(10)
+                    )
+                    for i in range(5)
+                ], spacing=10)
             ], spacing=theme_manager.spacing_sm)
         )
         
@@ -219,8 +222,6 @@ class DashboardPage(ft.Container):
             expand=True
         )
         
-        # Load initial data
-        self._refresh_active_users()
         self._animation_initialized = False
     
     def _create_modern_card(self, content: ft.Control) -> ft.Container:
@@ -300,12 +301,13 @@ class DashboardPage(ft.Container):
             self.page.update()
     
     def set_page(self, page: ft.Page):
-        """Set page reference and trigger animations."""
+        """Set page reference and load data asynchronously."""
         self.page = page
         
         # Set page reference for components
         self.group_selector.set_page(page)
-        self.date_range_selector.set_page(page)
+        if hasattr(self.date_range_selector, 'set_page'):
+            self.date_range_selector.set_page(page)
         self.active_users_component.set_page(page)
         self.recent_messages_component.set_page(page)
         
@@ -313,17 +315,132 @@ class DashboardPage(ft.Container):
         for card in self.stat_cards.content.controls:
             card.page = page
         
-        # Trigger animations
+        # Load data asynchronously
         if page and hasattr(page, 'run_task'):
-            async def start_animations():
+            page.run_task(self._load_data_async)
+        else:
+            asyncio.create_task(self._load_data_async())
+    
+    async def _load_data_async(self):
+        """Load dashboard data asynchronously."""
+        try:
+            self.is_loading = True
+            
+            # Load groups
+            cache_key_groups = page_cache_service.generate_key("dashboard", type="groups")
+            groups = page_cache_service.get(cache_key_groups)
+            
+            if not groups:
+                groups = await async_query_executor.execute(self.db_manager.get_all_groups)
+                if page_cache_service.is_enabled():
+                    page_cache_service.set(cache_key_groups, groups, ttl=600)  # Cache groups for 10 minutes
+            
+            self.groups = groups
+            self.selected_group_ids = [groups[0].group_id] if groups else []
+            self.selected_group_names = [groups[0].group_name] if groups else []
+            
+            # Rebuild group selector with loaded groups
+            self.group_selector = GroupSelectorComponent(
+                groups=groups,
+                selected_group_ids=self.selected_group_ids,
+                selected_group_names=self.selected_group_names,
+                on_selection_changed=self._on_groups_changed
+            )
+            self.group_selector.set_page(self.page)
+            self.group_selector_widget = self.group_selector.build()
+            
+            # Update the header row to include the new group selector
+            header_row = self.content.controls[0]
+            header_row.controls[2] = self.group_selector_widget
+            
+            # Load stats
+            cache_key_stats = page_cache_service.generate_key(
+                "dashboard",
+                group_ids=str(self.selected_group_ids),
+                start_date=self.start_date.isoformat(),
+                end_date=self.end_date.isoformat()
+            )
+            stats = page_cache_service.get(cache_key_stats)
+            
+            if not stats:
+                stats = await async_query_executor.execute(
+                    self.db_manager.get_dashboard_stats,
+                    group_ids=self.selected_group_ids if self.selected_group_ids else None,
+                    start_date=self.start_date,
+                    end_date=self.end_date
+                )
+                if page_cache_service.is_enabled():
+                    page_cache_service.set(cache_key_stats, stats)
+            
+            self.stats = stats
+            
+            # Update UI with loaded data
+            self._update_ui_with_data()
+            
+            # Load active users and recent messages
+            await self._load_active_users_async()
+            await self._load_recent_messages_async()
+            
+            self.is_loading = False
+            
+            # Trigger animations
+            if self.page:
                 await asyncio.sleep(0.3)
                 await self._animate_dashboard()
-            page.run_task(start_animations)
-        elif page:
-            async def start_animations():
-                await asyncio.sleep(0.3)
-                await self._animate_dashboard()
-            asyncio.create_task(start_animations())
+                self.page.update()
+                
+        except Exception as e:
+            logger.error(f"Error loading dashboard data: {e}", exc_info=True)
+            self.is_loading = False
+            if self.page:
+                self.page.update()
+    
+    def _update_ui_with_data(self):
+        """Update UI components with loaded data."""
+        # Update stat cards
+        cards = self.stat_cards.content.controls
+        cards[0].update_value(str(self.stats['total_messages']))
+        cards[1].update_value(str(self.stats['total_users']))
+        cards[2].update_value(str(self.stats['total_groups']))
+        cards[3].update_value(format_bytes(self.stats['total_media_size']))
+        
+        # Update monthly stats
+        monthly_content = self.monthly_stats.content
+        monthly_content.controls[2].controls[0].controls[1].value = str(self.stats['messages_today'])
+        monthly_content.controls[2].controls[2].controls[1].value = str(self.stats['messages_this_month'])
+    
+    async def _load_active_users_async(self):
+        """Load active users asynchronously."""
+        if not self.selected_group_ids:
+            self.active_users_component.clear()
+            return
+        
+        users = await async_query_executor.execute(
+            self.db_manager.get_top_active_users_by_group,
+            group_ids=self.selected_group_ids,
+            start_date=self.start_date,
+            end_date=self.end_date,
+            limit=10
+        )
+        
+        self.active_users_component.update_users(users)
+    
+    async def _load_recent_messages_async(self):
+        """Load recent messages asynchronously."""
+        messages = await async_query_executor.execute(
+            self.db_manager.get_messages,
+            group_ids=self.selected_group_ids if self.selected_group_ids else None,
+            start_date=self.start_date,
+            end_date=self.end_date,
+            limit=10
+        )
+        
+        # Update recent activity
+        activity_content = self.recent_activity.content
+        activity_content.controls[2] = self.recent_messages_component.build(
+            messages,
+            self.db_manager.get_user_by_id
+        )
     
     def _on_groups_changed(self, group_ids: List[int], group_names: List[str]):
         """Handle group selection change."""
@@ -344,60 +461,22 @@ class DashboardPage(ft.Container):
     
     def _refresh_all_data(self):
         """Refresh all dashboard data based on selected groups and date range."""
-        # Update stats
-        stats = self.db_manager.get_dashboard_stats(
-            group_ids=self.selected_group_ids if self.selected_group_ids else None,
-            start_date=self.start_date,
-            end_date=self.end_date
-        )
+        # Invalidate cache for this page
+        page_cache_service.invalidate("page:dashboard")
         
-        # Update stat cards (access through Container -> Row -> controls)
-        cards = self.stat_cards.content.controls
-        cards[0].update_value(str(stats['total_messages']))
-        cards[1].update_value(str(stats['total_users']))
-        cards[2].update_value(str(stats['total_groups']))
-        cards[3].update_value(format_bytes(stats['total_media_size']))
-        
-        # Update monthly stats
-        monthly_content = self.monthly_stats.content
-        monthly_content.controls[2].controls[0].controls[1].value = str(stats['messages_today'])
-        monthly_content.controls[2].controls[2].controls[1].value = str(stats['messages_this_month'])
-        
-        # Update recent activity
-        activity_content = self.recent_activity.content
-        activity_content.controls[2] = self.recent_messages_component.build(
-            self.db_manager.get_messages(
-                group_ids=self.selected_group_ids if self.selected_group_ids else None,
-                start_date=self.start_date,
-                end_date=self.end_date,
-                limit=10
-            ),
-            self.db_manager.get_user_by_id
-        )
-        
-        # Update active users
-        self._refresh_active_users()
-        
-        # Update more options button
-        if hasattr(self, 'active_users_card'):
-            content = self.active_users_card.content
-            more_btn = content.controls[0].controls[2]
-            more_btn.disabled = not self.selected_group_ids
+        # Load data asynchronously
+        if self.page and hasattr(self.page, 'run_task'):
+            self.page.run_task(self._load_data_async)
+        else:
+            asyncio.create_task(self._load_data_async())
     
     def _refresh_active_users(self):
-        """Refresh active users list."""
-        if not self.selected_group_ids:
-            self.active_users_component.clear()
-            return
-        
-        users = self.db_manager.get_top_active_users_by_group(
-            group_ids=self.selected_group_ids,
-            start_date=self.start_date,
-            end_date=self.end_date,
-            limit=10
-        )
-        
-        self.active_users_component.update_users(users)
+        """Refresh active users list (deprecated - use async version)."""
+        # This method is kept for backward compatibility but now uses async
+        if self.page and hasattr(self.page, 'run_task'):
+            self.page.run_task(self._load_active_users_async)
+        else:
+            asyncio.create_task(self._load_active_users_async())
     
     def _navigate_to_reports(self, e):
         """Navigate to reports page."""

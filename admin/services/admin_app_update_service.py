@@ -47,8 +47,17 @@ class AdminAppUpdateService:
             logger.error(f"Error getting app update info: {e}", exc_info=True)
             return None
     
-    def update_app_update_info(self, update_data: dict) -> bool:
-        """Update app update info."""
+    def update_app_update_info(self, update_data: dict, send_notification: bool = False) -> bool:
+        """
+        Update app update info.
+        
+        Args:
+            update_data: Dictionary containing update information
+            send_notification: Whether to send notification to all users (default: False)
+        
+        Returns:
+            True if successful, False otherwise
+        """
         if not self._ensure_initialized():
             return False
         
@@ -74,6 +83,20 @@ class AdminAppUpdateService:
             doc_ref.set(update_data, merge=True)
             
             logger.info(f"App update info updated: version={update_data.get('version')}")
+            
+            # Send notification if requested
+            if send_notification:
+                try:
+                    from admin.services.admin_notification_service import admin_notification_service
+                    notification_success = admin_notification_service.create_app_update_notification(update_data)
+                    if notification_success:
+                        logger.info(f"App update notification sent successfully for version {update_data.get('version')}")
+                    else:
+                        logger.warning(f"Failed to send app update notification for version {update_data.get('version')}")
+                except Exception as e:
+                    logger.error(f"Error sending app update notification: {e}", exc_info=True)
+                    # Don't fail the save operation if notification fails
+            
             return True
             
         except Exception as e:

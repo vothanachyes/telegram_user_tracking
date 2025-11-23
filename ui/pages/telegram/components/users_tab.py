@@ -38,6 +38,7 @@ class UsersTabComponent:
             on_group_change=self._on_group_change,
             show_dates=False,
             show_message_type=False,
+            show_group=False,  # Group dropdown is in tab bar
             default_group_id=default_group_id
         )
         
@@ -88,14 +89,18 @@ class UsersTabComponent:
         
         container = ft.Container(
             content=ft.Column([
+                # Refresh and export row (above filters)
+                ft.Row([
+                    ft.Container(expand=True),  # Spacer
+                    self.refresh_btn,
+                    self.export_menu,
+                ], spacing=10, wrap=False, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 # Filters row
                 ft.Row([
                     clear_filter_btn if clear_filter_btn else ft.Container(),
                     search_field if search_field else ft.Container(),
                     ft.Container(width=20),
                     self.filters_bar.build(),
-                    self.refresh_btn,
-                    self.export_menu,
                     self.import_users_btn,
                 ], spacing=10, wrap=False),
                 

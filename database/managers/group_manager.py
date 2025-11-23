@@ -16,6 +16,10 @@ class GroupManager(BaseDatabaseManager):
     def save_group(self, group: TelegramGroup) -> Optional[int]:
         """Save or update a Telegram group."""
         try:
+            # Check if group already exists
+            existing_group = self.get_group_by_id(group.group_id)
+            is_new_group = existing_group is None
+            
             with self.get_connection() as conn:
                 cursor = conn.execute("""
                     INSERT INTO telegram_groups 
@@ -37,6 +41,21 @@ class GroupManager(BaseDatabaseManager):
                     group.total_messages
                 ))
                 conn.commit()
+                
+                # Track new group addition
+                if is_new_group:
+                    try:
+                        from services.user_activities_service import user_activities_service
+                        from services.auth_service import auth_service
+                        current_user = auth_service.get_current_user()
+                        if current_user:
+                            uid = current_user.get("uid")
+                            if uid:
+                                user_activities_service.increment_groups_count(uid)
+                    except Exception as e:
+                        logger.error(f"Error tracking group addition: {e}", exc_info=True)
+                        # Don't fail if tracking fails
+                
                 return cursor.lastrowid
         except Exception as e:
             logger.error(f"Error saving group: {e}")

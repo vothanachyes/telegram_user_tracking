@@ -69,6 +69,10 @@ class AdminAppUpdatesPage(ft.Container):
             label="Update Available",
             value=True,
         )
+        self.send_notification_checkbox = ft.Checkbox(
+            label="Send notification to all users",
+            value=True,
+        )
         
         self.save_button = ft.ElevatedButton(
             text="Save Update Info",
@@ -108,6 +112,9 @@ class AdminAppUpdatesPage(ft.Container):
                                 self.release_notes_field,
                                 ft.Row(
                                     controls=[self.is_available_switch],
+                                ),
+                                ft.Row(
+                                    controls=[self.send_notification_checkbox],
                                 ),
                                 self.current_info_text,
                                 ft.Divider(height=10, color="transparent"),
@@ -181,8 +188,11 @@ class AdminAppUpdatesPage(ft.Container):
                 self.page.update()
                 return
             
+            # Get notification flag
+            send_notification = self.send_notification_checkbox.value
+            
             # Save
-            success = admin_app_update_service.update_app_update_info(update_data)
+            success = admin_app_update_service.update_app_update_info(update_data, send_notification=send_notification)
             
             if success:
                 self.page.snack_bar = ft.SnackBar(

@@ -12,6 +12,7 @@ from ui.components.stat_cards_grid import StatCardsGrid
 from ui.components.user_search_dropdown import UserSearchDropdown
 from ui.components.file_picker_manager import FilePickerManager
 from ui.components.modern_tabs import ModernTabs
+from ui.components.date_range_selector import DateRangeSelector
 
 __all__ = [
     'Sidebar',
@@ -23,6 +24,7 @@ __all__ = [
     'StatCardsGrid',
     'UserSearchDropdown',
     'FilePickerManager',
-    'ModernTabs'
+    'ModernTabs',
+    'DateRangeSelector'
 ]
 

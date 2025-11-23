@@ -55,9 +55,42 @@ class NotificationFormDialog(ft.AlertDialog):
             border_color=self.BORDER_COLOR,
         )
         
+        # Template selection
+        self.template_dropdown = ft.Dropdown(
+            label="Template",
+            hint_text="Select a template (optional)",
+            options=self._get_template_options(),
+            bgcolor=self.CARD_BG,
+            color=self.TEXT_COLOR,
+            border_color=self.BORDER_COLOR,
+            on_change=self._on_template_changed,
+        )
+        
+        self.load_template_button = ft.ElevatedButton(
+            text="Load Template",
+            icon=ft.Icons.UPLOAD_FILE,
+            bgcolor=self.PRIMARY_COLOR,
+            color=self.TEXT_COLOR,
+            on_click=self._on_load_template_click,
+            disabled=True,
+        )
+        
+        # File picker for browsing HTML/MD files
+        self.file_picker = ft.FilePicker(
+            on_result=self._on_file_picked,
+        )
+        
+        self.browse_file_button = ft.IconButton(
+            icon=ft.Icons.FOLDER_OPEN,
+            tooltip="Browse for HTML/MD file",
+            bgcolor=self.CARD_BG,
+            icon_color=self.TEXT_COLOR,
+            on_click=self._on_browse_file_click,
+        )
+        
         self.content_field = ft.TextField(
             label="Content",
-            hint_text="HTML/Markdown content",
+            hint_text="HTML/Markdown content (or load from template)",
             multiline=True,
             min_lines=5,
             max_lines=10,
@@ -160,15 +193,88 @@ class NotificationFormDialog(ft.AlertDialog):
             on_click=self._on_submit_click,
         )
         
+        # Template section with better grouping
+        template_section = ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[
+                            ft.Icon(ft.Icons.DESCRIPTION, color=self.PRIMARY_COLOR, size=18),
+                            ft.Text(
+                                "Template & Content",
+                                size=14,
+                                weight=ft.FontWeight.BOLD,
+                                color=self.TEXT_COLOR,
+                            ),
+                        ],
+                        spacing=8,
+                    ),
+                    ft.Divider(height=12, color="transparent"),
+                    ft.Row(
+                        controls=[
+                            ft.Container(
+                                content=self.template_dropdown,
+                                expand=3,
+                            ),
+                            ft.Container(
+                                content=self.load_template_button,
+                                expand=1,
+                            ),
+                            ft.Container(
+                                content=self.browse_file_button,
+                                width=48,
+                            ),
+                        ],
+                        spacing=10,
+                    ),
+                    ft.Divider(height=15, color="transparent"),
+                    self.content_field,
+                ],
+                spacing=0,
+            ),
+            padding=ft.padding.all(16),
+            bgcolor=f"{self.CARD_BG}80",
+            border_radius=8,
+            border=ft.border.all(1, self.BORDER_COLOR),
+        )
+        
         # Build form content
         form_controls = [
             self.title_field,
             self.subtitle_field,
-            self.content_field,
+            ft.Divider(height=10, color="transparent"),
+            template_section,
+            ft.Divider(height=15, color="transparent"),
             self.image_url_field,
             self.type_dropdown,
-            self.target_all_users,
-            self.user_selection,
+            ft.Divider(height=15, color="transparent"),
+            ft.Container(
+                content=ft.Column(
+                    controls=[
+                        ft.Row(
+                            controls=[
+                                ft.Icon(ft.Icons.PEOPLE, color=self.PRIMARY_COLOR, size=18),
+                                ft.Text(
+                                    "Target Audience",
+                                    size=14,
+                                    weight=ft.FontWeight.BOLD,
+                                    color=self.TEXT_COLOR,
+                                ),
+                            ],
+                            spacing=8,
+                        ),
+                        ft.Divider(height=12, color="transparent"),
+                        self.target_all_users,
+                        self.user_selection,
+                    ],
+                    spacing=0,
+                ),
+                padding=ft.padding.all(16),
+                bgcolor=f"{self.CARD_BG}80",
+                border_radius=8,
+                border=ft.border.all(1, self.BORDER_COLOR),
+            ),
+            ft.Divider(height=15, color="transparent"),
             self.expires_at_field,
         ]
         
@@ -181,11 +287,11 @@ class NotificationFormDialog(ft.AlertDialog):
             content=ft.Container(
                 content=ft.Column(
                     controls=form_controls,
-                    spacing=15,
-                    width=600,
+                    spacing=0,
+                    width=700,
                     scroll=ft.ScrollMode.AUTO,
                 ),
-                padding=ft.padding.all(10),
+                padding=ft.padding.all(20),
             ),
             actions=[
                 cancel_button,
@@ -310,6 +416,122 @@ class NotificationFormDialog(ft.AlertDialog):
         # Call cancel callback
         if self.on_cancel:
             self.on_cancel()
+    
+    def _get_template_options(self) -> List[ft.dropdown.Option]:
+        """Get available template options."""
+        try:
+            from admin.utils.template_loader import template_loader
+            templates = template_loader.get_available_templates()
+            
+            options = [ft.dropdown.Option(key="", text="None (Manual Entry)")]
+            options.extend([
+                ft.dropdown.Option(key=template, text=template)
+                for template in templates
+            ])
+            return options
+        except Exception as e:
+            logger = __import__('logging').getLogger(__name__)
+            logger.error(f"Error loading templates: {e}", exc_info=True)
+            return [ft.dropdown.Option(key="", text="None (Manual Entry)")]
+    
+    def _on_template_changed(self, e: ft.ControlEvent):
+        """Handle template selection change."""
+        # Enable/disable load button based on selection
+        self.load_template_button.disabled = not bool(self.template_dropdown.value)
+        if hasattr(self, 'page') and self.page:
+            self.page.update()
+    
+    def _on_load_template_click(self, e: ft.ControlEvent):
+        """Handle load template button click."""
+        template_filename = self.template_dropdown.value
+        if not template_filename:
+            self._show_error("Please select a template")
+            return
+        
+        try:
+            from admin.utils.template_loader import template_loader
+            template_content = template_loader.load_template(template_filename)
+            
+            # Populate content field with template
+            self.content_field.value = template_content
+            
+            # Show success message
+            if self.page:
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text(f"Template '{template_filename}' loaded successfully. You can edit it below."),
+                    bgcolor="#4caf50",
+                )
+                self.page.snack_bar.open = True
+                self.page.update()
+        
+        except FileNotFoundError:
+            self._show_error(f"Template file '{template_filename}' not found")
+        except Exception as ex:
+            logger = __import__('logging').getLogger(__name__)
+            logger.error(f"Error loading template: {ex}", exc_info=True)
+            self._show_error(f"Failed to load template: {str(ex)}")
+    
+    def _on_browse_file_click(self, e: ft.ControlEvent):
+        """Handle browse file button click."""
+        if not self.page:
+            return
+        
+        # Ensure file picker is in overlay
+        if not hasattr(self.page, 'overlay') or self.page.overlay is None:
+            self.page.overlay = []
+        
+        if self.file_picker not in self.page.overlay:
+            self.page.overlay.append(self.file_picker)
+        
+        # Set page reference
+        self.file_picker.page = self.page
+        self.page.update()
+        
+        # Open file picker dialog
+        try:
+            self.file_picker.pick_files(
+                dialog_title="Select HTML or Markdown file",
+                allowed_extensions=["html", "htm", "md", "markdown"],
+                file_type=ft.FilePickerFileType.CUSTOM,
+            )
+        except Exception as ex:
+            logger = __import__('logging').getLogger(__name__)
+            logger.error(f"Error opening file picker: {ex}", exc_info=True)
+            self._show_error(f"Failed to open file picker: {str(ex)}")
+    
+    def _on_file_picked(self, e: ft.FilePickerResultEvent):
+        """Handle file picker result."""
+        if not e.files or len(e.files) == 0:
+            return
+        
+        try:
+            file_path = e.files[0].path
+            if not file_path:
+                return
+            
+            # Read file content
+            with open(file_path, "r", encoding="utf-8") as f:
+                file_content = f.read()
+            
+            # Populate content field with file content
+            self.content_field.value = file_content
+            
+            # Show success message
+            if self.page:
+                import os
+                filename = os.path.basename(file_path)
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text(f"File '{filename}' loaded successfully. You can edit it below."),
+                    bgcolor="#4caf50",
+                )
+                self.page.snack_bar.open = True
+                self.page.update()
+        
+        except Exception as ex:
+            logger = __import__('logging').getLogger(__name__)
+            logger.error(f"Error loading file: {ex}", exc_info=True)
+            if self.page:
+                self._show_error(f"Failed to load file: {str(ex)}")
     
     def _show_error(self, message: str):
         """Show error message."""

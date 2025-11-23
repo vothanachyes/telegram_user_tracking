@@ -3,13 +3,20 @@ Groups page for managing Telegram groups.
 """
 
 import flet as ft
+import asyncio
+import logging
 from typing import Optional
 from database.db_manager import DatabaseManager
+from database.async_query_executor import async_query_executor
+from services.page_cache_service import page_cache_service
 from services.telegram import TelegramService
 from ui.theme import theme_manager
+from ui.components.skeleton_loaders.groups_skeleton import GroupsSkeleton
 from ui.pages.groups.view_model import GroupsViewModel
 from ui.pages.groups.components import GroupsComponents
 from ui.pages.groups.handlers import GroupsHandlers
+
+logger = logging.getLogger(__name__)
 
 
 class GroupsPage(ft.Container):
@@ -23,10 +30,10 @@ class GroupsPage(ft.Container):
         self.db_manager = db_manager
         self.telegram_service = telegram_service
         self.page: Optional[ft.Page] = None
+        self.is_loading = True
         
-        # Initialize view model
+        # Initialize view model (don't load groups yet)
         self.view_model = GroupsViewModel(db_manager)
-        self.view_model.load_groups()
         
         # Initialize components
         self.components = GroupsComponents(
@@ -43,7 +50,7 @@ class GroupsPage(ft.Container):
         # Pass reference to this page for refresh callback
         self.handlers.groups_page = self
         
-        # Build UI
+        # Build UI with skeleton loader
         super().__init__(
             content=self._build_content(),
             padding=theme_manager.padding_lg,
@@ -51,14 +58,60 @@ class GroupsPage(ft.Container):
         )
     
     def set_page(self, page: ft.Page):
-        """Set page reference."""
+        """Set page reference and load data asynchronously."""
         self.page = page
         self.handlers.set_page(page)
+        
+        # Load groups asynchronously
+        if page and hasattr(page, 'run_task'):
+            page.run_task(self._load_groups_async)
+        else:
+            asyncio.create_task(self._load_groups_async())
+    
+    async def _load_groups_async(self):
+        """Load groups asynchronously."""
+        try:
+            self.is_loading = True
+            
+            # Check cache first
+            cache_key = page_cache_service.generate_key("groups")
+            groups = page_cache_service.get(cache_key)
+            
+            if not groups:
+                # Load from database
+                groups = await async_query_executor.execute(self.db_manager.get_all_groups)
+                # Cache groups for 10 minutes (they don't change often)
+                if page_cache_service.is_enabled():
+                    page_cache_service.set(cache_key, groups, ttl=600)
+            
+            # Update view model
+            self.view_model.groups = groups
+            
+            # Update UI
+            new_groups_list = self.components.build_group_list(groups)
+            self.groups_list_container.content = new_groups_list
+            
+            self.is_loading = False
+            
+            if self.page:
+                self.page.update()
+                
+        except Exception as e:
+            logger.error(f"Error loading groups: {e}", exc_info=True)
+            self.is_loading = False
+            if self.page:
+                self.page.update()
     
     def _build_content(self) -> ft.Column:
         """Build page content."""
+        # Show skeleton loader initially
+        skeleton = GroupsSkeleton.create()
+        
         # Store reference to groups list container for updates
-        self.groups_list_container = self.components.build_group_list(self.view_model.get_all_groups())
+        self.groups_list_container = ft.Container(
+            content=skeleton,
+            expand=True
+        )
         
         return ft.Column([
             # Header
@@ -86,32 +139,21 @@ class GroupsPage(ft.Container):
             
             ft.Container(height=20),
             
-            # Groups list
+            # Groups list - wrapped in container to ensure it expands
             self.groups_list_container
             
         ], spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
     
     def refresh_groups_list(self):
         """Refresh the groups list UI."""
-        # Reload groups from database
-        self.view_model.load_groups()
+        # Invalidate cache
+        page_cache_service.invalidate("page:groups")
         
-        # Rebuild the groups list
-        new_groups_list = self.components.build_group_list(self.view_model.get_all_groups())
-        
-        # Find and replace the groups list in the content
-        if hasattr(self, 'content') and isinstance(self.content, ft.Column):
-            # Find the groups list container in the content
-            for i, control in enumerate(self.content.controls):
-                if control == self.groups_list_container:
-                    # Replace with new list
-                    self.content.controls[i] = new_groups_list
-                    self.groups_list_container = new_groups_list
-                    break
-        
-        # Update the page
-        if self.page:
-            self.page.update()
+        # Reload groups asynchronously
+        if self.page and hasattr(self.page, 'run_task'):
+            self.page.run_task(self._load_groups_async)
+        else:
+            asyncio.create_task(self._load_groups_async())
     
     def _on_group_click(self, group):
         """Handle group click."""

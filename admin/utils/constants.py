@@ -9,6 +9,8 @@ FIRESTORE_APP_UPDATES_COLLECTION = "app_updates"
 FIRESTORE_APP_UPDATES_DOCUMENT = "latest"
 FIRESTORE_NOTIFICATIONS_COLLECTION = "notifications"
 FIRESTORE_USER_NOTIFICATIONS_COLLECTION = "user_notifications"
+FIRESTORE_SCHEDULED_DELETIONS_COLLECTION = "scheduled_deletions"
+FIRESTORE_USER_ACTIVITIES_COLLECTION = "user_activities"
 
 # Admin Session
 ADMIN_SESSION_TIMEOUT_MINUTES = 60  # 1 hour
@@ -21,9 +23,11 @@ PAGE_LICENSES = "licenses"
 PAGE_LICENSE_TIERS = "license_tiers"
 PAGE_APP_UPDATES = "app_updates"
 PAGE_DEVICES = "devices"
+PAGE_USER_ACTIVITIES = "user_activities"
 PAGE_ACTIVITY_LOGS = "activity_logs"
 PAGE_BULK_OPERATIONS = "bulk_operations"
 PAGE_NOTIFICATIONS = "notifications"
+PAGE_SUPPORT_TOOLS = "support_tools"
 
 # License Tiers (from main app constants)
 LICENSE_TIER_BRONZE = "bronze"

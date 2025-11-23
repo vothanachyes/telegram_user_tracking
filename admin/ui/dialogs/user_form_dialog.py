@@ -3,7 +3,8 @@ User form dialog for creating and editing users.
 """
 
 import flet as ft
-from typing import Optional, Callable, Dict
+from typing import Optional, Callable, Dict, List
+from admin.utils.constants import LICENSE_TIERS  # Fallback
 
 
 class UserFormDialog(ft.AlertDialog):
@@ -28,7 +29,7 @@ class UserFormDialog(ft.AlertDialog):
         
         Args:
             user_data: Existing user data for editing (None for create)
-            on_submit: Callback with (email, password, display_name, disabled)
+            on_submit: Callback with (email, password, display_name, disabled, license_tier)
             on_cancel: Optional callback when cancelled
         """
         self.is_edit = user_data is not None
@@ -70,11 +71,24 @@ class UserFormDialog(ft.AlertDialog):
             value=False,
         )
         
+        # License tier dropdown
+        self.license_tier_dropdown = ft.Dropdown(
+            label="License Tier",
+            hint_text="Select license tier (optional)",
+            options=self._get_tier_options(),
+            bgcolor=self.CARD_BG,
+            color=self.TEXT_COLOR,
+            border_color=self.BORDER_COLOR,
+        )
+        
         # Set initial values if editing
         if self.is_edit:
             self.email_field.value = user_data.get("email", "")
             self.display_name_field.value = user_data.get("display_name", "")
             self.disabled_switch.value = user_data.get("disabled", False)
+            # Set license tier if available (default to "none" if not set)
+            license_tier = user_data.get("license_tier", "none")
+            self.license_tier_dropdown.value = license_tier if license_tier else "none"
         
         # Buttons
         cancel_button = ft.TextButton(
@@ -94,6 +108,7 @@ class UserFormDialog(ft.AlertDialog):
             self.email_field,
             self.password_field,
             self.display_name_field,
+            self.license_tier_dropdown,
             self.disabled_switch,
         ]
         
@@ -145,6 +160,7 @@ class UserFormDialog(ft.AlertDialog):
         
         display_name = self.display_name_field.value.strip() or None
         disabled = self.disabled_switch.value
+        license_tier = self.license_tier_dropdown.value or None
         
         # Close dialog
         if self.page:
@@ -157,6 +173,7 @@ class UserFormDialog(ft.AlertDialog):
                 password=password,
                 display_name=display_name,
                 disabled=disabled,
+                license_tier=license_tier,
             )
     
     def _on_cancel_click(self, e: ft.ControlEvent):
@@ -178,4 +195,28 @@ class UserFormDialog(ft.AlertDialog):
             )
             self.page.snack_bar.open = True
             self.page.update()
+    
+    def _get_tier_options(self) -> List[ft.dropdown.Option]:
+        """Get tier options from Firestore or fallback to constants."""
+        try:
+            from admin.services.admin_license_tier_service import admin_license_tier_service
+            tiers = admin_license_tier_service.get_all_tiers()
+            if tiers:
+                # Add "None" option first
+                options = [ft.dropdown.Option(key="none", text="None")]
+                options.extend([
+                    ft.dropdown.Option(
+                        key=tier.get("tier_key", ""),
+                        text=tier.get("name", tier.get("tier_key", "")).capitalize()
+                    )
+                    for tier in tiers
+                ])
+                return options
+        except Exception:
+            pass
+        
+        # Fallback to constants
+        options = [ft.dropdown.Option(key="none", text="None")]
+        options.extend([ft.dropdown.Option(key=tier, text=tier.capitalize()) for tier in LICENSE_TIERS])
+        return options
 

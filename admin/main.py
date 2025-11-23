@@ -21,14 +21,15 @@ from admin.ui.pages.licenses_page import AdminLicensesPage
 from admin.ui.pages.license_tiers_page import AdminLicenseTiersPage
 from admin.ui.pages.app_updates_page import AdminAppUpdatesPage
 from admin.ui.pages.devices_page import AdminDevicesPage
+from admin.ui.pages.user_activities_page import AdminUserActivitiesPage
 from admin.ui.pages.activity_logs_page import AdminActivityLogsPage
 from admin.ui.pages.bulk_operations_page import AdminBulkOperationsPage
 from admin.ui.pages.notifications_page import AdminNotificationsPage
 from admin.ui.components.sidebar import AdminSidebar
 from admin.utils.constants import (
     PAGE_LOGIN, PAGE_DASHBOARD, PAGE_USERS, PAGE_LICENSES, PAGE_LICENSE_TIERS,
-    PAGE_APP_UPDATES, PAGE_DEVICES, PAGE_ACTIVITY_LOGS, PAGE_BULK_OPERATIONS,
-    PAGE_NOTIFICATIONS
+    PAGE_APP_UPDATES, PAGE_DEVICES, PAGE_USER_ACTIVITIES, PAGE_ACTIVITY_LOGS, 
+    PAGE_BULK_OPERATIONS, PAGE_NOTIFICATIONS, PAGE_SUPPORT_TOOLS
 )
 
 # Configure logging
@@ -131,29 +132,42 @@ class AdminApp:
     
     def _create_page_content(self, page_id: str) -> ft.Control:
         """Create page content based on page ID."""
+        page_content = None
+        
         if page_id == PAGE_DASHBOARD:
-            return AdminDashboardPage()
+            page_content = AdminDashboardPage()
         elif page_id == PAGE_USERS:
-            return AdminUsersPage(self.page)
+            page_content = AdminUsersPage(self.page)
         elif page_id == PAGE_LICENSES:
-            return AdminLicensesPage(self.page)
+            page_content = AdminLicensesPage(self.page)
         elif page_id == PAGE_LICENSE_TIERS:
-            return AdminLicenseTiersPage(self.page)
+            page_content = AdminLicenseTiersPage(self.page)
         elif page_id == PAGE_APP_UPDATES:
-            return AdminAppUpdatesPage(self.page)
+            page_content = AdminAppUpdatesPage(self.page)
         elif page_id == PAGE_DEVICES:
-            return AdminDevicesPage(self.page)
+            page_content = AdminDevicesPage(self.page)
+        elif page_id == PAGE_USER_ACTIVITIES:
+            page_content = AdminUserActivitiesPage(self.page)
         elif page_id == PAGE_ACTIVITY_LOGS:
-            return AdminActivityLogsPage(self.page)
+            page_content = AdminActivityLogsPage(self.page)
         elif page_id == PAGE_BULK_OPERATIONS:
-            return AdminBulkOperationsPage(self.page)
+            page_content = AdminBulkOperationsPage(self.page)
         elif page_id == PAGE_NOTIFICATIONS:
-            return AdminNotificationsPage(self.page)
+            page_content = AdminNotificationsPage(self.page)
+        elif page_id == PAGE_SUPPORT_TOOLS:
+            from admin.ui.pages.support_tools_page import AdminSupportToolsPage
+            page_content = AdminSupportToolsPage(self.page)
         else:
             return ft.Container(
                 content=ft.Text(f"Page not found: {page_id}"),
                 padding=20,
             )
+        
+        # Call set_page if the page has it (for async loading)
+        if page_content and hasattr(page_content, 'set_page'):
+            page_content.set_page(self.page)
+        
+        return page_content
     
     def _on_login_success(self):
         """Handle successful login."""
@@ -251,6 +265,14 @@ def main(page: ft.Page):
             )
         )
         return
+    
+    # Start scheduled deletion service
+    try:
+        from admin.services.scheduled_deletion_service import scheduled_deletion_service
+        scheduled_deletion_service.start()
+        logger.info("Scheduled deletion service started")
+    except Exception as e:
+        logger.error(f"Failed to start scheduled deletion service: {e}", exc_info=True)
     
     # Create admin app
     app = AdminApp(page)

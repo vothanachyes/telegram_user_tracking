@@ -4,6 +4,7 @@ Top header component with greeting and About navigation.
 
 import flet as ft
 import asyncio
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
@@ -11,6 +12,16 @@ from ui.theme import theme_manager
 from services.auth_service import auth_service
 from services.fetch_state_manager import fetch_state_manager
 from services.notification_service import notification_service
+from services.polling.notification_polling_service import NotificationPollingService
+
+# Import configuration flag
+try:
+    from config.settings import ENABLE_REALTIME_WATCH_SERVICES
+except ImportError:
+    # Fallback if settings not available
+    ENABLE_REALTIME_WATCH_SERVICES = False
+
+logger = logging.getLogger(__name__)
 
 
 class TopHeader(ft.Container):
@@ -18,18 +29,34 @@ class TopHeader(ft.Container):
     
     def __init__(self, on_navigate: Callable[[str], None]):
         self.on_navigate = on_navigate
+        # Header text should be white/light for visibility on dark gradient background
+        # Use white text in both modes since header has dark gradient
         self.greeting_text = ft.Text(
             self._get_greeting(),
             size=theme_manager.font_size_body,
             weight=ft.FontWeight.BOLD,
-            color=theme_manager.text_color
+            color=ft.Colors.WHITE
         )
         
         # Avatar icon (can be replaced with image later)
-        self.avatar = ft.CircleAvatar(
-            content=ft.Icon(ft.Icons.PERSON, size=theme_manager.font_size_body, color=theme_manager.text_color),
-            radius=16,
-            bgcolor=ft.Colors.TRANSPARENT
+        # Improved visibility with background and border
+        avatar_bg_color = ft.Colors.with_opacity(0.2, ft.Colors.WHITE) if theme_manager.is_dark else ft.Colors.with_opacity(0.1, ft.Colors.BLACK)
+        avatar_border_color = ft.Colors.WHITE if theme_manager.is_dark else ft.Colors.with_opacity(0.3, ft.Colors.BLACK)
+        self.avatar = ft.Container(
+            content=ft.CircleAvatar(
+                content=ft.Icon(
+                    ft.Icons.PERSON, 
+                    size=20, 
+                    color=ft.Colors.WHITE
+                ),
+                radius=18,
+                bgcolor=avatar_bg_color
+            ),
+            border=ft.border.all(2, avatar_border_color),
+            border_radius=20,
+            on_click=lambda e: self.on_navigate("profile"),
+            tooltip=theme_manager.t("profile") or "Profile",
+            padding=2
         )
         
         # Fetch indicator (shows when fetching)
@@ -48,7 +75,7 @@ class TopHeader(ft.Container):
                 ft.Text(
                     "",
                     size=12,
-                    color=theme_manager.text_color,
+                    color=ft.Colors.WHITE,
                     weight=ft.FontWeight.BOLD
                 )
             ], spacing=5, tight=True),
@@ -76,13 +103,23 @@ class TopHeader(ft.Container):
             alignment=ft.alignment.center,
             visible=False,
         )
+        # Telegram Bot icon (future feature)
+        self.telegram_bot_button = ft.IconButton(
+            icon=ft.Icons.SMART_TOY,
+            tooltip="Telegram Bot (Future)",
+            icon_color=ft.Colors.WHITE
+        )
+        
+        # Initialize notification polling service
+        self._notification_polling_service: Optional[NotificationPollingService] = None
+        
         self.notification_button = ft.Stack(
             controls=[
                 ft.IconButton(
                     icon=ft.Icons.NOTIFICATIONS,
                     tooltip=theme_manager.t("notifications") or "Notifications",
                     on_click=lambda e: self.on_navigate("notifications"),
-                    icon_color=theme_manager.text_color
+                    icon_color=ft.Colors.WHITE
                 ),
                 ft.Container(
                     content=self.notification_badge,
@@ -97,7 +134,7 @@ class TopHeader(ft.Container):
             icon=ft.Icons.INFO_OUTLINE,
             tooltip=theme_manager.t("about"),
             on_click=lambda e: self.on_navigate("about"),
-            icon_color=theme_manager.text_color
+            icon_color=ft.Colors.WHITE
         )
         
         # Check for background image
@@ -119,6 +156,7 @@ class TopHeader(ft.Container):
             ),
             ft.Container(expand=True),  # Spacer
             self.fetch_indicator,
+            self.telegram_bot_button,
             self.notification_button,
             self.about_button
         ], 
@@ -128,7 +166,8 @@ class TopHeader(ft.Container):
         # Create stack for gradient + image + content
         stack_children = []
         
-        # Gradient background
+        # Gradient background - use primary colors for both themes
+        # Text is now white, so dark gradient works in both modes
         gradient_container = ft.Container(
             expand=True,
             gradient=ft.LinearGradient(
@@ -156,8 +195,11 @@ class TopHeader(ft.Container):
         )
         stack_children.append(content_layer)
         
+        # Set background color as fallback to ensure visibility
+        # Use primary color as fallback in case gradient doesn't render
         super().__init__(
             content=ft.Stack(stack_children),
+            bgcolor=theme_manager.primary_color,  # Fallback background color
             border=ft.border.only(bottom=ft.BorderSide(1, theme_manager.border_color)),
             height=45
         )
@@ -255,25 +297,106 @@ class TopHeader(ft.Container):
         finally:
             self._fetch_updates_running = False
     
-    async def start_notification_badge_updates(self):
-        """Start periodic updates for notification badge (async coroutine for page.run_task)."""
-        # Check if already running using a flag
-        if hasattr(self, '_notification_updates_running') and self._notification_updates_running:
-            return  # Already running
-        
-        self._notification_updates_running = True
-        
+    async def setup_realtime_notifications(self):
+        """Setup real-time notification listener with fallback to polling."""
         try:
-            # Periodically update notification badge (every 30-60 seconds)
-            while True:
+            current_user = auth_service.get_current_user()
+            if not current_user:
+                logger.debug("No current user for real-time notifications")
+                return
+            
+            user_id = current_user.get("uid")
+            if not user_id:
+                logger.debug("No user ID for real-time notifications")
+                return
+            
+            # Try to start real-time listener
+            from services.notification_service import notification_service
+            
+            def on_unread_count_changed(count: int):
+                """Callback when unread count changes."""
                 try:
-                    await asyncio.sleep(30)  # Update every 30 seconds
+                    if count > 0:
+                        self.notification_badge_text.value = str(count) if count <= 99 else "99+"
+                        self.notification_badge.visible = True
+                    else:
+                        self.notification_badge.visible = False
+                    
                     if hasattr(self, 'page') and self.page:
-                        self.update_notification_badge()
-                except asyncio.CancelledError:
-                    break
-                except Exception:
-                    pass
-        finally:
-            self._notification_updates_running = False
+                        try:
+                            self.page.update()
+                        except Exception:
+                            pass
+                except Exception as e:
+                    logger.error(f"Error updating badge from real-time: {e}")
+            
+            # Start real-time listener
+            success = await notification_service.start_realtime_listener(
+                user_id=user_id,
+                on_unread_count_changed=on_unread_count_changed
+            )
+            
+            if success:
+                logger.info("Real-time notification listener started")
+                # Initial update
+                self.update_notification_badge()
+            else:
+                # Only log as warning if watch services are enabled (unexpected failure)
+                # If disabled, this is expected behavior
+                if ENABLE_REALTIME_WATCH_SERVICES:
+                    logger.warning("Failed to start real-time listener, falling back to polling")
+                else:
+                    logger.debug("Real-time listener not started (watch services disabled - using polling)")
+                # Fallback to polling
+                await self.start_notification_badge_updates()
+        
+        except Exception as e:
+            logger.error(f"Error setting up real-time notifications: {e}", exc_info=True)
+            # Fallback to polling
+            await self.start_notification_badge_updates()
+    
+    async def start_notification_badge_updates(self):
+        """Start periodic updates for notification badge using generic polling service."""
+        # Stop existing polling service if running
+        if self._notification_polling_service and self._notification_polling_service.is_running:
+            await self._notification_polling_service.stop()
+        
+        # Create callback for unread count changes
+        def on_unread_count_changed(count: int):
+            """Callback when unread count changes."""
+            try:
+                if count > 0:
+                    self.notification_badge_text.value = str(count) if count <= 99 else "99+"
+                    self.notification_badge.visible = True
+                else:
+                    self.notification_badge.visible = False
+                
+                if hasattr(self, 'page') and self.page:
+                    try:
+                        self.page.update()
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.error(f"Error updating badge from polling: {e}")
+        
+        # Create and start polling service
+        self._notification_polling_service = NotificationPollingService(
+            on_unread_count_changed=on_unread_count_changed
+        )
+        
+        # Set condition check: only poll if user is logged in
+        def should_poll() -> bool:
+            return auth_service.is_logged_in()
+        
+        self._notification_polling_service.set_condition_check(should_poll)
+        
+        # Start the service
+        await self._notification_polling_service.start()
+        logger.debug("Notification polling service started")
+    
+    async def stop_notification_polling(self):
+        """Stop notification polling service."""
+        if self._notification_polling_service and self._notification_polling_service.is_running:
+            await self._notification_polling_service.stop()
+            logger.debug("Notification polling service stopped")
 

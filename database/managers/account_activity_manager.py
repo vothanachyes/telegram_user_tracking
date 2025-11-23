@@ -93,6 +93,7 @@ class AccountActivityManager(BaseDatabaseManager):
     def can_perform_account_action(self, user_email: str, max_actions: int = 2) -> bool:
         """
         Check if user can perform account action (add/delete).
+        Also checks if user is blocked in Firebase.
         
         Args:
             user_email: Email of the user
@@ -101,6 +102,23 @@ class AccountActivityManager(BaseDatabaseManager):
         Returns:
             True if user can perform action, False otherwise
         """
+        # Check if user is blocked in Firebase
+        try:
+            from services.auth_service import auth_service
+            from services.user_activities_service import user_activities_service
+            
+            current_user = auth_service.get_current_user()
+            if current_user:
+                uid = current_user.get("uid")
+                if uid:
+                    is_blocked = user_activities_service.check_if_blocked(uid)
+                    if is_blocked:
+                        logger.warning(f"User {user_email} is blocked, cannot perform account action")
+                        return False
+        except Exception as e:
+            logger.error(f"Error checking block status: {e}", exc_info=True)
+            # Continue with other checks if block check fails
+        
         count = self.get_recent_activity_count(user_email, hours=48)
         can_perform = count < max_actions
         logger.debug(f"User {user_email} can perform action: {can_perform} (count: {count}/{max_actions})")

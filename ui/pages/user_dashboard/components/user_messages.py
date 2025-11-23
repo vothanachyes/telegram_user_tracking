@@ -6,7 +6,7 @@ import flet as ft
 from typing import Optional, Callable, List
 from datetime import datetime
 from ui.theme import theme_manager
-from ui.components import DataTable
+from ui.components import DataTable, DateRangeSelector
 from utils.helpers import format_datetime
 
 
@@ -20,25 +20,12 @@ class UserMessagesComponent:
     ):
         self.on_message_click = on_message_click
         self.on_refresh = on_refresh
+        self.page: Optional[ft.Page] = None
         
-        # Date filters (default: current month)
-        today = datetime.now()
-        first_day = today.replace(day=1)
-        
-        self.start_date_field = ft.TextField(
-            label=theme_manager.t("start_date"),
-            value=first_day.strftime("%Y-%m-%d"),
-            width=140,
-            border_radius=theme_manager.corner_radius,
-            on_change=self._on_date_change
-        )
-        
-        self.end_date_field = ft.TextField(
-            label=theme_manager.t("end_date"),
-            value=today.strftime("%Y-%m-%d"),
-            width=140,
-            border_radius=theme_manager.corner_radius,
-            on_change=self._on_date_change
+        # Date range selector (using generic component)
+        self.date_range_selector = DateRangeSelector(
+            on_date_range_changed=self._on_date_range_changed,
+            default_range="month"
         )
         
         # Group selector
@@ -79,8 +66,7 @@ class UserMessagesComponent:
             content=ft.Column([
                 # Filters row
                 ft.Row([
-                    self.start_date_field,
-                    self.end_date_field,
+                    self.date_range_selector.build(),
                     ft.Container(width=20),
                     self.group_dropdown,
                     refresh_btn,
@@ -127,22 +113,18 @@ class UserMessagesComponent:
         self.messages_table.refresh([], [])
     
     def get_start_date(self) -> Optional[datetime]:
-        """Get start date from field."""
-        try:
-            if self.start_date_field.value:
-                return datetime.strptime(self.start_date_field.value, "%Y-%m-%d")
-        except:
-            pass
-        return None
+        """Get start date."""
+        return self.date_range_selector.get_start_date()
     
     def get_end_date(self) -> Optional[datetime]:
-        """Get end date from field."""
-        try:
-            if self.end_date_field.value:
-                return datetime.strptime(self.end_date_field.value, "%Y-%m-%d")
-        except:
-            pass
-        return None
+        """Get end date."""
+        return self.date_range_selector.get_end_date()
+    
+    def set_page(self, page: ft.Page):
+        """Set page reference for date pickers."""
+        self.page = page
+        if self.date_range_selector:
+            self.date_range_selector.set_page(page)
     
     def get_selected_group(self) -> Optional[int]:
         """Get selected group ID."""
@@ -162,8 +144,8 @@ class UserMessagesComponent:
             searchable=False
         )
     
-    def _on_date_change(self, e):
-        """Handle date field change."""
+    def _on_date_range_changed(self, start_date: datetime, end_date: datetime):
+        """Handle date range change."""
         if self.on_refresh:
             self.on_refresh()
     

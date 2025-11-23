@@ -187,7 +187,7 @@ def _show_custom_update_toast(
                 color=ft.Colors.BLACK26,
                 offset=ft.Offset(0, 4),
             ),
-            animate_opacity=ft.animation.Animation(300, ft.AnimationCurve.EASE_OUT),
+            animate_opacity=ft.Animation(300, ft.AnimationCurve.EASE_OUT),
             opacity=0,
             data=id(toast_content),
         )

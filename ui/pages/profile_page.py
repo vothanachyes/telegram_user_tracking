@@ -11,7 +11,6 @@ from services.auth_service import auth_service
 from services.license_service import LicenseService
 from database.db_manager import DatabaseManager
 from config.settings import settings
-from utils.constants import LICENSE_PRICING
 from config.app_config import app_config
 
 logger = logging.getLogger(__name__)
@@ -103,49 +102,6 @@ class ProfilePage:
                 # License status card
                 self._build_license_status_card(),
                 
-                theme_manager.spacing_container("lg"),
-                
-                # App info card
-                theme_manager.create_card(
-                    content=ft.Column([
-                        ft.Text(
-                            theme_manager.t("developer_info"),
-                            size=theme_manager.font_size_section_title,
-                            weight=ft.FontWeight.BOLD
-                        ),
-                        ft.Divider(),
-                        ft.Row([
-                            ft.Icon(ft.Icons.INFO, color=theme_manager.primary_color),
-                            ft.Column([
-                                ft.Text(theme_manager.t("version"), size=theme_manager.font_size_small, color=theme_manager.text_secondary_color),
-                                ft.Text(settings.app_version, size=theme_manager.font_size_body),
-                            ], spacing=theme_manager.spacing_xs)
-                        ], spacing=theme_manager.spacing_sm),
-                        ft.Row([
-                            ft.Icon(ft.Icons.PERSON, color=theme_manager.primary_color),
-                            ft.Column([
-                                ft.Text("Developer", size=theme_manager.font_size_small, color=theme_manager.text_secondary_color),
-                                ft.Text(settings.developer_name, size=theme_manager.font_size_body),
-                            ], spacing=theme_manager.spacing_xs)
-                        ], spacing=theme_manager.spacing_sm),
-                        ft.Row([
-                            ft.Icon(ft.Icons.EMAIL, color=theme_manager.primary_color),
-                            ft.Column([
-                                ft.Text(theme_manager.t("email"), size=theme_manager.font_size_small, color=theme_manager.text_secondary_color),
-                                ft.Text(settings.developer_email, size=theme_manager.font_size_body),
-                            ], spacing=theme_manager.spacing_xs)
-                        ], spacing=theme_manager.spacing_sm),
-                        ft.Row([
-                            ft.Icon(ft.Icons.PHONE, color=theme_manager.primary_color),
-                            ft.Column([
-                                ft.Text(theme_manager.t("contact"), size=theme_manager.font_size_small, color=theme_manager.text_secondary_color),
-                                ft.Text(settings.developer_contact, size=theme_manager.font_size_body),
-                            ], spacing=theme_manager.spacing_xs)
-                        ], spacing=theme_manager.spacing_sm),
-                    ], spacing=theme_manager.spacing_md),
-                    width=500
-                ),
-                
             ], scroll=ft.ScrollMode.AUTO, spacing=theme_manager.spacing_sm, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
             padding=theme_manager.padding_lg,
             expand=True
@@ -212,14 +168,15 @@ class ProfilePage:
         current_groups = license_info['current_groups']
         max_groups = license_info['max_groups']
         
-        # Tier color
+        # Tier color - dynamic mapping based on tier key
         tier_colors = {
             'bronze': ft.Colors.BROWN,
             'silver': ft.Colors.GREY,
             'gold': ft.Colors.AMBER,
-            'premium': ft.Colors.PURPLE
+            'premium': ft.Colors.PURPLE,
+            'custom': ft.Colors.BLUE_GREY
         }
-        tier_color = tier_colors.get(tier, ft.Colors.GREY)
+        tier_color = tier_colors.get(tier.lower(), ft.Colors.GREY)
         
         # Status badge
         if expired:

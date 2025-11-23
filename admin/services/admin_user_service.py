@@ -4,7 +4,9 @@ Admin user management service.
 
 import logging
 from typing import List, Optional, Dict
+from datetime import datetime, timedelta
 from admin.config.admin_config import admin_config
+from admin.utils.constants import FIRESTORE_SCHEDULED_DELETIONS_COLLECTION
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,19 @@ class AdminUserService:
                 except Exception:
                     user_dict["license_tier"] = "none"
                     user_dict["license_expires"] = None
+                
+                # Get scheduled deletion info
+                try:
+                    scheduled_deletion = self.get_scheduled_deletion(user.uid)
+                    if scheduled_deletion:
+                        user_dict["scheduled_deletion_date"] = scheduled_deletion.get("deletion_date")
+                        user_dict["scheduled_deletion"] = scheduled_deletion
+                    else:
+                        user_dict["scheduled_deletion_date"] = None
+                        user_dict["scheduled_deletion"] = None
+                except Exception:
+                    user_dict["scheduled_deletion_date"] = None
+                    user_dict["scheduled_deletion"] = None
                 
                 users.append(user_dict)
             
@@ -189,6 +204,168 @@ class AdminUserService:
             return admin_license_service.get_user_devices(uid)
         except Exception:
             return []
+    
+    def schedule_user_deletion(self, uid: str, scheduled_by: Optional[str] = None) -> Optional[datetime]:
+        """
+        Schedule user deletion in 24 hours.
+        
+        Args:
+            uid: User UID
+            scheduled_by: Admin UID who scheduled the deletion
+        
+        Returns:
+            Scheduled deletion datetime if successful, None otherwise
+        """
+        if not self._ensure_initialized():
+            return None
+        
+        try:
+            from admin.services.admin_auth_service import admin_auth_service
+            
+            # Calculate deletion date (24 hours from now)
+            deletion_date = datetime.utcnow() + timedelta(hours=24)
+            
+            # Get current admin if not provided
+            if not scheduled_by:
+                current_admin = admin_auth_service.get_current_admin()
+                scheduled_by = current_admin.get("uid") if current_admin else None
+            
+            # Store scheduled deletion in Firestore
+            deletion_data = {
+                "uid": uid,
+                "deletion_date": deletion_date,
+                "scheduled_at": datetime.utcnow(),
+                "scheduled_by": scheduled_by,
+                "status": "scheduled",
+            }
+            
+            doc_ref = self._db.collection(FIRESTORE_SCHEDULED_DELETIONS_COLLECTION).document(uid)
+            doc_ref.set(deletion_data)
+            
+            logger.info(f"User deletion scheduled: {uid} for {deletion_date}")
+            return deletion_date
+        
+        except Exception as e:
+            logger.error(f"Error scheduling user deletion: {e}", exc_info=True)
+            return None
+    
+    def get_scheduled_deletion(self, uid: str) -> Optional[dict]:
+        """
+        Get scheduled deletion information for a user.
+        
+        Args:
+            uid: User UID
+        
+        Returns:
+            Scheduled deletion data dict or None
+        """
+        if not self._ensure_initialized():
+            return None
+        
+        try:
+            doc_ref = self._db.collection(FIRESTORE_SCHEDULED_DELETIONS_COLLECTION).document(uid)
+            doc = doc_ref.get()
+            
+            if doc.exists:
+                data = doc.to_dict()
+                return data
+            return None
+        
+        except Exception as e:
+            logger.error(f"Error getting scheduled deletion: {e}", exc_info=True)
+            return None
+    
+    def cancel_scheduled_deletion(self, uid: str) -> bool:
+        """
+        Cancel a scheduled user deletion.
+        
+        Args:
+            uid: User UID
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self._ensure_initialized():
+            return False
+        
+        try:
+            doc_ref = self._db.collection(FIRESTORE_SCHEDULED_DELETIONS_COLLECTION).document(uid)
+            doc_ref.delete()
+            
+            logger.info(f"Scheduled deletion cancelled for user: {uid}")
+            return True
+        
+        except Exception as e:
+            logger.error(f"Error cancelling scheduled deletion: {e}", exc_info=True)
+            return False
+    
+    def execute_scheduled_deletions(self) -> int:
+        """
+        Check and execute scheduled deletions that are due.
+        This should be called periodically by a background service.
+        
+        Returns:
+            Number of users deleted
+        """
+        if not self._ensure_initialized():
+            return 0
+        
+        try:
+            now = datetime.utcnow()
+            deleted_count = 0
+            
+            # Get all scheduled deletions
+            docs = self._db.collection(FIRESTORE_SCHEDULED_DELETIONS_COLLECTION).where("status", "==", "scheduled").stream()
+            
+            for doc in docs:
+                data = doc.to_dict()
+                deletion_date = data.get("deletion_date")
+                uid = data.get("uid")
+                
+                if not deletion_date or not uid:
+                    continue
+                
+                # Convert Firestore timestamp to datetime if needed
+                if hasattr(deletion_date, "timestamp"):
+                    deletion_date = deletion_date.replace(tzinfo=None)
+                elif isinstance(deletion_date, str):
+                    try:
+                        deletion_date = datetime.fromisoformat(deletion_date.replace("Z", "+00:00")).replace(tzinfo=None)
+                    except Exception:
+                        logger.warning(f"Invalid deletion_date format for {uid}: {deletion_date}")
+                        continue
+                
+                # Check if deletion is due
+                if deletion_date <= now:
+                    try:
+                        # Disable user first
+                        self.update_user(uid, disabled=True)
+                        
+                        # Delete user
+                        if self.delete_user(uid):
+                            # Update deletion status
+                            doc.reference.update({"status": "completed", "executed_at": datetime.utcnow()})
+                            deleted_count += 1
+                            logger.info(f"Executed scheduled deletion for user: {uid}")
+                        else:
+                            logger.error(f"Failed to delete user {uid} during scheduled deletion")
+                            doc.reference.update({"status": "failed", "error": "Delete operation failed"})
+                    
+                    except Exception as e:
+                        logger.error(f"Error executing scheduled deletion for {uid}: {e}", exc_info=True)
+                        try:
+                            doc.reference.update({"status": "failed", "error": str(e)})
+                        except Exception:
+                            pass
+            
+            if deleted_count > 0:
+                logger.info(f"Executed {deleted_count} scheduled user deletions")
+            
+            return deleted_count
+        
+        except Exception as e:
+            logger.error(f"Error executing scheduled deletions: {e}", exc_info=True)
+            return 0
 
 
 # Global admin user service instance

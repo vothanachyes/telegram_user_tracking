@@ -36,6 +36,9 @@ class AppSettings:
     encryption_enabled: bool = False  # Database encryption enabled
     encryption_key_hash: Optional[str] = None  # Hash of encryption key (encrypted with DPAPI)
     session_encryption_enabled: bool = False  # Session file encryption disabled (reverted - using Telethon's built-in encryption)
+    page_cache_enabled: bool = True  # Page caching enabled
+    page_cache_ttl_seconds: int = 300  # Page cache TTL in seconds (default: 5 minutes)
+    auto_download_update: bool = False  # Auto-download available updates (default: disabled)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

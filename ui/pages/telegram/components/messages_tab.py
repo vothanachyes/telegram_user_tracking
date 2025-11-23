@@ -37,6 +37,7 @@ class MessagesTabComponent:
             on_date_change=self._on_date_change,
             on_message_type_change=self._on_message_type_change,
             show_dates=True,
+            show_group=False,  # Group dropdown is in tab bar
             default_group_id=default_group_id
         )
         
@@ -83,14 +84,18 @@ class MessagesTabComponent:
         
         container = ft.Container(
             content=ft.Column([
+                # Refresh and export row (above filters)
+                ft.Row([
+                    ft.Container(expand=True),  # Spacer
+                    self.refresh_btn,
+                    self.export_menu,
+                ], spacing=10, wrap=False, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 # Filters row
                 ft.Row([
                     clear_filter_btn if clear_filter_btn else ft.Container(),
                     search_container,
                     self.filters_bar.build(),
-                    self.refresh_btn,
-                    self.export_menu,
-                ], spacing=10, wrap=False),
+                ], spacing=10, wrap=False, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 
                 # Table
                 ft.Container(

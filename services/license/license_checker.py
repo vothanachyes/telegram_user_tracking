@@ -7,9 +7,7 @@ from typing import Optional, Dict, Any, TYPE_CHECKING
 from datetime import datetime
 
 from database.db_manager import DatabaseManager
-from utils.constants import (
-    LICENSE_PRICING, DEFAULT_LICENSE_TIER
-)
+from utils.constants import DEFAULT_LICENSE_TIER
 
 if TYPE_CHECKING:
     from services.auth_service import AuthService
@@ -65,7 +63,13 @@ class LicenseChecker:
             current_user = auth_service.get_current_user()
             if not current_user:
                 # Return default values with max_devices and max_groups
-                default_tier_info = LICENSE_PRICING.get(DEFAULT_LICENSE_TIER, {})
+                # Try to get tier info from Firestore, fallback to defaults
+                try:
+                    from services.license.license_tier_service import license_tier_service
+                    default_tier_info = license_tier_service.get_tier(DEFAULT_LICENSE_TIER) or {}
+                except Exception:
+                    default_tier_info = {}
+                
                 return {
                     'is_active': False,
                     'tier': DEFAULT_LICENSE_TIER,
@@ -73,7 +77,7 @@ class LicenseChecker:
                     'expiration_date': None,
                     'days_until_expiration': None,
                     'max_devices': default_tier_info.get('max_devices', 1),
-                    'max_groups': default_tier_info.get('max_groups', 3),
+                    'max_groups': default_tier_info.get('max_groups', 1),
                     'max_accounts': default_tier_info.get('max_accounts', 1),
                     'max_account_actions': 2
                 }
@@ -91,16 +95,31 @@ class LicenseChecker:
         # This is handled by LicenseService or LimitEnforcer
         
         if not cache:
+            # No cache found - this could mean:
+            # 1. License hasn't been synced yet (should be handled by LicenseService.sync_from_firebase)
+            # 2. User doesn't have a license in Firebase
+            # Log warning but don't mark as expired if we just synced (might be a timing issue)
+            logger.warning(
+                f"No license cache found for {user_email}. "
+                f"This might indicate the license hasn't been synced yet or user has no license."
+            )
             # Return default values with max_devices and max_groups
-            default_tier_info = LICENSE_PRICING.get(DEFAULT_LICENSE_TIER, {})
+            # Note: expired=True here means "unknown status" - should trigger sync
+            # Try to get tier info from Firestore, fallback to defaults
+            try:
+                from services.license.license_tier_service import license_tier_service
+                default_tier_info = license_tier_service.get_tier(DEFAULT_LICENSE_TIER) or {}
+            except Exception:
+                default_tier_info = {}
+            
             return {
                 'is_active': False,
                 'tier': DEFAULT_LICENSE_TIER,
-                'expired': True,
+                'expired': True,  # Mark as expired if no cache (will trigger sync/check)
                 'expiration_date': None,
                 'days_until_expiration': None,
                 'max_devices': default_tier_info.get('max_devices', 1),
-                'max_groups': default_tier_info.get('max_groups', 3),
+                'max_groups': default_tier_info.get('max_groups', 1),
                 'max_accounts': default_tier_info.get('max_accounts', 1)
             }
         
@@ -110,14 +129,39 @@ class LicenseChecker:
         
         if cache.expiration_date:
             now = datetime.now()
-            if cache.expiration_date.tzinfo:
-                now = now.replace(tzinfo=cache.expiration_date.tzinfo)
             
-            if cache.expiration_date < now:
+            # Handle timezone comparison properly
+            expiration_date = cache.expiration_date
+            
+            # If expiration_date is timezone-aware, make now timezone-aware too
+            if expiration_date.tzinfo:
+                # Expiration is timezone-aware (likely UTC from Firebase)
+                # Make now timezone-aware with same timezone for proper comparison
+                if now.tzinfo is None:
+                    # Now is naive, make it timezone-aware using expiration's timezone
+                    now = now.replace(tzinfo=expiration_date.tzinfo)
+                elif now.tzinfo != expiration_date.tzinfo:
+                    # Different timezones, convert now to expiration's timezone
+                    now = now.astimezone(expiration_date.tzinfo)
+            elif now.tzinfo:
+                # Now is timezone-aware but expiration is naive
+                # Make expiration timezone-aware using now's timezone
+                expiration_date = expiration_date.replace(tzinfo=now.tzinfo)
+            
+            # Compare dates
+            if expiration_date < now:
                 expired = True
+                logger.warning(
+                    f"License expired: expiration_date={expiration_date}, now={now}, "
+                    f"expiration_tzinfo={expiration_date.tzinfo}, now_tzinfo={now.tzinfo}"
+                )
             else:
-                delta = cache.expiration_date - now
+                delta = expiration_date - now
                 days_until_expiration = delta.days
+                logger.debug(
+                    f"License valid: expiration_date={expiration_date}, now={now}, "
+                    f"days_until_expiration={days_until_expiration}"
+                )
     
         return {
             'is_active': cache.is_active and not expired,
@@ -138,7 +182,13 @@ class LicenseChecker:
         """
         status = self.check_license_status(user_email, uid)
         tier = status['tier']
-        pricing_info = LICENSE_PRICING.get(tier, {})
+        
+        # Get tier info from Firestore
+        try:
+            from services.license.license_tier_service import license_tier_service
+            pricing_info = license_tier_service.get_tier(tier) or {}
+        except Exception:
+            pricing_info = {}
         
         # Count current usage
         groups = self.db_manager.get_all_groups()

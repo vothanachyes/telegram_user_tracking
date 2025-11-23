@@ -5,7 +5,7 @@ This script encrypts all sensitive data in the database when field-level encrypt
 
 import logging
 import sqlite3
-from typing import Optional
+from typing import Optional, Callable
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -60,9 +60,12 @@ class FieldEncryptionMigration:
             logger.error(f"Failed to restore backup: {e}")
             return False
     
-    def migrate(self) -> bool:
+    def migrate(self, progress_callback: Optional[Callable[[str, int, int], None]] = None) -> bool:
         """
         Migrate existing data to encrypted format.
+        
+        Args:
+            progress_callback: Optional callback function(stage: str, current: int, total: int)
         
         Returns:
             True if migration successful, False otherwise
@@ -79,6 +82,7 @@ class FieldEncryptionMigration:
             
             # Check if encryption is enabled
             with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT encryption_enabled, encryption_key_hash FROM app_settings WHERE id = 1"
                 )
@@ -124,7 +128,9 @@ class FieldEncryptionMigration:
                 # Encrypt telegram_credentials
                 logger.info("Encrypting telegram_credentials...")
                 cursor = conn.execute("SELECT id, phone_number, session_string FROM telegram_credentials")
-                for row in cursor.fetchall():
+                rows = cursor.fetchall()
+                total = len(rows)
+                for idx, row in enumerate(rows, 1):
                     encrypted_phone = encryption_service.encrypt_field(row['phone_number'])
                     encrypted_session = encryption_service.encrypt_field(row['session_string'])
                     
@@ -133,6 +139,9 @@ class FieldEncryptionMigration:
                         SET phone_number = ?, session_string = ?
                         WHERE id = ?
                     """, (encrypted_phone, encrypted_session, row['id']))
+                    
+                    if progress_callback:
+                        progress_callback("telegram_credentials", idx, total)
                 
                 # Encrypt telegram_users
                 logger.info("Encrypting telegram_users...")
@@ -140,7 +149,9 @@ class FieldEncryptionMigration:
                     SELECT id, username, first_name, last_name, full_name, phone, bio 
                     FROM telegram_users
                 """)
-                for row in cursor.fetchall():
+                rows = cursor.fetchall()
+                total = len(rows)
+                for idx, row in enumerate(rows, 1):
                     encrypted_username = encryption_service.encrypt_field(row['username'])
                     encrypted_first_name = encryption_service.encrypt_field(row['first_name'])
                     encrypted_last_name = encryption_service.encrypt_field(row['last_name'])
@@ -157,11 +168,16 @@ class FieldEncryptionMigration:
                         encrypted_username, encrypted_first_name, encrypted_last_name,
                         encrypted_full_name, encrypted_phone, encrypted_bio, row['id']
                     ))
+                    
+                    if progress_callback:
+                        progress_callback("telegram_users", idx, total)
                 
                 # Encrypt messages
                 logger.info("Encrypting messages...")
                 cursor = conn.execute("SELECT id, content, caption, message_link FROM messages")
-                for row in cursor.fetchall():
+                rows = cursor.fetchall()
+                total = len(rows)
+                for idx, row in enumerate(rows, 1):
                     encrypted_content = encryption_service.encrypt_field(row['content'])
                     encrypted_caption = encryption_service.encrypt_field(row['caption'])
                     encrypted_message_link = encryption_service.encrypt_field(row['message_link'])
@@ -171,11 +187,16 @@ class FieldEncryptionMigration:
                         SET content = ?, caption = ?, message_link = ?
                         WHERE id = ?
                     """, (encrypted_content, encrypted_caption, encrypted_message_link, row['id']))
+                    
+                    if progress_callback:
+                        progress_callback("messages", idx, total)
                 
                 # Encrypt reactions
                 logger.info("Encrypting reactions...")
                 cursor = conn.execute("SELECT id, message_link FROM reactions")
-                for row in cursor.fetchall():
+                rows = cursor.fetchall()
+                total = len(rows)
+                for idx, row in enumerate(rows, 1):
                     encrypted_message_link = encryption_service.encrypt_field(row['message_link'])
                     
                     conn.execute("""
@@ -183,6 +204,9 @@ class FieldEncryptionMigration:
                         SET message_link = ?
                         WHERE id = ?
                     """, (encrypted_message_link, row['id']))
+                    
+                    if progress_callback:
+                        progress_callback("reactions", idx, total)
                 
                 # Encrypt group_fetch_history
                 logger.info("Encrypting group_fetch_history...")
@@ -190,7 +214,9 @@ class FieldEncryptionMigration:
                     SELECT id, account_phone_number, account_full_name, account_username 
                     FROM group_fetch_history
                 """)
-                for row in cursor.fetchall():
+                rows = cursor.fetchall()
+                total = len(rows)
+                for idx, row in enumerate(rows, 1):
                     encrypted_phone = encryption_service.encrypt_field(row['account_phone_number'])
                     encrypted_full_name = encryption_service.encrypt_field(row['account_full_name'])
                     encrypted_username = encryption_service.encrypt_field(row['account_username'])
@@ -200,11 +226,16 @@ class FieldEncryptionMigration:
                         SET account_phone_number = ?, account_full_name = ?, account_username = ?
                         WHERE id = ?
                     """, (encrypted_phone, encrypted_full_name, encrypted_username, row['id']))
+                    
+                    if progress_callback:
+                        progress_callback("group_fetch_history", idx, total)
                 
                 # Encrypt account_activity_log
                 logger.info("Encrypting account_activity_log...")
                 cursor = conn.execute("SELECT id, phone_number FROM account_activity_log")
-                for row in cursor.fetchall():
+                rows = cursor.fetchall()
+                total = len(rows)
+                for idx, row in enumerate(rows, 1):
                     encrypted_phone = encryption_service.encrypt_field(row['phone_number'])
                     
                     conn.execute("""
@@ -212,6 +243,9 @@ class FieldEncryptionMigration:
                         SET phone_number = ?
                         WHERE id = ?
                     """, (encrypted_phone, row['id']))
+                    
+                    if progress_callback:
+                        progress_callback("account_activity_log", idx, total)
                 
                 conn.commit()
                 logger.info("Migration completed successfully")
@@ -221,16 +255,19 @@ class FieldEncryptionMigration:
             logger.error(f"Migration failed: {e}")
             return False
     
-    def run(self) -> bool:
+    def run(self, progress_callback: Optional[Callable[[str, int, int], None]] = None) -> bool:
         """
         Run migration with backup and error handling.
+        
+        Args:
+            progress_callback: Optional callback function(stage: str, current: int, total: int)
         
         Returns:
             True if migration successful, False otherwise
         """
         try:
             logger.info("Starting field encryption migration...")
-            success = self.migrate()
+            success = self.migrate(progress_callback=progress_callback)
             
             if success:
                 logger.info("Migration completed successfully")

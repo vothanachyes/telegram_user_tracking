@@ -19,6 +19,7 @@ try:
         import win32security
         import win32con
         import win32cred
+        import pywintypes
         WINDOWS_AVAILABLE = True
 except ImportError:
     logger.debug("Windows authentication not available - pywin32 not installed")
@@ -135,13 +136,14 @@ class WindowsAuth:
             # Windows Hello requires Windows Runtime APIs which are complex
             # For now, we'll use credential prompt which can trigger Windows Hello
             # if configured on the system
-            return WindowsAuth._authenticate_with_password(message, title)
+            success, _ = WindowsAuth._authenticate_with_password(message, title)
+            return success
         except Exception as e:
             logger.debug(f"Windows Hello authentication not available: {e}")
             return False
     
     @staticmethod
-    def _authenticate_with_password(message: str, title: str) -> bool:
+    def _authenticate_with_password(message: str, title: str) -> Tuple[bool, Optional[str]]:
         """
         Authenticate using Windows password prompt.
         This can trigger Windows Hello if configured.
@@ -158,17 +160,26 @@ class WindowsAuth:
             username = win32api.GetUserName()
             
             # Show credential prompt
-            result, username_out, password, save = win32cred.CredUIPromptForCredentials(
-                None,  # Parent window (None for console)
-                title,
-                message,
-                username,
-                None,  # Default domain
-                flags,
-                None  # Auth package
-            )
-            
-            if result == 0:  # Success
+            # pywin32 CredUIPromptForCredentials signature:
+            # Returns: (UserName, Password, Save)
+            # Parameters: TargetName, AuthError=0, UserName=None, Password=None, 
+            #             Save=True, Flags=0, UiInfo=None
+            # UiInfo can be a dict with 'MessageText' and 'CaptionText' keys
+            try:
+                username_out, password, save = win32cred.CredUIPromptForCredentials(
+                    TargetName="",  # Empty string for generic credentials
+                    UserName=username,  # Default username
+                    Flags=flags,  # Flags
+                    UiInfo={
+                        'MessageText': message,
+                        'CaptionText': title
+                    }
+                )
+                
+                # Check if user cancelled (empty credentials)
+                if not username_out or not password:
+                    return False, "Authentication cancelled"
+                
                 # Verify credentials by attempting to log on
                 try:
                     handle = win32security.LogonUser(
@@ -179,16 +190,23 @@ class WindowsAuth:
                         win32con.LOGON32_PROVIDER_DEFAULT
                     )
                     win32api.CloseHandle(handle)
-                    return True
+                    return True, None
                 except Exception as e:
                     logger.debug(f"Credential verification failed: {e}")
-                    return False
-            else:
-                return False
+                    return False, "Invalid credentials"
+                    
+            except pywintypes.error as e:
+                # Handle Windows API errors
+                error_code = e.winerror
+                if error_code == 1223:  # ERROR_CANCELLED
+                    return False, "Authentication cancelled"
+                else:
+                    logger.error(f"Windows API error: {error_code}")
+                    return False, f"Authentication failed (error {error_code})"
                 
         except Exception as e:
             logger.error(f"Password authentication failed: {e}")
-            return False
+            return False, f"Authentication failed: {str(e)}"
     
     @staticmethod
     def _authenticate_macos(message: str, title: str) -> Tuple[bool, Optional[str]]:

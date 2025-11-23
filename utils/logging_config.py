@@ -102,6 +102,53 @@ class FletDebugFilter(logging.Filter):
         return True  # Allow all other logs
 
 
+class VerboseHttpLogFilter(logging.Filter):
+    """Filter to exclude verbose HTTP/2 DEBUG logs from console output."""
+    
+    def __init__(self, enabled: bool = False):
+        """
+        Initialize verbose HTTP log filter.
+        
+        Args:
+            enabled: If True, allow verbose HTTP DEBUG logs. If False, filter them out.
+                    Defaults to False (filter out by default).
+        """
+        super().__init__()
+        self.enabled = enabled
+        
+        # Logger name patterns for verbose HTTP/2 loggers
+        self.verbose_http_patterns = [
+            'hpack.hpack',  # HTTP/2 header compression
+            'httpcore',     # HTTP client core library
+            'httpx',        # HTTP client library
+            'h2',           # HTTP/2 protocol implementation
+        ]
+    
+    def filter(self, record):
+        """
+        Filter logs based on logger name and level.
+        
+        Returns:
+            False to filter out verbose HTTP DEBUG logs when enabled=False
+            True to allow all other logs
+        """
+        # If verbose HTTP logs are enabled, allow all logs
+        if self.enabled:
+            return True
+        
+        # Check if this is a verbose HTTP logger
+        logger_name = record.name.lower()
+        is_verbose_http_logger = any(
+            pattern in logger_name for pattern in self.verbose_http_patterns
+        )
+        
+        # Filter out if it's a verbose HTTP logger AND level is DEBUG
+        if is_verbose_http_logger and record.levelno == logging.DEBUG:
+            return False  # Filter out
+        
+        return True  # Allow all other logs (including INFO, WARNING, ERROR, CRITICAL)
+
+
 class DateFolderRotatingFileHandler(TimedRotatingFileHandler):
     """File handler that creates date-based folders and rotates daily."""
     
@@ -408,6 +455,13 @@ class ColoredConsoleHandler(logging.StreamHandler):
         flet_debug_enabled = os.getenv("FLET_DEBUG_LOGS_ENABLED", "").lower() in ("true", "1", "yes")
         flet_debug_filter = FletDebugFilter(enabled=flet_debug_enabled)
         self.addFilter(flet_debug_filter)
+        
+        # Add verbose HTTP log filter based on environment variable
+        # Default: filter out verbose HTTP DEBUG logs (enabled=False)
+        # Set VERBOSE_HTTP_LOGS_ENABLED=true in .env to show them
+        verbose_http_enabled = os.getenv("VERBOSE_HTTP_LOGS_ENABLED", "").lower() in ("true", "1", "yes")
+        verbose_http_filter = VerboseHttpLogFilter(enabled=verbose_http_enabled)
+        self.addFilter(verbose_http_filter)
         
         # Create custom colored formatter
         formatter = ColoredFormatter(

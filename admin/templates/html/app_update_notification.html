@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Update Available - {{app_name}}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .update-card {
+            background: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 650px;
+            width: 100%;
+            overflow: hidden;
+            animation: slideUp 0.5s ease-out;
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card-header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: pulse 3s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 0.5;
+            }
+            50% {
+                transform: scale(1.1);
+                opacity: 0.8;
+            }
+        }
+        
+        .update-icon {
+            font-size: 64px;
+            margin-bottom: 15px;
+            display: block;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .card-header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 15px;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .version-badge {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(10px);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 18px;
+            font-weight: 700;
+            margin-top: 10px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            position: relative;
+            z-index: 1;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .card-body {
+            padding: 40px 30px;
+        }
+        
+        .greeting {
+            font-size: 24px;
+            color: #333;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+        
+        .message {
+            font-size: 16px;
+            color: #666;
+            line-height: 1.8;
+            margin-bottom: 30px;
+        }
+        
+        .version-info-section {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .version-info-section h3 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .version-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .version-item {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .version-item-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 5px;
+        }
+        
+        .version-item-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: #667eea;
+        }
+        
+        .release-notes-section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border-left: 4px solid #10b981;
+        }
+        
+        .release-notes-section h3 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .release-notes-content {
+            font-size: 15px;
+            color: #555;
+            line-height: 1.8;
+            max-height: 400px;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+        
+        .release-notes-content::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .release-notes-content::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        
+        .release-notes-content::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 10px;
+        }
+        
+        .release-notes-content::-webkit-scrollbar-thumb:hover {
+            background: #5568d3;
+        }
+        
+        .release-notes-content h1,
+        .release-notes-content h2,
+        .release-notes-content h3,
+        .release-notes-content h4 {
+            color: #333;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+        
+        .release-notes-content p {
+            margin-bottom: 12px;
+        }
+        
+        .release-notes-content ul,
+        .release-notes-content ol {
+            margin-left: 20px;
+            margin-bottom: 12px;
+        }
+        
+        .release-notes-content li {
+            margin-bottom: 6px;
+        }
+        
+        .release-notes-content code {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        
+        .release-notes-content pre {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin-bottom: 12px;
+        }
+        
+        .release-notes-content a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .release-notes-content a:hover {
+            text-decoration: underline;
+        }
+        
+        .download-section {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border-left: 4px solid #ff9800;
+        }
+        
+        .download-section h3 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .download-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        
+        .download-button {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-decoration: none;
+            color: #333;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border: 2px solid transparent;
+        }
+        
+        .download-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+            border-color: #667eea;
+        }
+        
+        .download-button-icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        
+        .download-button-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .download-button-platform {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .release-date {
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+        
+        .release-date-text {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .release-date-text strong {
+            color: #333;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 30px;
+            background: #f8f9fa;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        
+        @media (max-width: 600px) {
+            .card-header h1 {
+                font-size: 24px;
+            }
+            
+            .version-badge {
+                font-size: 16px;
+                padding: 10px 20px;
+            }
+            
+            .greeting {
+                font-size: 20px;
+            }
+            
+            .card-body {
+                padding: 30px 20px;
+            }
+            
+            .version-details {
+                grid-template-columns: 1fr;
+            }
+            
+            .download-buttons {
+                grid-template-columns: 1fr;
+            }
+            
+            .release-notes-content {
+                max-height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="update-card">
+        <div class="card-header">
+            <span class="update-icon">🚀</span>
+            <h1>New Update Available!</h1>
+            <div class="version-badge">Version {{version}}</div>
+        </div>
+        
+        <div class="card-body">
+            <div class="greeting">
+                Exciting News! 🎉
+            </div>
+            
+            <div class="message">
+                <p>A new version of <strong>{{app_name}}</strong> is now available! This update includes improvements, bug fixes, and new features to enhance your experience.</p>
+            </div>
+            
+            <div class="version-info-section">
+                <h3>
+                    <span>📦</span>
+                    Update Information
+                </h3>
+                <div class="version-details">
+                    <div class="version-item">
+                        <div class="version-item-label">Version</div>
+                        <div class="version-item-value">{{version}}</div>
+                    </div>
+                    <div class="version-item">
+                        <div class="version-item-label">Release Date</div>
+                        <div class="version-item-value" style="font-size: 14px;">{{release_date}}</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="release-notes-section">
+                <h3>
+                    <span>📝</span>
+                    What's New
+                </h3>
+                <div class="release-notes-content">
+                    {{release_notes}}
+                </div>
+            </div>
+            
+            {{download_section}}
+            
+            <div class="release-date">
+                <div class="release-date-text">
+                    <strong>Released:</strong> {{release_date}}
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Thank you for using {{app_name}}! 💙</p>
+            <p style="margin-top: 10px;">We hope you enjoy the new features and improvements.</p>
+        </div>
+    </div>
+</body>
+</html>
+

@@ -125,7 +125,7 @@ class UserDashboardHandlers:
         self.selected_user = None
         self.user_search_component.clear()
         self.telegram_button.disabled = True
-        self.user_detail_section.visible = False
+        self._update_user_detail_section()  # Show empty state
         self.user_stats_component.show_empty_state()
         self.user_messages_component.clear_messages()
         if self.page:
@@ -332,7 +332,30 @@ class UserDashboardHandlers:
     def _update_user_detail_section(self):
         """Update user detail section with selected user info."""
         if not self.selected_user:
-            self.user_detail_section.visible = False
+            # Show empty state
+            self.user_detail_section.content = ft.Container(
+                content=ft.Column([
+                    ft.Icon(
+                        ft.Icons.PERSON_OUTLINE,
+                        size=64,
+                        color=theme_manager.text_secondary_color
+                    ),
+                    ft.Text(
+                        theme_manager.t("select_user_to_view_details"),
+                        size=18,
+                        weight=ft.FontWeight.BOLD,
+                        color=theme_manager.text_secondary_color
+                    ),
+                    ft.Text(
+                        theme_manager.t("search_user_to_get_started"),
+                        size=14,
+                        color=theme_manager.text_secondary_color
+                    )
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+                alignment=ft.alignment.center,
+                padding=40
+            )
+            self.user_detail_section.visible = True
             return
         
         user = self.selected_user

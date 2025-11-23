@@ -3,9 +3,14 @@ User Dashboard page - main orchestration file.
 """
 
 import flet as ft
+import asyncio
+import logging
 from typing import Optional
 from database.db_manager import DatabaseManager
+from database.async_query_executor import async_query_executor
+from services.page_cache_service import page_cache_service
 from ui.theme import theme_manager
+from ui.components.skeleton_loaders.user_dashboard_skeleton import UserDashboardSkeleton
 from ui.pages.user_dashboard.view_model import UserDashboardViewModel
 from ui.pages.user_dashboard.components import (
     UserSearchComponent,
@@ -14,6 +19,8 @@ from ui.pages.user_dashboard.components import (
 )
 from ui.pages.user_dashboard.handlers import UserDashboardHandlers
 from services.export import ExportService
+
+logger = logging.getLogger(__name__)
 
 
 class UserDashboardPage(ft.Container):
@@ -78,19 +85,20 @@ class UserDashboardPage(ft.Container):
         # Update user detail section button callback now that handlers exist
         self._update_user_detail_button()
         
-        # Setup groups for messages component
-        groups = self.view_model.get_all_groups()
-        default_group_id = groups[0].group_id if groups else None
+        # Initialize groups state (will be loaded asynchronously)
+        self.groups = []
+        self.default_group_id = None
+        self.is_loading_groups = True
         
-        # Build UI
+        # Build UI with loading state
         super().__init__(
             content=ft.Column([
                 # Top Header
                 self._create_header(),
                 # User detail section
                 self.user_detail_section,
-                # Tabs
-                self._create_tabs(groups, default_group_id),
+                # Tabs (will be updated when groups load)
+                UserDashboardSkeleton.create(),
             ], spacing=theme_manager.spacing_md, expand=True),
             padding=theme_manager.padding_lg,
             expand=True
@@ -102,6 +110,10 @@ class UserDashboardPage(ft.Container):
         self.user_search_component.page = page
         self.handlers.page = page
         
+        # Set page for user messages component (for date pickers)
+        if hasattr(self.user_messages_component, 'set_page'):
+            self.user_messages_component.set_page(page)
+        
         if not hasattr(page, 'overlay') or page.overlay is None:
             page.overlay = []
         
@@ -109,7 +121,47 @@ class UserDashboardPage(ft.Container):
         for picker in pickers:
             if picker not in page.overlay:
                 page.overlay.append(picker)
+        
+        # Load groups asynchronously
+        if page and hasattr(page, 'run_task'):
+            page.run_task(self._load_groups_async)
+        else:
+            asyncio.create_task(self._load_groups_async())
+        
         page.update()
+    
+    async def _load_groups_async(self):
+        """Load groups asynchronously."""
+        try:
+            # Check cache
+            cache_key = page_cache_service.generate_key("user_dashboard", type="groups")
+            groups = page_cache_service.get(cache_key)
+            
+            if not groups:
+                groups = await async_query_executor.execute(self.db_manager.get_all_groups)
+                if page_cache_service.is_enabled():
+                    page_cache_service.set(cache_key, groups, ttl=600)  # Cache for 10 minutes
+            
+            self.groups = groups
+            self.default_group_id = groups[0].group_id if groups else None
+            
+            # Update view model
+            self.view_model.groups = groups
+            
+            # Update UI with tabs
+            tabs = self._create_tabs(groups, self.default_group_id)
+            self.content.controls[2] = tabs
+            
+            self.is_loading_groups = False
+            
+            if self.page:
+                self.page.update()
+                
+        except Exception as e:
+            logger.error(f"Error loading groups: {e}", exc_info=True)
+            self.is_loading_groups = False
+            if self.page:
+                self.page.update()
     
     def _create_header(self) -> ft.Container:
         """Create top header with search and actions."""
@@ -154,35 +206,33 @@ class UserDashboardPage(ft.Container):
             on_click=self._handle_user_detail_click
         )
         
-        return theme_manager.create_card(
-            content=ft.Row([
-                # Profile photo and info
-                ft.Row([
-                    ft.Icon(
-                        ft.Icons.ACCOUNT_CIRCLE,
-                        size=80,
-                        color=theme_manager.primary_color
+        # Create empty state content
+        self._empty_state_content = ft.Column([
+            ft.Icon(
+                ft.Icons.PERSON_OUTLINE,
+                size=64,
+                color=theme_manager.text_secondary_color
+            ),
+                    ft.Text(
+                        theme_manager.t("select_user_to_view_details"),
+                        size=18,
+                        weight=ft.FontWeight.BOLD,
+                        color=theme_manager.text_secondary_color
                     ),
-                    ft.Column([
-                        ft.Text(
-                            theme_manager.t("select_user_to_view_details"),
-                            size=18,
-                            weight=ft.FontWeight.BOLD
-                        ),
-                        ft.Text(
-                            theme_manager.t("search_user_to_get_started"),
-                            size=14,
-                            color=theme_manager.text_secondary_color
-                        ),
-                    ], spacing=5)
-                ], spacing=20, alignment=ft.MainAxisAlignment.START),
-                # Right: View details button
-                ft.Container(
-                    content=self._detail_button,
-                    alignment=ft.alignment.center_right
-                ),
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            visible=False
+                    ft.Text(
+                        theme_manager.t("search_user_to_get_started"),
+                        size=14,
+                        color=theme_manager.text_secondary_color
+                    )
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10)
+        
+        return theme_manager.create_card(
+            content=ft.Container(
+                content=self._empty_state_content,
+                alignment=ft.alignment.center,
+                padding=40
+            ),
+            visible=True  # Always visible, shows empty state when no user selected
         )
     
     def _handle_user_detail_click(self, e):

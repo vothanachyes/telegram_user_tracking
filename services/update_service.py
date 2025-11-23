@@ -40,7 +40,16 @@ class UpdateService:
         self.is_fetch_running_callback = is_fetch_running_callback
         
         # Initialize sub-modules
-        self.checker = UpdateChecker(on_update_available, is_fetch_running_callback)
+        # Create callback to trigger update check (for real-time updates)
+        async def trigger_check():
+            """Trigger update check and download."""
+            await self.check_for_updates()
+        
+        self.checker = UpdateChecker(
+            on_update_available=on_update_available,
+            is_fetch_running_callback=is_fetch_running_callback,
+            trigger_update_check=lambda: asyncio.create_task(trigger_check())
+        )
         self.downloader = UpdateDownloader()
         self.installer = UpdateInstaller(db_manager, page, is_fetch_running_callback)
         
@@ -60,34 +69,51 @@ class UpdateService:
         
         Returns:
             Update info dict if available, None otherwise
+            If auto-download is disabled, returns update info without downloading
         """
         update_info = await self.checker.check_for_updates()
         
         if not update_info:
             return None
         
-        # Download update
-        download_path = await self.downloader.download_update(
-            update_info['download_url'],
-            update_info['version'],
-            update_info.get('checksum'),
-            update_info.get('file_size')
-        )
+        # Check auto-download setting
+        from config.settings import settings
+        auto_download = settings.settings.auto_download_update
         
-        if download_path:
-            self._current_download = {
+        if auto_download:
+            # Auto-download update
+            download_path = await self.downloader.download_update(
+                update_info['download_url'],
+                update_info['version'],
+                update_info.get('checksum'),
+                update_info.get('file_size')
+            )
+            
+            if download_path:
+                self._current_download = {
+                    'version': update_info['version'],
+                    'download_path': download_path,
+                    'update_info': update_info.get('update_info', {})
+                }
+                
+                # Notify via callback
+                if self.on_update_available:
+                    self.on_update_available(update_info['version'], download_path)
+                
+                return self._current_download
+            
+            return None
+        else:
+            # Auto-download disabled - return update info without downloading
+            # User can manually download from Update tab
+            return {
                 'version': update_info['version'],
-                'download_path': download_path,
-                'update_info': update_info['update_info']
+                'download_url': update_info['download_url'],
+                'checksum': update_info.get('checksum'),
+                'file_size': update_info.get('file_size'),
+                'update_info': update_info.get('update_info', {}),
+                'download_path': None  # Not downloaded yet
             }
-            
-            # Notify via callback
-            if self.on_update_available:
-                self.on_update_available(update_info['version'], download_path)
-            
-            return self._current_download
-        
-        return None
     
     async def download_update(
         self,

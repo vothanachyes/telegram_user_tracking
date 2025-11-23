@@ -6,6 +6,8 @@ import flet as ft
 import logging
 import json
 import platform
+import threading
+import time
 from typing import Callable, Optional
 from pathlib import Path
 from database.models import AppSettings
@@ -16,6 +18,7 @@ from utils.windows_auth import WindowsAuth
 from utils.user_pin_encryption import get_or_create_user_encrypted_pin
 from services.database.encryption_service import DatabaseEncryptionService
 from services.database.db_migration_service import DatabaseMigrationService
+from services.auth_service import auth_service
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +40,12 @@ class SecurityTab:
         self.page: Optional[ft.Page] = None
         self._authenticated = False
         
+        # OS authentication attempt tracking
+        self._os_auth_attempts = 0
+        self._max_os_auth_attempts = 10
+        self._os_auth_delay_seconds = 2
+        self._auth_in_progress = False
+        
         # Get current database path
         current_db_path = current_settings.db_path or DATABASE_PATH
         
@@ -51,7 +60,8 @@ class SecurityTab:
         self.encryption_switch = ft.Switch(
             label=theme_manager.t("enable_database_encryption"),
             value=current_settings.encryption_enabled,
-            disabled=True  # Disabled until authenticated
+            disabled=True,  # Disabled until authenticated
+            on_change=self._on_encryption_switch_changed
         )
         
         # Encryption key display (masked)
@@ -122,6 +132,27 @@ class SecurityTab:
     
     def _build_lock_overlay(self):
         """Build authentication lock overlay."""
+        # Attempt info text (initially hidden)
+        self.attempt_info_text = ft.Text(
+            "",
+            size=12,
+            color=ft.Colors.ORANGE_700,
+            weight=ft.FontWeight.BOLD,
+            visible=False
+        )
+        
+        # Firebase password button (initially hidden)
+        self.firebase_auth_btn = ft.ElevatedButton(
+            text=theme_manager.t("use_firebase_password") or "Use Firebase Password",
+            icon=ft.Icons.LOCK_OPEN,
+            on_click=self._authenticate_with_firebase,
+            style=ft.ButtonStyle(
+                color=ft.Colors.WHITE,
+                bgcolor=ft.Colors.ORANGE_700
+            ),
+            visible=False
+        )
+        
         self.lock_overlay = ft.Container(
             content=ft.Column([
                 ft.Icon(ft.Icons.LOCK, size=48, color=theme_manager.text_secondary_color),
@@ -135,6 +166,7 @@ class SecurityTab:
                     size=12,
                     color=theme_manager.text_secondary_color
                 ),
+                self.attempt_info_text,
                 ft.ElevatedButton(
                     text=theme_manager.t("authenticate"),
                     icon=ft.Icons.FINGERPRINT,
@@ -143,7 +175,8 @@ class SecurityTab:
                         color=ft.Colors.WHITE,
                         bgcolor=theme_manager.primary_color
                     )
-                )
+                ),
+                self.firebase_auth_btn
             ], 
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=20,
@@ -157,22 +190,174 @@ class SecurityTab:
     
     def _authenticate(self, e):
         """Handle authentication request."""
+        # Prevent multiple simultaneous authentication attempts
+        if self._auth_in_progress:
+            return
+        
+        # Check if max attempts reached
+        if self._os_auth_attempts >= self._max_os_auth_attempts:
+            # Automatically show Firebase password dialog
+            self._authenticate_with_firebase()
+            return
+        
         if not WindowsAuth.is_available():
             self._show_error(theme_manager.t("windows_auth_not_available"))
             return
         
-        success, error = WindowsAuth.authenticate(
-            message=theme_manager.t("authenticate_to_access_security"),
-            title=theme_manager.t("security_authentication")
-        )
+        # Increment attempt counter
+        self._os_auth_attempts += 1
         
-        if success:
-            self._authenticated = True
-            self.encryption_switch.disabled = False
-            self._update_ui()
-            self._show_success(theme_manager.t("authentication_successful"))
+        # Add delay before authentication (except for first attempt)
+        if self._os_auth_attempts > 1:
+            # Run authentication with delay in background thread
+            self._auth_in_progress = True
+            thread = threading.Thread(
+                target=self._authenticate_with_delay,
+                daemon=True
+            )
+            thread.start()
         else:
-            self._show_error(error or theme_manager.t("authentication_failed"))
+            # First attempt, no delay
+            self._perform_os_authentication()
+    
+    def _authenticate_with_delay(self):
+        """Perform authentication with delay in background thread."""
+        try:
+            # Wait for delay
+            time.sleep(self._os_auth_delay_seconds)
+            
+            # Perform authentication on main thread
+            if self.page:
+                self.page.run(self._perform_os_authentication)
+            else:
+                self._perform_os_authentication()
+        except Exception as ex:
+            logger.error(f"Error in authentication delay thread: {ex}")
+            self._auth_in_progress = False
+    
+    def _perform_os_authentication(self):
+        """Perform OS authentication."""
+        try:
+            self._auth_in_progress = True
+            
+            success, error = WindowsAuth.authenticate(
+                message=theme_manager.t("authenticate_to_access_security"),
+                title=theme_manager.t("security_authentication")
+            )
+            
+            if success:
+                # Reset counter on success
+                self._os_auth_attempts = 0
+                self._authenticated = True
+                self.encryption_switch.disabled = False
+                self._update_ui()
+                self._show_success(theme_manager.t("authentication_successful"))
+            else:
+                # Show error with remaining attempts
+                remaining = self._max_os_auth_attempts - self._os_auth_attempts
+                if remaining > 0:
+                    error_msg = f"{error or theme_manager.t('authentication_failed')} ({remaining} attempts remaining)"
+                    self._show_error(error_msg)
+                    self._update_attempt_info()
+                else:
+                    # Max attempts reached, show Firebase password option
+                    self._show_error(theme_manager.t("max_os_auth_attempts_reached") or "Maximum OS authentication attempts reached. Please use Firebase password.")
+                    self._update_attempt_info()
+                    # Automatically show Firebase password dialog
+                    if self.page:
+                        self.page.run(lambda _: self._authenticate_with_firebase())
+        finally:
+            self._auth_in_progress = False
+    
+    def _update_attempt_info(self):
+        """Update attempt info text in lock overlay."""
+        if self._os_auth_attempts >= self._max_os_auth_attempts:
+            # Show Firebase password button
+            if hasattr(self, 'firebase_auth_btn'):
+                self.firebase_auth_btn.visible = True
+            if hasattr(self, 'attempt_info_text'):
+                self.attempt_info_text.value = theme_manager.t("use_firebase_password_fallback") or "OS authentication failed. Please use your Firebase password."
+                self.attempt_info_text.visible = True
+        elif self._os_auth_attempts > 0:
+            # Show remaining attempts
+            remaining = self._max_os_auth_attempts - self._os_auth_attempts
+            if hasattr(self, 'attempt_info_text'):
+                self.attempt_info_text.value = f"{remaining} attempts remaining before Firebase password option"
+                self.attempt_info_text.visible = True
+            if hasattr(self, 'firebase_auth_btn'):
+                self.firebase_auth_btn.visible = False
+        else:
+            # Hide attempt info
+            if hasattr(self, 'attempt_info_text'):
+                self.attempt_info_text.visible = False
+            if hasattr(self, 'firebase_auth_btn'):
+                self.firebase_auth_btn.visible = False
+        
+        if self.page:
+            self.page.update()
+    
+    def _authenticate_with_firebase(self, e=None):
+        """Handle Firebase password authentication fallback."""
+        # Get current user email
+        current_user = auth_service.get_current_user()
+        if not current_user:
+            self._show_error(theme_manager.t("user_not_logged_in") or "You must be logged in to use Firebase password authentication.")
+            return
+        
+        email = current_user.get('email')
+        if not email:
+            self._show_error(theme_manager.t("user_email_not_found") or "User email not found. Please log in again.")
+            return
+        
+        # Show Firebase password dialog
+        from ui.dialogs.firebase_password_dialog import FirebasePasswordDialog
+        
+        message = theme_manager.t("firebase_password_fallback_message") or "OS authentication failed. Please enter your Firebase password to access security settings."
+        dialog = FirebasePasswordDialog(
+            email=email,
+            message=message,
+            on_submit=self._handle_firebase_auth,
+            on_cancel=self._handle_firebase_auth_cancel
+        )
+        dialog.page = self.page
+        if self.page:
+            self.page.open(dialog)
+    
+    def _handle_firebase_auth(self, password: str):
+        """Handle Firebase password authentication."""
+        try:
+            # Get current user email
+            current_user = auth_service.get_current_user()
+            if not current_user:
+                self._show_error(theme_manager.t("user_not_logged_in") or "You must be logged in to use Firebase password authentication.")
+                return
+            
+            email = current_user.get('email')
+            if not email:
+                self._show_error(theme_manager.t("user_email_not_found") or "User email not found. Please log in again.")
+                return
+            
+            # Verify password using Firebase REST API
+            success, error, token = auth_service.authenticate_with_email_password(email, password)
+            
+            if success:
+                # Reset OS auth attempt counter
+                self._os_auth_attempts = 0
+                self._authenticated = True
+                self.encryption_switch.disabled = False
+                self._update_ui()
+                self._update_attempt_info()
+                self._show_success(theme_manager.t("firebase_authentication_successful") or "Firebase authentication successful")
+            else:
+                self._show_error(error or theme_manager.t("firebase_authentication_failed") or "Firebase authentication failed")
+        except Exception as ex:
+            logger.error(f"Firebase authentication error: {ex}")
+            self._show_error(f"Authentication error: {str(ex)}")
+    
+    def _handle_firebase_auth_cancel(self):
+        """Handle Firebase authentication cancellation."""
+        # Do nothing, user cancelled
+        pass
     
     def build(self) -> ft.Container:
         """Build the security tab."""
@@ -337,6 +522,11 @@ class SecurityTab:
         # Update lock overlay visibility
         if hasattr(self, 'lock_overlay_container') and self.lock_overlay_container:
             self.lock_overlay_container.visible = not self._authenticated
+        
+        # Reset attempt info if authenticated
+        if self._authenticated:
+            self._os_auth_attempts = 0
+            self._update_attempt_info()
         
         # Enable/disable controls based on authentication
         if hasattr(self, 'encryption_switch'):
@@ -598,4 +788,196 @@ class SecurityTab:
             except Exception as ex:
                 logger.error(f"Failed to copy PIN recovery data to clipboard: {ex}")
                 self._show_error("Failed to copy to clipboard")
+    
+    def _on_encryption_switch_changed(self, e):
+        """Handle encryption switch change."""
+        if not self._authenticated:
+            # Revert switch if not authenticated
+            self.encryption_switch.value = self.current_settings.encryption_enabled
+            if self.page:
+                self.page.update()
+            return
+        
+        new_value = self.encryption_switch.value
+        
+        # If switching from False to True (enabling encryption)
+        if new_value and not self.current_settings.encryption_enabled:
+            self._handle_enable_encryption()
+        # If switching from True to False (disabling encryption)
+        elif not new_value and self.current_settings.encryption_enabled:
+            self._handle_disable_encryption()
+    
+    def _handle_enable_encryption(self):
+        """Handle enabling encryption - show confirmation dialog with statistics."""
+        # Check if user is authenticated (required for encryption)
+        from services.auth_service import auth_service
+        if not auth_service.get_current_user():
+            self._show_error(theme_manager.t("user_not_logged_in") or "You must be logged in to enable encryption")
+            self.encryption_switch.value = False
+            if self.page:
+                self.page.update()
+            return
+        
+        # Get database path
+        db_path = self._get_database_path()
+        
+        # Load encryption statistics
+        from services.database.encryption_stats_service import EncryptionStatsService
+        stats_service = EncryptionStatsService(db_path)
+        stats = stats_service.get_encryption_statistics()
+        
+        # Show enable encryption dialog
+        from ui.dialogs.enable_encryption_dialog import EnableEncryptionDialog
+        
+        def on_start():
+            """Handle Start button - run migration."""
+            self._run_encryption_migration(db_path)
+        
+        def on_cancel():
+            """Handle Cancel - revert switch."""
+            self.encryption_switch.value = False
+            if self.page:
+                self.page.update()
+        
+        dialog = EnableEncryptionDialog(
+            stats=stats,
+            on_start=on_start,
+            on_cancel=on_cancel
+        )
+        dialog.page = self.page
+        if self.page:
+            self.page.open(dialog)
+    
+    def _handle_disable_encryption(self):
+        """Handle disabling encryption - show confirmation."""
+        from ui.dialogs.dialog import DialogManager
+        
+        def on_confirm(confirm_e=None):
+            """Disable encryption."""
+            if app_settings.disable_field_encryption():
+                self.current_settings.encryption_enabled = False
+                self.encryption_switch.value = False
+                self._show_success(theme_manager.t("encryption_disabled") or "Encryption disabled")
+                self.on_settings_changed()
+            else:
+                self._show_error(theme_manager.t("failed_to_disable_encryption") or "Failed to disable encryption")
+                self.encryption_switch.value = True
+                if self.page:
+                    self.page.update()
+        
+        DialogManager.show_confirmation_dialog(
+            page=self.page,
+            title=theme_manager.t("disable_encryption_title") or "Disable Encryption",
+            message=theme_manager.t("disable_encryption_message") or 
+                   "Are you sure you want to disable field-level encryption? "
+                   "Note: This will not decrypt existing encrypted data.",
+            on_confirm=on_confirm,
+            on_cancel=lambda: setattr(self.encryption_switch, 'value', True) or self.page.update() if self.page else None
+        )
+    
+    def _run_encryption_migration(self, db_path: str):
+        """Run encryption migration with progress dialog."""
+        from database.migrations.migrate_to_field_encryption import FieldEncryptionMigration
+        from ui.dialogs.encryption_migration_progress_dialog import EncryptionMigrationProgressDialog
+        import threading
+        
+        # Enable encryption in settings first
+        if not app_settings.enable_field_encryption():
+            self._show_error(theme_manager.t("failed_to_enable_encryption") or "Failed to enable encryption")
+            self.encryption_switch.value = False
+            if self.page:
+                self.page.update()
+            return
+        
+        # Show progress dialog
+        progress_dialog = EncryptionMigrationProgressDialog()
+        progress_dialog.page = self.page
+        if self.page:
+            self.page.open(progress_dialog)
+        
+        # Track total encrypted count
+        total_encrypted = [0]
+        
+        def progress_callback(stage: str, current: int, total: int):
+            """Update progress dialog."""
+            # Count encrypted records (approximate - just for display)
+            if current == total:
+                total_encrypted[0] += total
+            
+            if self.page:
+                try:
+                    progress_dialog.update_progress(
+                        stage, current, total, total_encrypted[0] if current == total else None
+                    )
+                except Exception:
+                    pass  # Dialog might be closed
+        
+        def run_migration():
+            """Run migration in background thread."""
+            try:
+                migration = FieldEncryptionMigration(db_path)
+                success = migration.run(progress_callback=progress_callback)
+                
+                # Update UI on main thread
+                if self.page:
+                    # Close progress dialog
+                    try:
+                        self.page.close(progress_dialog)
+                    except Exception:
+                        pass
+                    
+                    if success:
+                        # Update settings
+                        self.current_settings.encryption_enabled = True
+                        self.encryption_switch.value = True
+                        self._show_success(
+                            theme_manager.t("encryption_migration_complete") or 
+                            "Encryption enabled successfully"
+                        )
+                        self.on_settings_changed()
+                    else:
+                        # Revert switch and disable encryption
+                        app_settings.disable_field_encryption()
+                        self.current_settings.encryption_enabled = False
+                        self.encryption_switch.value = False
+                        self._show_error(
+                            theme_manager.t("encryption_migration_failed") or 
+                            "Encryption migration failed. Please check logs for details."
+                        )
+                    
+                    # Update page UI
+                    self.page.update()
+            except Exception as ex:
+                logger.error(f"Migration error: {ex}")
+                if self.page:
+                    try:
+                        self.page.close(progress_dialog)
+                    except Exception:
+                        pass
+                    app_settings.disable_field_encryption()
+                    self.current_settings.encryption_enabled = False
+                    self.encryption_switch.value = False
+                    self._show_error(
+                        theme_manager.t("encryption_migration_failed") or 
+                        f"Migration failed: {str(ex)}"
+                    )
+                    self.page.update()
+        
+        # Run migration in background thread
+        thread = threading.Thread(target=run_migration, daemon=True)
+        thread.start()
+    
+    def _get_database_path(self) -> str:
+        """Get current database path."""
+        # Check if user is logged in and use their database path
+        try:
+            from services.auth_service import auth_service
+            user_db_path = auth_service.get_user_database_path()
+            if user_db_path:
+                return user_db_path
+        except Exception:
+            pass
+        
+        # Fallback to settings path or default
+        return self.current_settings.db_path or DATABASE_PATH
 

@@ -70,6 +70,20 @@ python3 main.py
 2. Create a new application to get your API ID and API Hash
 3. Enter these credentials in the application's Settings page
 
+### Logging Configuration
+
+The application provides configurable logging filters to reduce console noise:
+
+- **`FLET_DEBUG_LOGS_ENABLED`** - Set to `true` to show Flet framework DEBUG logs (default: `false`)
+- **`VERBOSE_HTTP_LOGS_ENABLED`** - Set to `true` to show verbose HTTP/2 DEBUG logs from `hpack`, `httpcore`, `httpx`, and `h2` loggers (default: `false`)
+
+By default, verbose DEBUG logs are filtered out from the console to show only important logs. All logs are still written to log files for debugging purposes. Enable these flags in your `.env` file when debugging specific issues:
+
+```bash
+FLET_DEBUG_LOGS_ENABLED=true
+VERBOSE_HTTP_LOGS_ENABLED=true
+```
+
 ## Building Executable
 
 ### Local Build

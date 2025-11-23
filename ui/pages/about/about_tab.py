@@ -13,7 +13,7 @@ class AboutTab:
     
     def __init__(self, license_service: LicenseService):
         self.license_service = license_service
-        self.license_info = license_service.get_license_info()
+        self.license_info = None  # Will be loaded when needed
     
     def build(self) -> ft.Container:
         """Build About tab content."""
@@ -112,6 +112,9 @@ class AboutTab:
     def _build_license_info_card(self) -> ft.Container:
         """Build license information card."""
         from ui.pages.about.license_card import LicenseInfoCard
+        # Load license info if not loaded
+        if self.license_info is None:
+            self.license_info = self.license_service.get_license_info()
         card = LicenseInfoCard(self.license_info)
         return card.build()
 

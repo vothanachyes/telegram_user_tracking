@@ -6,6 +6,7 @@ import flet as ft
 from typing import Optional, Callable, List
 from datetime import datetime
 from ui.theme import theme_manager
+from ui.components import DateRangeSelector
 
 
 class FiltersBarComponent:
@@ -19,6 +20,7 @@ class FiltersBarComponent:
         on_message_type_change: Optional[Callable[[Optional[str]], None]] = None,
         show_dates: bool = True,
         show_message_type: bool = True,
+        show_group: bool = True,
         default_group_id: Optional[int] = None,
         message_type_filter: Optional[str] = None
     ):
@@ -28,48 +30,38 @@ class FiltersBarComponent:
         self.selected_group: Optional[int] = default_group_id
         self.selected_message_type: Optional[str] = message_type_filter
         self.show_message_type = show_message_type
+        self.show_group = show_group
+        self.page: Optional[ft.Page] = None
         
-        # Date filters (default: current month)
+        # Date range selector (using generic component)
         if show_dates:
-            today = datetime.now()
-            first_day = today.replace(day=1)
-            
-            self.start_date_field = ft.TextField(
-                label=theme_manager.t("start_date"),
-                value=first_day.strftime("%Y-%m-%d"),
-                width=140,
-                border_radius=theme_manager.corner_radius,
-                on_change=self._on_date_change
-            )
-            
-            self.end_date_field = ft.TextField(
-                label=theme_manager.t("end_date"),
-                value=today.strftime("%Y-%m-%d"),
-                width=140,
-                border_radius=theme_manager.corner_radius,
-                on_change=self._on_date_change
+            self.date_range_selector = DateRangeSelector(
+                on_date_range_changed=self._on_date_range_changed,
+                default_range="month"
             )
         else:
-            self.start_date_field = None
-            self.end_date_field = None
+            self.date_range_selector = None
         
-        # Group selector
-        group_options = [f"{g.group_name} ({g.group_id})" for g in groups]
-        if group_options and default_group_id:
-            default_group_value = next(
-                (opt for opt in group_options if f"({default_group_id})" in opt),
-                group_options[0] if group_options else None
+        # Group selector (optional)
+        if show_group:
+            group_options = [f"{g.group_name} ({g.group_id})" for g in groups]
+            if group_options and default_group_id:
+                default_group_value = next(
+                    (opt for opt in group_options if f"({default_group_id})" in opt),
+                    group_options[0] if group_options else None
+                )
+            else:
+                default_group_value = group_options[0] if group_options else None
+            
+            self.group_dropdown = theme_manager.create_dropdown(
+                label=theme_manager.t("select_group"),
+                options=group_options if group_options else ["No groups"],
+                value=default_group_value,
+                on_change=self._on_group_selected,
+                width=250
             )
         else:
-            default_group_value = group_options[0] if group_options else None
-        
-        self.group_dropdown = theme_manager.create_dropdown(
-            label=theme_manager.t("select_group"),
-            options=group_options if group_options else ["No groups"],
-            value=default_group_value,
-            on_change=self._on_group_selected,
-            width=250
-        )
+            self.group_dropdown = None
         
         # Message type filter dropdown (only for messages tab)
         if show_message_type:
@@ -126,10 +118,13 @@ class FiltersBarComponent:
         """Build the filter bar."""
         controls = []
         
-        if self.start_date_field and self.end_date_field:
-            controls.extend([self.start_date_field, self.end_date_field, ft.Container(width=20)])
+        if self.date_range_selector:
+            controls.append(self.date_range_selector.build())
+            controls.append(ft.Container(width=20))
         
-        controls.append(self.group_dropdown)
+        # Only add group dropdown if enabled
+        if self.group_dropdown:
+            controls.append(self.group_dropdown)
         
         # Only add message type dropdown if enabled
         if self.message_type_dropdown:
@@ -142,26 +137,22 @@ class FiltersBarComponent:
         return ft.Row(controls, spacing=10, wrap=False)
     
     def get_start_date(self) -> Optional[datetime]:
-        """Get start date from field."""
-        if not self.start_date_field:
-            return None
-        try:
-            if self.start_date_field.value:
-                return datetime.strptime(self.start_date_field.value, "%Y-%m-%d")
-        except:
-            pass
+        """Get start date."""
+        if self.date_range_selector:
+            return self.date_range_selector.get_start_date()
         return None
     
     def get_end_date(self) -> Optional[datetime]:
-        """Get end date from field."""
-        if not self.end_date_field:
-            return None
-        try:
-            if self.end_date_field.value:
-                return datetime.strptime(self.end_date_field.value, "%Y-%m-%d")
-        except:
-            pass
+        """Get end date."""
+        if self.date_range_selector:
+            return self.date_range_selector.get_end_date()
         return None
+    
+    def set_page(self, page: ft.Page):
+        """Set page reference and add date pickers to overlay."""
+        self.page = page
+        if page and self.date_range_selector:
+            self.date_range_selector.set_page(page)
     
     def get_selected_group(self) -> Optional[int]:
         """Get selected group ID."""
@@ -181,10 +172,7 @@ class FiltersBarComponent:
             self.group_dropdown.value = None
         if self.message_type_dropdown:
             self.message_type_dropdown.value = theme_manager.t("all_types")
-        if self.start_date_field:
-            self.start_date_field.value = ""
-        if self.end_date_field:
-            self.end_date_field.value = ""
+        # Date range selector resets automatically when quick select changes
     
     def _on_group_selected(self, e):
         """Handle group selection."""
@@ -198,8 +186,8 @@ class FiltersBarComponent:
         if self.on_group_change:
             self.on_group_change(self.selected_group)
     
-    def _on_date_change(self, e):
-        """Handle date field change."""
+    def _on_date_range_changed(self, start_date: datetime, end_date: datetime):
+        """Handle date range change from DateRangeSelector."""
         if self.on_date_change:
             self.on_date_change()
     

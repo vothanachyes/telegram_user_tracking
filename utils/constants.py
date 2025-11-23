@@ -86,17 +86,57 @@ def get_app_data_dir() -> Path:
 # Application data directory (for logs, sessions, etc.)
 APP_DATA_DIR = get_app_data_dir()
 
+def _resolve_path(env_var: str, default_path: Path, base_dir: Path = None) -> str:
+    """
+    Resolve a path from environment variable or default.
+    If env var is a relative path and base_dir is provided, resolve relative to base_dir.
+    If env var is absolute, use it as-is.
+    
+    Args:
+        env_var: Environment variable name
+        default_path: Default Path object (used if env var not set)
+        base_dir: Base directory for resolving relative paths (defaults to APP_DATA_DIR)
+                  If None, paths are resolved relative to BASE_DIR
+    
+    Returns:
+        Resolved path as string
+    """
+    env_value = os.getenv(env_var, "").strip()
+    
+    if not env_value:
+        # Use default path
+        return str(default_path)
+    
+    env_path = Path(env_value)
+    
+    # If path is absolute, use it as-is
+    if env_path.is_absolute():
+        return str(env_path)
+    
+    # If path is relative, resolve it relative to base_dir (or BASE_DIR if base_dir is None)
+    # This allows relative paths like "./data/app.db" or "data/app.db" to be resolved
+    # relative to APP_DATA_DIR when APP_DATA_DIR is set
+    if base_dir is None:
+        base_dir = BASE_DIR
+    
+    # Normalize the relative path (remove ./ prefix if present)
+    normalized_path = env_path.as_posix().lstrip('./')
+    resolved = (base_dir / normalized_path).resolve()
+    return str(resolved)
+
 # Database path: Use env var if set (for development), otherwise use secure directory
 # NOTE: For authenticated users, per-user databases are stored in USER_DATA_DIR/databases/app_{firebase_uid}.db
 # This DATABASE_PATH is used as a fallback for non-authenticated users or when Firebase is not configured.
 # See utils/database_path.py for per-user database path generation.
-DATABASE_PATH = os.getenv("DATABASE_PATH", str(USER_DATA_DIR / "app.db"))
+# If DATABASE_PATH is a relative path and APP_DATA_DIR is set, it will be resolved relative to APP_DATA_DIR.
+DATABASE_PATH = _resolve_path("DATABASE_PATH", USER_DATA_DIR / "app.db", APP_DATA_DIR)
 
 # Sample database path
 SAMPLE_DATABASE_PATH = str(APP_DATA_DIR / "sample_db" / "app.db")
 
 # Downloads: Can also use secure directory or keep in project for development
-DEFAULT_DOWNLOAD_DIR = os.getenv("DEFAULT_DOWNLOAD_DIR", str(USER_DATA_DIR / "downloads"))
+# If DEFAULT_DOWNLOAD_DIR is a relative path and APP_DATA_DIR is set, it will be resolved relative to APP_DATA_DIR.
+DEFAULT_DOWNLOAD_DIR = _resolve_path("DEFAULT_DOWNLOAD_DIR", USER_DATA_DIR / "downloads", APP_DATA_DIR)
 
 # Theme
 PRIMARY_COLOR = os.getenv("PRIMARY_COLOR", "#082f49")
@@ -106,7 +146,7 @@ COLORS = {
     "primary": PRIMARY_COLOR,
     "primary_dark": "#041724",
     "primary_light": "#0c4a68",
-    "secondary": "#0ea5e9",
+    "secondary": "#075985",  # Much darker blue for reduced eye strain in dark mode
     "success": "#10b981",
     "warning": "#f59e0b",
     "error": "#ef4444",
@@ -192,57 +232,11 @@ PHONE_PATTERN = r"^\+?[1-9]\d{1,14}$"
 EMAIL_PATTERN = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
 
 # License Tiers
-LICENSE_TIER_BRONZE = "bronze"
-LICENSE_TIER_SILVER = "silver"
-LICENSE_TIER_GOLD = "gold"
-LICENSE_TIER_PREMIUM = "premium"
+# Note: License tiers are now managed in the admin app and stored in Firestore.
+# Use services/license/license_tier_service.py to fetch tier definitions dynamically.
 
-# License Pricing (USD and KHR)
-LICENSE_PRICING = {
-    LICENSE_TIER_BRONZE: {
-        "name": "Bronze",
-        "price_usd": 0,
-        "price_khr": 0,
-        "max_groups": 1,
-        "max_devices": 1,
-        "max_accounts": 1,
-        "period": 3,  # 7 days trial period
-        "features": ["max_groups", "max_devices"]
-    },
-    LICENSE_TIER_SILVER: {
-        "name": "Silver",
-        "price_usd": 5,
-        "price_khr": 20000,
-        "max_groups": 3,
-        "max_devices": 1,
-        "max_accounts": 1,
-        "period": 30,  # 30 days subscription period
-        "features": ["max_groups", "max_devices"]
-    },
-    LICENSE_TIER_GOLD: {
-        "name": "Gold",
-        "price_usd": 12,
-        "price_khr": 48000,
-        "max_groups": 10,
-        "max_devices": 2,
-        "max_accounts": 3,
-        "period": 30,  # 30 days subscription period
-        "features": ["max_groups", "max_devices"]
-    },
-    LICENSE_TIER_PREMIUM: {
-        "name": "Premium",
-        "price_usd": 25,
-        "price_khr": 100000,
-        "max_groups": -1,  # -1 means unlimited
-        "max_devices": 5,
-        "max_accounts": 5,
-        "period": 30,  # 30 days subscription period
-        "features": ["unlimited_groups", "max_devices", "priority_support"]
-    }
-}
-
-# Default license tier
-DEFAULT_LICENSE_TIER = LICENSE_TIER_PREMIUM
+# Default license tier (fallback when no license found)
+DEFAULT_LICENSE_TIER = "premium"
 
 # Update System Settings
 UPDATE_CHECK_INTERVAL_SECONDS = 3600  # 1 hour

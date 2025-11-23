@@ -9,7 +9,7 @@ from database.models import AppSettings
 from ui.theme import theme_manager
 from config.settings import settings as app_settings
 from services.telegram import TelegramService
-from ui.pages.settings.tabs import GeneralTab, AuthenticateTab, ConfigureTab, SecurityTab, DataTab
+from ui.pages.settings.tabs import GeneralTab, AuthenticateTab, ConfigureTab, SecurityTab, DataTab, DevicesTab
 from ui.pages.settings.handlers import SettingsHandlers
 from config.app_config import app_config
 
@@ -70,6 +70,9 @@ class SettingsPage(ft.Container):
             page=None  # Will be set when page is assigned
         )
         
+        # Initialize devices tab
+        self.devices_tab = DevicesTab()
+        
         # Update handlers reference
         self.handlers.authenticate_tab = self.authenticate_tab
         
@@ -89,6 +92,12 @@ class SettingsPage(ft.Container):
             if e.control.selected_index == authenticate_index:
                 # Auto-refresh accounts list when user enters Authenticate tab
                 self.authenticate_tab.update_accounts_list()
+            
+            # Auto-refresh devices when Devices tab is selected
+            # Find devices tab index dynamically
+            selected_tab = tabs_list[e.control.selected_index] if e.control.selected_index < len(tabs_list) else None
+            if selected_tab and selected_tab.icon == ft.Icons.DEVICES:
+                self.devices_tab.load_devices()
         
         # Build tabs list
         tabs_list = [
@@ -119,6 +128,15 @@ class SettingsPage(ft.Container):
                     content=self.security_tab.build()
                 )
             )
+        
+        # Add Devices tab (always visible)
+        tabs_list.append(
+            ft.Tab(
+                text=theme_manager.t("devices") or "Devices",
+                icon=ft.Icons.DEVICES,
+                content=self.devices_tab.build()
+            )
+        )
         
         # Add Data tab (always visible)
         tabs_list.append(
@@ -167,4 +185,5 @@ class SettingsPage(ft.Container):
         self.configure_tab.page = page
         self.security_tab.page = page
         self.data_tab.page = page
+        self.devices_tab.page = page
 

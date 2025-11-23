@@ -9,9 +9,7 @@ from datetime import datetime, timedelta
 from config.firebase_config import firebase_config
 from database.db_manager import DatabaseManager
 from database.models import UserLicenseCache
-from utils.constants import (
-    LICENSE_PRICING, LICENSE_TIER_BRONZE, DEFAULT_LICENSE_TIER
-)
+from utils.constants import DEFAULT_LICENSE_TIER
 
 if TYPE_CHECKING:
     from services.auth_service import AuthService
@@ -59,15 +57,35 @@ class LicenseSync:
                 logger.info("License creation is admin-only - please contact admin to create your license")
                 # Use default tier for local cache (user will see limits but can't use features)
                 default_tier = DEFAULT_LICENSE_TIER
-                tier_info = LICENSE_PRICING.get(default_tier, {})
-                period_days = tier_info.get('period', 7)
+                
+                # Try to get tier definition from Firestore for defaults
+                try:
+                    from services.license.license_tier_service import license_tier_service
+                    tier_info = license_tier_service.get_tier(default_tier)
+                    if tier_info:
+                        period_days = tier_info.get('period', 30)
+                        max_devices = tier_info.get('max_devices', 1)
+                        max_groups = tier_info.get('max_groups', 1)
+                        max_accounts = tier_info.get('max_accounts', 1)
+                    else:
+                        # Fallback to hardcoded defaults if tier not found
+                        period_days = 30
+                        max_devices = 1
+                        max_groups = 1
+                        max_accounts = 1
+                except Exception:
+                    # Fallback to hardcoded defaults if service unavailable
+                    period_days = 30
+                    max_devices = 1
+                    max_groups = 1
+                    max_accounts = 1
                 
                 # Create local cache with default values (no Firebase write)
                 license_data = {
                     'license_tier': default_tier,
-                    'max_devices': tier_info.get('max_devices', 1),
-                    'max_groups': tier_info.get('max_groups', 1),
-                    'max_accounts': tier_info.get('max_accounts', 1),
+                    'max_devices': max_devices,
+                    'max_groups': max_groups,
+                    'max_accounts': max_accounts,
                     'max_account_actions': 2,
                     'active_device_ids': [],
                     'expiration_date': (datetime.now() + timedelta(days=period_days)).isoformat()
@@ -91,7 +109,8 @@ class LicenseSync:
                     expiration_date = datetime.fromtimestamp(exp_val.timestamp())
             
             # Get tier and limits
-            tier = license_data.get('license_tier', DEFAULT_LICENSE_TIER)
+            # Accept both 'tier' (admin app) and 'license_tier' (legacy) field names
+            tier = license_data.get('tier') or license_data.get('license_tier', DEFAULT_LICENSE_TIER)
             
             # Check if license is expired and auto-renew Bronze (free trial) licenses
             if expiration_date:
@@ -108,9 +127,11 @@ class LicenseSync:
                     logger.warning(f"License expired for user {uid} (tier: {tier})")
                     logger.info("License renewal is admin-only - please contact admin to renew your license")
                     # Continue with expired license data (user will see expiration warnings)
-            max_devices = license_data.get('max_devices', LICENSE_PRICING.get(tier, {}).get('max_devices', 1))
-            max_groups = license_data.get('max_groups', LICENSE_PRICING.get(tier, {}).get('max_groups', 3))
-            max_accounts = license_data.get('max_accounts', LICENSE_PRICING.get(tier, {}).get('max_accounts', 1))
+            # Get values from license_data first, fallback to defaults if not present
+            # For custom tier or any tier, values should come from license_data
+            max_devices = license_data.get('max_devices', 1)
+            max_groups = license_data.get('max_groups', 1)
+            max_accounts = license_data.get('max_accounts', 1)
             max_account_actions = license_data.get('max_account_actions', 2)  # Default to 2 if not specified
             
             # Create cache entry

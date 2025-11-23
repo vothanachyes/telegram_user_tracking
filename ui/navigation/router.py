@@ -39,13 +39,13 @@ class Router:
     
     def navigate_to(self, page_id: str):
         """
-        Navigate to a page by ID.
+        Navigate to a page by ID - OPTIMIZED for instant navigation.
         
         Args:
             page_id: ID of the page to navigate to
         """
         try:
-            # Navigation is always allowed - fetch continues in background
+            # Update current page ID immediately
             logger.debug(f"Navigating to page: {page_id}")
             self.current_page_id = page_id
             
@@ -53,19 +53,31 @@ class Router:
                 logger.error("content_area not found, cannot navigate")
                 return
             
-            # Create new page instance
-            new_page = self.page_factory.create_page(page_id)
-            self._current_page_instance = new_page
-            self.content_area.content = new_page
+            # Show loading placeholder immediately
+            from ui.components.skeleton_loaders.general_skeleton import GeneralSkeleton
+            loading_placeholder = GeneralSkeleton.create()
+            self.content_area.content = loading_placeholder
             
-            # Update sidebar to reflect new current page
+            # Update sidebar immediately (fast style-only update)
             if self.sidebar:
-                self.sidebar.set_current_page(page_id)
+                self.sidebar.set_current_page(page_id, update_ui_only=True)
             
-            if not safe_page_update(self.page):
-                logger.debug(f"Page update failed (event loop may be closed) for page: {page_id}")
+            # Update page immediately to show loading
+            safe_page_update(self.page)
+            
+            # Check device revocation and create page asynchronously (non-blocking)
+            critical_pages = ["dashboard", "telegram", "fetch_data", "groups", "user_dashboard"]
+            if page_id in critical_pages:
+                # Check device revocation asynchronously - don't block navigation
+                if self.page and hasattr(self.page, 'run_task'):
+                    self.page.run_task(self._check_device_and_navigate, page_id)
+                else:
+                    import asyncio
+                    asyncio.create_task(self._check_device_and_navigate(page_id))
             else:
-                logger.debug(f"Successfully navigated to page: {page_id}")
+                # Non-critical page - create immediately
+                self._create_and_set_page(page_id)
+                
         except RuntimeError as e:
             if "Event loop is closed" in str(e):
                 logger.debug(f"Event loop closed while navigating to page '{page_id}'")
@@ -73,6 +85,35 @@ class Router:
                 logger.error(f"Error navigating to page '{page_id}': {e}", exc_info=True)
         except Exception as e:
             logger.error(f"Error navigating to page '{page_id}': {e}", exc_info=True)
+    
+    async def _check_device_and_navigate(self, page_id: str):
+        """Check device status and navigate if allowed."""
+        try:
+            from services.device_revocation_handler import device_revocation_handler
+            if device_revocation_handler.check_now():
+                # Device is revoked, logout will happen - don't navigate
+                logger.warning("Device revoked, navigation cancelled")
+                return
+        except Exception as e:
+            logger.error(f"Error checking device status: {e}", exc_info=True)
+            # Continue navigation even if check fails
+        
+        # Device check passed - create page
+        self._create_and_set_page(page_id)
+    
+    def _create_and_set_page(self, page_id: str):
+        """Create page and set it in content area."""
+        try:
+            new_page = self.page_factory.create_page(page_id)
+            self._current_page_instance = new_page
+            self.content_area.content = new_page
+            
+            if safe_page_update(self.page):
+                logger.debug(f"Successfully navigated to page: {page_id}")
+            else:
+                logger.debug(f"Page update failed (event loop may be closed) for page: {page_id}")
+        except Exception as e:
+            logger.error(f"Error creating page '{page_id}': {e}", exc_info=True)
     
     def get_current_page_id(self) -> str:
         """Get current page ID."""
@@ -138,14 +179,14 @@ class Router:
         # Start fetch indicator updates
         if self.page and hasattr(self.page, 'run_task'):
             self.page.run_task(top_header.start_fetch_indicator_updates)
-            self.page.run_task(top_header.start_notification_badge_updates)
+            self.page.run_task(top_header.setup_realtime_notifications)
         else:
             import asyncio
             # Store task reference to prevent multiple instances
             if not hasattr(top_header, '_fetch_update_task') or top_header._fetch_update_task.done():
                 top_header._fetch_update_task = asyncio.create_task(top_header.start_fetch_indicator_updates())
-            if not hasattr(top_header, '_notification_update_task') or top_header._notification_update_task.done():
-                top_header._notification_update_task = asyncio.create_task(top_header.start_notification_badge_updates())
+            if not hasattr(top_header, '_notification_realtime_task') or top_header._notification_realtime_task.done():
+                top_header._notification_realtime_task = asyncio.create_task(top_header.setup_realtime_notifications())
         # Initial update
         top_header.update_fetch_indicator()
         top_header.update_notification_badge()

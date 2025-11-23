@@ -13,14 +13,26 @@ class UserStatsComponent:
     def __init__(self):
         self.stats_container = ft.Container(
             content=ft.Column([
+                ft.Icon(
+                    ft.Icons.BAR_CHART_OUTLINED,
+                    size=64,
+                    color=theme_manager.text_secondary_color
+                ),
                 ft.Text(
                     theme_manager.t("select_user_to_view_statistics"),
-                    size=16,
+                    size=18,
+                    weight=ft.FontWeight.BOLD,
+                    color=theme_manager.text_secondary_color,
+                    text_align=ft.TextAlign.CENTER
+                ),
+                ft.Text(
+                    theme_manager.t("user_statistics_will_appear_here"),
+                    size=14,
                     color=theme_manager.text_secondary_color,
                     text_align=ft.TextAlign.CENTER
                 )
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=20),
-            padding=20,
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=15),
+            padding=40,
             expand=True
         )
     
@@ -99,13 +111,25 @@ class UserStatsComponent:
     def show_empty_state(self):
         """Show empty state when no user is selected."""
         self.stats_container.content = ft.Column([
+            ft.Icon(
+                ft.Icons.BAR_CHART_OUTLINED,
+                size=64,
+                color=theme_manager.text_secondary_color
+            ),
             ft.Text(
                 theme_manager.t("select_user_to_view_statistics"),
-                size=16,
+                size=18,
+                weight=ft.FontWeight.BOLD,
+                color=theme_manager.text_secondary_color,
+                text_align=ft.TextAlign.CENTER
+            ),
+            ft.Text(
+                theme_manager.t("user_statistics_will_appear_here"),
+                size=14,
                 color=theme_manager.text_secondary_color,
                 text_align=ft.TextAlign.CENTER
             )
-        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=20)
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=15)
     
     def _create_stat_card(self, label: str, value: str, icon: str) -> ft.Container:
         """Create a statistics card."""

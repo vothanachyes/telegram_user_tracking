@@ -2,8 +2,10 @@
 Admin license tier management service.
 """
 
+import json
 import logging
 import re
+from pathlib import Path
 from typing import List, Optional, Dict
 from datetime import datetime
 from admin.config.admin_config import admin_config
@@ -185,39 +187,13 @@ class AdminLicenseTierService:
             return 0
     
     def sync_tiers_from_constants(self) -> bool:
-        """Sync license tiers from constants.py to Firestore."""
-        if not self._ensure_initialized():
-            return False
-        
-        try:
-            # Import constants
-            import sys
-            from pathlib import Path
-            project_root = Path(__file__).parent.parent.parent
-            sys.path.insert(0, str(project_root))
-            from utils.constants import LICENSE_PRICING
-            
-            synced_count = 0
-            for tier_key, tier_data in LICENSE_PRICING.items():
-                # Check if tier already exists
-                existing = self.get_tier(tier_key)
-                if existing:
-                    # Update if needed (preserve created_at)
-                    tier_data_copy = tier_data.copy()
-                    tier_data_copy["created_at"] = existing.get("created_at", datetime.utcnow().isoformat() + "Z")
-                    if self.update_tier(tier_key, tier_data_copy):
-                        synced_count += 1
-                else:
-                    # Create new tier
-                    if self.create_tier(tier_key, tier_data.copy()):
-                        synced_count += 1
-            
-            logger.info(f"Synced {synced_count} license tiers from constants")
-            return synced_count > 0
-            
-        except Exception as e:
-            logger.error(f"Error syncing tiers from constants: {e}", exc_info=True)
-            return False
+        """
+        Sync license tiers from constants.py to Firestore.
+        Note: This method is deprecated as license tiers are now managed in the admin app.
+        Returns False as constants no longer exist.
+        """
+        logger.warning("sync_tiers_from_constants() is deprecated - license tiers are now managed in the admin app")
+        return False
     
     def update_existing_licenses(self, tier_key: str, tier_data: dict) -> int:
         """Update all user licenses using this tier with new tier values."""
@@ -255,6 +231,72 @@ class AdminLicenseTierService:
             return False
         pattern = r'^[a-z0-9_]+$'
         return bool(re.match(pattern, tier_key))
+    
+    def sync_tiers_to_json(self, json_path: Optional[str] = None) -> bool:
+        """
+        Sync all license tiers from Firebase to JSON file.
+        
+        Args:
+            json_path: Path to JSON file (defaults to admin/config/licence_teir_init.json)
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self._ensure_initialized():
+            logger.error("Firebase not initialized")
+            return False
+        
+        try:
+            # Get all tiers from Firebase
+            tiers = self.get_all_tiers()
+            
+            # Determine JSON file path
+            if json_path is None:
+                # Get admin config directory
+                admin_config_dir = Path(__file__).parent.parent / "config"
+                json_path = admin_config_dir / "licence_teir_init.json"
+            else:
+                json_path = Path(json_path)
+            
+            # Prepare data for JSON export
+            sync_date = datetime.utcnow().isoformat() + "Z"
+            tiers_data = []
+            
+            for tier in tiers:
+                tier_export = {
+                    "tier_key": tier.get("tier_key", ""),
+                    "name": tier.get("name", ""),
+                    "price_usd": tier.get("price_usd", 0),
+                    "price_khr": tier.get("price_khr", 0),
+                    "max_groups": tier.get("max_groups", 1),
+                    "max_devices": tier.get("max_devices", 1),
+                    "max_accounts": tier.get("max_accounts", 1),
+                    "period": tier.get("period", 30),
+                    "features": tier.get("features", []),
+                    "created_at": tier.get("created_at", ""),
+                    "modified_date": tier.get("updated_at", tier.get("modified_date", "")),
+                }
+                tiers_data.append(tier_export)
+            
+            # Create JSON structure
+            json_data = {
+                "sync_date": sync_date,
+                "tiers": tiers_data
+            }
+            
+            # Ensure directory exists
+            json_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Write to JSON file
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(json_data, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"Synced {len(tiers_data)} license tiers to {json_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error syncing tiers to JSON: {e}", exc_info=True)
+            return False
     
     def _validate_tier_data(self, tier_data: dict) -> bool:
         """Validate tier data fields."""

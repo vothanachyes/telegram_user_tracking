@@ -84,6 +84,9 @@ class Sidebar(ft.Container):
             )
         )
         
+        # Store page_id for fast style updates
+        icon_button._page_id = page_id
+        
         # Wrap in Container for sizing only - IconButton handles clicks and tooltips
         # Don't set bgcolor or on_click on Container to avoid blocking events
         return ft.Container(
@@ -314,9 +317,44 @@ class Sidebar(ft.Container):
         except Exception as e:
             logger.error(f"Error updating sidebar buttons: {e}", exc_info=True)
     
-    def set_current_page(self, page_id: str):
-        """Update current page from external source (e.g., when navigating from app)."""
+    def set_current_page(self, page_id: str, update_ui_only: bool = False):
+        """Update current page from external source (e.g., when navigating from app).
+        
+        Args:
+            page_id: The new current page ID
+            update_ui_only: If True, only update button styles without recreating buttons (faster)
+        """
         if self.current_page != page_id:
             self.current_page = page_id
-            self._update_buttons()
+            if update_ui_only:
+                # Fast update - just change styles, don't recreate
+                self._update_button_styles_only()
+            else:
+                self._update_buttons()
+    
+    def _update_button_styles_only(self):
+        """Fast update - only change button styles without recreation."""
+        try:
+            for button_container in self._nav_buttons:
+                if isinstance(button_container, ft.Container) and button_container.content:
+                    icon_button = button_container.content
+                    if isinstance(icon_button, ft.IconButton):
+                        page_id = getattr(icon_button, '_page_id', None)
+                        if page_id:
+                            is_active = self.current_page == page_id
+                            icon_button.icon_color = ft.Colors.WHITE if is_active else theme_manager.text_secondary_color
+                            if icon_button.style:
+                                icon_button.style.bgcolor = theme_manager.primary_color if is_active else ft.Colors.TRANSPARENT
+            # Update through page if available
+            if hasattr(self, 'page') and self.page:
+                safe_page_update(self.page)
+            else:
+                try:
+                    self.update()
+                except (AssertionError, AttributeError, RuntimeError):
+                    pass  # Control not yet added to page
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Error updating button styles: {e}")
 

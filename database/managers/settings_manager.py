@@ -92,6 +92,8 @@ class SettingsManager(BaseDatabaseManager):
                     encryption_enabled=bool(_safe_get_row_value(row, 'encryption_enabled', False)),
                     encryption_key_hash=_safe_get_row_value(row, 'encryption_key_hash', None),
                     session_encryption_enabled=bool(_safe_get_row_value(row, 'session_encryption_enabled', False)),
+                    page_cache_enabled=bool(_safe_get_row_value(row, 'page_cache_enabled', True)),
+                    page_cache_ttl_seconds=int(_safe_get_row_value(row, 'page_cache_ttl_seconds', 300)),
                     created_at=_parse_datetime(row['created_at']),
                     updated_at=_parse_datetime(row['updated_at'])
                 )
@@ -132,6 +134,8 @@ class SettingsManager(BaseDatabaseManager):
                         encryption_enabled = ?,
                         encryption_key_hash = ?,
                         session_encryption_enabled = ?,
+                        page_cache_enabled = ?,
+                        page_cache_ttl_seconds = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = 1
                 """, (
@@ -159,7 +163,9 @@ class SettingsManager(BaseDatabaseManager):
                     settings.db_path,
                     settings.encryption_enabled,
                     settings.encryption_key_hash,
-                    settings.session_encryption_enabled
+                    settings.session_encryption_enabled,
+                    settings.page_cache_enabled,
+                    settings.page_cache_ttl_seconds
                 ))
                 conn.commit()
                 return True

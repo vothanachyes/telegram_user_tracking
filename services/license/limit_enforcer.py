@@ -7,7 +7,6 @@ from typing import Optional, Tuple, TYPE_CHECKING
 
 from config.firebase_config import firebase_config
 from database.db_manager import DatabaseManager
-from utils.constants import LICENSE_PRICING
 
 if TYPE_CHECKING:
     from services.auth_service import AuthService
@@ -59,7 +58,13 @@ class LimitEnforcer:
         current_count = len(groups)
         
         if current_count >= max_groups:
-            tier_name = LICENSE_PRICING.get(tier, {}).get('name', tier.capitalize())
+            # Get tier name from Firestore or use capitalized tier key
+            try:
+                from services.license.license_tier_service import license_tier_service
+                tier_info = license_tier_service.get_tier(tier) or {}
+                tier_name = tier_info.get('name', tier.capitalize())
+            except Exception:
+                tier_name = tier.capitalize()
             return False, f"You have reached the group limit ({max_groups}) for {tier_name} tier. Please contact admin to upgrade."
         
         return True, None
@@ -111,7 +116,13 @@ class LimitEnforcer:
         # Check if limit reached
         if len(active_devices) >= max_devices:
             tier = license_status['tier']
-            tier_name = LICENSE_PRICING.get(tier, {}).get('name', tier.capitalize())
+            # Get tier name from Firestore or use capitalized tier key
+            try:
+                from services.license.license_tier_service import license_tier_service
+                tier_info = license_tier_service.get_tier(tier) or {}
+                tier_name = tier_info.get('name', tier.capitalize())
+            except Exception:
+                tier_name = tier.capitalize()
             return False, f"You have reached the device limit ({max_devices}) for {tier_name} tier. Please contact admin to upgrade or deactivate a device.", active_devices
         
         return True, None, active_devices
@@ -170,7 +181,13 @@ class LimitEnforcer:
         
         if current_count >= max_accounts:
             tier = license_status['tier']
-            tier_name = LICENSE_PRICING.get(tier, {}).get('name', tier.capitalize())
+            # Get tier name from Firestore or use capitalized tier key
+            try:
+                from services.license.license_tier_service import license_tier_service
+                tier_info = license_tier_service.get_tier(tier) or {}
+                tier_name = tier_info.get('name', tier.capitalize())
+            except Exception:
+                tier_name = tier.capitalize()
             return False, f"You have reached the account limit ({max_accounts}) for {tier_name} tier. Please contact admin to upgrade.", current_count, max_accounts
         
         return True, None, current_count, max_accounts

@@ -143,6 +143,13 @@ class LicenseTierFormDialog(ft.AlertDialog):
         )
         
         # Build content
+        # Set expand=True for TextFields in Rows to prevent floating out
+        self.price_usd_field.expand = True
+        self.price_khr_field.expand = True
+        self.max_groups_field.expand = True
+        self.max_devices_field.expand = True
+        self.max_accounts_field.expand = True
+        
         content_controls = [
             self.tier_key_field,
             self.name_field,

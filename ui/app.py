@@ -46,12 +46,12 @@ class TelegramUserTrackingApp:
             if is_development:
                 # In development: allow using DATABASE_PATH from .env to skip login
                 # This is useful for faster development/testing
-                import os
-                from utils.constants import DATABASE_PATH
-                dev_db_path = os.getenv("DATABASE_PATH", "").strip()
+                # Use the constant which has auto-concatenation with APP_DATA_DIR
+                from utils.constants import DATABASE_PATH, USER_DATA_DIR
+                dev_db_path = DATABASE_PATH
                 
                 # If DATABASE_PATH is explicitly set in .env, use it (development convenience)
-                from utils.constants import USER_DATA_DIR
+                # Check if it's different from default (meaning it was set in .env)
                 if dev_db_path and dev_db_path != str(USER_DATA_DIR / "app.db"):
                     # Handle directory-only paths
                     if dev_db_path.endswith('/') or dev_db_path.endswith('\\'):
@@ -96,6 +96,7 @@ class TelegramUserTrackingApp:
             page=self.page,
             db_manager=self.db_manager,
             telegram_service=self.telegram_service,
+            update_service=self.update_service,
             on_settings_changed=self._on_settings_changed,
             on_logout=self._on_logout
         )
@@ -106,6 +107,7 @@ class TelegramUserTrackingApp:
         self.update_service = None
         if self.db_manager:
             self._init_update_service()
+            self._init_cache_service()
         
         # Build UI
         self._build_ui()
@@ -277,6 +279,7 @@ class TelegramUserTrackingApp:
                 page=self.page,
                 db_manager=new_db_manager,
                 telegram_service=self.telegram_service,
+                update_service=self.update_service,
                 on_settings_changed=self._on_settings_changed,
                 on_logout=self._on_logout
             )
@@ -292,6 +295,12 @@ class TelegramUserTrackingApp:
         
         # Start update service
         self._start_update_service()
+        
+        # Initialize cache service with settings
+        self._init_cache_service()
+        
+        # Start device revocation handler
+        self._start_device_revocation_handler()
         
         # Ensure splash screen is hidden (in case it's still showing)
         # This is important when PIN dialog is shown after auto-login
@@ -452,6 +461,23 @@ class TelegramUserTrackingApp:
         # Stop update service
         self._stop_update_service()
         
+        # Stop device revocation polling
+        try:
+            from services.device_revocation_handler import device_revocation_handler
+            if hasattr(device_revocation_handler, 'stop_periodic_check'):
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.create_task(device_revocation_handler.stop_periodic_check())
+                    else:
+                        asyncio.run(device_revocation_handler.stop_periodic_check())
+                except RuntimeError:
+                    # No event loop, create task
+                    asyncio.create_task(device_revocation_handler.stop_periodic_check())
+        except Exception as e:
+            logger.debug(f"Error stopping device revocation polling: {e}")
+        
         self.is_logged_in = False
         
         # Reset db_manager to None if Firebase is configured (will be recreated on next login)
@@ -500,11 +526,49 @@ class TelegramUserTrackingApp:
         try:
             from services.license_service import LicenseService
             from services.auth_service import auth_service
-            license_service = LicenseService(self.db_manager, auth_service_instance=auth_service)
-            status = license_service.check_license_status()
             
-            if status['expired']:
+            # Ensure we have a user logged in
+            if not auth_service.current_user:
+                logger.debug("No user logged in - skipping license check")
+                return
+            
+            user_email = auth_service.current_user.get('email')
+            uid = auth_service.current_user.get('uid')
+            
+            if not user_email or not uid:
+                logger.debug("User email or UID missing - skipping license check")
+                return
+            
+            license_service = LicenseService(self.db_manager, auth_service_instance=auth_service)
+            
+            # First, ensure license is synced from Firebase
+            logger.debug(f"Syncing license from Firebase for {user_email} before status check")
+            sync_success = license_service.sync_from_firebase(user_email, uid)
+            if not sync_success:
+                logger.warning(f"Failed to sync license from Firebase for {user_email}")
+            
+            # Check license status after sync
+            status = license_service.check_license_status(user_email, uid)
+            
+            logger.info(
+                f"License check result for {user_email}: "
+                f"expired={status.get('expired')}, "
+                f"expiration_date={status.get('expiration_date')}, "
+                f"days_until_expiration={status.get('days_until_expiration')}, "
+                f"tier={status.get('tier')}"
+            )
+            
+            # Only show expired dialog if license is actually expired (not just missing cache)
+            if status.get('expired') and status.get('expiration_date') is not None:
+                # License exists but is expired
+                logger.warning(f"License expired for user {user_email} - expiration: {status.get('expiration_date')}")
                 self._show_license_expired_dialog()
+            elif status.get('expired') and status.get('expiration_date') is None:
+                # No license cache found - might be a sync issue, log but don't show dialog
+                logger.warning(
+                    f"No license cache found for {user_email} after sync. "
+                    f"This might indicate the user has no license or sync failed."
+                )
             elif status.get('days_until_expiration') is not None and status['days_until_expiration'] < 7:
                 theme_manager.show_snackbar(
                     self.page,
@@ -512,7 +576,7 @@ class TelegramUserTrackingApp:
                     bgcolor=ft.Colors.ORANGE
                 )
         except Exception as e:
-            logger.error(f"Error checking license on startup: {e}")
+            logger.error(f"Error checking license on startup: {e}", exc_info=True)
     
     def _show_license_expired_dialog(self):
         """Show dialog when license is expired."""
@@ -542,6 +606,21 @@ class TelegramUserTrackingApp:
             message=theme_manager.t("contact_admin_to_upgrade"),
             actions=actions
         )
+    
+    def _init_cache_service(self):
+        """Initialize cache service with settings."""
+        try:
+            from services.page_cache_service import page_cache_service
+            from config.settings import settings
+            if settings.db_manager:
+                app_settings = settings.load_settings()
+                page_cache_service.configure(
+                    enabled=app_settings.page_cache_enabled,
+                    default_ttl=app_settings.page_cache_ttl_seconds
+                )
+                logger.debug(f"Cache service initialized: enabled={app_settings.page_cache_enabled}, ttl={app_settings.page_cache_ttl_seconds}s")
+        except Exception as e:
+            logger.warning(f"Could not initialize cache service: {e}, using defaults")
     
     def _init_update_service(self):
         """Initialize update service."""
@@ -653,6 +732,51 @@ class TelegramUserTrackingApp:
             self.page.run_task(start_async)
         else:
             asyncio.create_task(start_async())
+    
+    def _start_device_revocation_handler(self):
+        """Start device revocation handler for periodic checks."""
+        try:
+            from services.device_revocation_handler import device_revocation_handler
+            from services.auth_service import auth_service
+            
+            # Set callback for when device is revoked
+            def on_device_revoked():
+                """Handle device revocation - logout and show message."""
+                try:
+                    # Show notification
+                    if self.page:
+                        self.page.snack_bar = ft.SnackBar(
+                            content=ft.Text("Your device has been revoked. Logging out..."),
+                            bgcolor=ft.Colors.ERROR,
+                            duration=3000
+                        )
+                        self.page.snack_bar.open = True
+                        self.page.update()
+                    
+                    # Logout will be handled by the handler
+                except Exception as e:
+                    logger.error(f"Error in device revocation callback: {e}", exc_info=True)
+            
+            device_revocation_handler.set_revoked_callback(on_device_revoked)
+            
+            # Start periodic check
+            import asyncio
+            
+            async def start_check():
+                """Start periodic device check."""
+                try:
+                    await device_revocation_handler.start_periodic_check()
+                except Exception as e:
+                    logger.error(f"Error in device revocation check: {e}", exc_info=True)
+            
+            if hasattr(self.page, 'run_task'):
+                self.page.run_task(start_check)
+            else:
+                asyncio.create_task(start_check())
+            
+            logger.info("Device revocation handler started")
+        except Exception as e:
+            logger.error(f"Error starting device revocation handler: {e}", exc_info=True)
     
     def _stop_update_service(self):
         """Stop update service (synchronous wrapper)."""

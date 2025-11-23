@@ -6,6 +6,7 @@ env/
 ENV/
 .venv
 config/fbsvc-0267b58ca8.json
+xvothana
 
 # Python
 __pycache__/

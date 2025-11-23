@@ -6,8 +6,8 @@ import flet as ft
 from typing import Callable, Optional
 from admin.utils.constants import (
     PAGE_DASHBOARD, PAGE_USERS, PAGE_LICENSES, PAGE_LICENSE_TIERS,
-    PAGE_APP_UPDATES, PAGE_DEVICES, PAGE_ACTIVITY_LOGS, PAGE_BULK_OPERATIONS,
-    PAGE_NOTIFICATIONS
+    PAGE_APP_UPDATES, PAGE_DEVICES, PAGE_USER_ACTIVITIES, PAGE_ACTIVITY_LOGS, 
+    PAGE_BULK_OPERATIONS, PAGE_NOTIFICATIONS, PAGE_SUPPORT_TOOLS
 )
 
 
@@ -41,9 +41,11 @@ class AdminSidebar(ft.Container):
             (PAGE_LICENSE_TIERS, ft.Icons.STAR, "License Tiers"),
             (PAGE_APP_UPDATES, ft.Icons.UPDATE, "App Updates"),
             (PAGE_DEVICES, ft.Icons.DEVICES, "Devices"),
+            (PAGE_USER_ACTIVITIES, ft.Icons.ANALYTICS, "User Activities"),
             (PAGE_ACTIVITY_LOGS, ft.Icons.HISTORY, "Activity Logs"),
             (PAGE_BULK_OPERATIONS, ft.Icons.BATCH_PREDICTION, "Bulk Operations"),
             (PAGE_NOTIFICATIONS, ft.Icons.NOTIFICATIONS, "Notifications"),
+            (PAGE_SUPPORT_TOOLS, ft.Icons.SUPPORT_AGENT, "Support Tools"),
         ]
         
         self._nav_buttons = [

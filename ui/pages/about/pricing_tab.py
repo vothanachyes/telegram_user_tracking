@@ -4,8 +4,8 @@ Pricing tab content for about page.
 
 import flet as ft
 from ui.theme import theme_manager
-from utils.constants import LICENSE_PRICING, LICENSE_TIER_BRONZE, LICENSE_TIER_SILVER, LICENSE_TIER_GOLD, LICENSE_TIER_PREMIUM
 from services.license_service import LicenseService
+from services.license.license_tier_service import license_tier_service
 from config.settings import settings
 
 
@@ -14,15 +14,51 @@ class PricingTab:
     
     def __init__(self, license_service: LicenseService):
         self.license_service = license_service
-        self.license_info = license_service.get_license_info()
+        self.license_info = None  # Will be loaded asynchronously
     
     def build(self) -> ft.Container:
-        """Build Pricing tab content."""
+        """Build Pricing tab content (synchronous version - loads tiers synchronously)."""
+        # Load license info if not loaded
+        if self.license_info is None:
+            self.license_info = self.license_service.get_license_info()
+        
+        # Fetch tiers from Firestore (synchronous - for backward compatibility)
+        tiers = license_tier_service.get_all_tiers()
+        
+        return self.build_with_tiers(tiers)
+    
+    def build_with_tiers(self, tiers: list) -> ft.Container:
+        """Build Pricing tab content with pre-loaded tiers."""
         pricing_cards = []
         
-        for tier_key in [LICENSE_TIER_BRONZE, LICENSE_TIER_SILVER, LICENSE_TIER_GOLD, LICENSE_TIER_PREMIUM]:
-            tier_info = LICENSE_PRICING[tier_key]
-            is_current = self.license_info['tier'] == tier_key
+        # Load license info if not loaded
+        if self.license_info is None:
+            self.license_info = self.license_service.get_license_info()
+        
+        # If no tiers found, show empty state
+        if not tiers:
+            return ft.Container(
+                content=ft.Column([
+                    ft.Text(
+                        theme_manager.t("pricing"),
+                        size=theme_manager.font_size_page_title,
+                        weight=ft.FontWeight.BOLD
+                    ),
+                    theme_manager.spacing_container("lg"),
+                    ft.Text(
+                        "No pricing tiers available. Please contact admin.",
+                        size=theme_manager.font_size_body,
+                        color=theme_manager.text_secondary_color
+                    )
+                ], scroll=ft.ScrollMode.AUTO, spacing=theme_manager.spacing_sm, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=theme_manager.padding_lg,
+                expand=True
+            )
+        
+        # Create pricing cards for each tier
+        for tier_info in tiers:
+            tier_key = tier_info.get('tier_key', '')
+            is_current = self.license_info.get('tier') == tier_key if self.license_info else False
             pricing_cards.append(self._create_pricing_card(tier_key, tier_info, is_current))
         
         return ft.Container(
@@ -46,21 +82,26 @@ class PricingTab:
     
     def _create_pricing_card(self, tier_key: str, tier_info: dict, is_current: bool) -> ft.Container:
         """Create a pricing card for a tier."""
-        tier_name = tier_info['name']
-        price_usd = tier_info['price_usd']
-        price_khr = tier_info['price_khr']
-        max_groups = tier_info['max_groups']
-        max_devices = tier_info['max_devices']
-        features = tier_info['features']
+        tier_name = tier_info.get('name', tier_key.capitalize())
+        price_usd = tier_info.get('price_usd', 0)
+        price_khr = tier_info.get('price_khr', 0)
+        max_groups = tier_info.get('max_groups', 1)
+        max_devices = tier_info.get('max_devices', 1)
+        features = tier_info.get('features', [])
         
-        # Tier colors
+        # Handle features if it's a string (comma-separated)
+        if isinstance(features, str):
+            features = [f.strip() for f in features.split(',') if f.strip()]
+        
+        # Tier colors - dynamic mapping based on tier_key
         tier_colors = {
-            LICENSE_TIER_BRONZE: ft.Colors.BROWN,
-            LICENSE_TIER_SILVER: ft.Colors.GREY,
-            LICENSE_TIER_GOLD: ft.Colors.AMBER,
-            LICENSE_TIER_PREMIUM: ft.Colors.PURPLE
+            'bronze': ft.Colors.BROWN,
+            'silver': ft.Colors.GREY,
+            'gold': ft.Colors.AMBER,
+            'premium': ft.Colors.PURPLE,
+            'custom': ft.Colors.BLUE_GREY
         }
-        tier_color = tier_colors.get(tier_key, ft.Colors.GREY)
+        tier_color = tier_colors.get(tier_key.lower(), ft.Colors.GREY)
         
         # Features list
         feature_items = []
@@ -157,7 +198,11 @@ class PricingTab:
             import webbrowser
             from urllib.parse import quote
             
-            current_tier = self.license_info['tier']
+            # Load license info if not loaded
+            if self.license_info is None:
+                self.license_info = self.license_service.get_license_info()
+            
+            current_tier = self.license_info.get('tier', 'unknown') if self.license_info else 'unknown'
             subject = theme_manager.t("upgrade_email_subject")
             body = theme_manager.t("upgrade_email_body").format(
                 tier=tier,

@@ -104,6 +104,64 @@ class BaseDatabaseManager:
         # Expand user home directory if present (~)
         db_path_expanded = str(Path(self.db_path).expanduser())
         db_dir = Path(db_path_expanded).parent
+        db_file = Path(db_path_expanded)
+        
+        # Check if db_dir exists and is a file (not a directory)
+        # This can happen if someone accidentally created a database file with the directory name
+        if db_dir.exists() and db_dir.is_file():
+            # Check if it's a SQLite database file
+            is_sqlite = False
+            try:
+                with open(db_dir, 'rb') as f:
+                    header = f.read(16)
+                    # SQLite files start with "SQLite format 3"
+                    if header.startswith(b'SQLite format 3'):
+                        is_sqlite = True
+            except Exception:
+                pass
+            
+            if is_sqlite:
+                # Auto-fix: Move the database file to the correct location
+                logger.warning(
+                    f"Found database file '{db_dir}' where directory should be. "
+                    f"Automatically moving it to '{db_file}'"
+                )
+                try:
+                    # Step 1: Move the file to a temporary location (same parent directory)
+                    temp_file = db_dir.parent / f"{db_dir.name}_temp_{db_file.name}"
+                    db_dir.rename(temp_file)
+                    
+                    # Step 2: Create the directory
+                    db_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    # Step 3: Move the file to the correct location
+                    # Check if target file already exists
+                    if db_file.exists():
+                        # Backup existing file
+                        backup_file = db_file.parent / f"{db_file.stem}_backup_{db_file.suffix}"
+                        db_file.rename(backup_file)
+                        logger.warning(f"Existing database file backed up to '{backup_file}'")
+                    
+                    temp_file.rename(db_file)
+                    
+                    logger.info(f"Successfully moved database file from '{db_dir}' to '{db_file}'")
+                except Exception as e:
+                    error_msg = (
+                        f"Cannot create database directory '{db_dir}' because a file with that name already exists. "
+                        f"Attempted to auto-fix by moving '{db_dir}' to '{db_file}' but failed: {e}. "
+                        f"Please manually rename or remove the file '{db_dir}' and try again."
+                    )
+                    logger.error(error_msg)
+                    raise OSError(error_msg)
+            else:
+                # Not a database file, can't auto-fix
+                error_msg = (
+                    f"Cannot create database directory '{db_dir}' because a file with that name already exists. "
+                    f"Please rename or remove the file '{db_dir}' and try again."
+                )
+                logger.error(error_msg)
+                raise OSError(error_msg)
+        
         try:
             db_dir.mkdir(parents=True, exist_ok=True)
         except (OSError, PermissionError) as e:
@@ -114,6 +172,7 @@ class BaseDatabaseManager:
         """Initialize database with schema."""
         # Expand user home directory and normalize database path
         db_path_expanded = str(Path(self.db_path).expanduser())
+        original_path = db_path_expanded
         normalized_path = str(Path(db_path_expanded).resolve())
         # Update self.db_path to the expanded/resolved path
         self.db_path = normalized_path
@@ -124,11 +183,25 @@ class BaseDatabaseManager:
         # Check if this database has already been initialized in this session
         is_first_init = normalized_path not in _initialized_databases
         
+        # If this is the first init, mark it immediately to prevent other managers from logging
+        if is_first_init:
+            _initialized_databases.add(normalized_path)
+            # Log only once - show original path (what user expects)
+            if original_path != normalized_path:
+                # Windows Store Python virtualization - show both paths but keep it simple
+                logger.debug(
+                    f"Initializing database: {original_path} "
+                    f"(physical: {normalized_path}, exists: {db_file_exists})"
+                )
+            else:
+                logger.debug(f"Initializing database: {normalized_path} (exists: {db_file_exists})")
+        
         try:
             # Ensure parent directory exists and is writable
             db_dir = Path(normalized_path).parent
             if not db_dir.exists():
-                logger.debug(f"Creating database directory: {db_dir}")
+                if is_first_init:  # Only log directory creation on first init
+                    logger.debug(f"Creating database directory: {db_dir}")
                 db_dir.mkdir(parents=True, exist_ok=True)
                 # Verify directory was created
                 if not db_dir.exists():
@@ -137,8 +210,6 @@ class BaseDatabaseManager:
             # Check if directory is writable
             if not os.access(db_dir, os.W_OK):
                 raise PermissionError(f"Database directory is not writable: {db_dir}")
-            
-            logger.debug(f"Initializing database at: {normalized_path} (exists: {db_file_exists})")
             
             with sqlite3.connect(normalized_path) as conn:
                 # Enable WAL (Write-Ahead Logging) mode for better concurrency
@@ -180,11 +251,10 @@ class BaseDatabaseManager:
             except Exception as e:
                 raise IOError(f"Database file exists but cannot be accessed: {e}")
                 
-                # Only log once per database path
+                # Only log once per database path (already added to _initialized_databases earlier)
                 if is_first_init:
                     file_size = Path(normalized_path).stat().st_size
                     logger.info(f"Database initialized successfully at {normalized_path} (size: {file_size} bytes)")
-                    _initialized_databases.add(normalized_path)
         except Exception as e:
             logger.error(f"Error initializing database at {normalized_path}: {e}", exc_info=True)
             raise
@@ -451,6 +521,16 @@ class BaseDatabaseManager:
             if 'session_encryption_enabled' not in settings_columns:
                 conn.execute("ALTER TABLE app_settings ADD COLUMN session_encryption_enabled BOOLEAN NOT NULL DEFAULT 0")
                 logger.info("Added session_encryption_enabled column to app_settings table")
+            
+            # Add page_cache_enabled to app_settings if missing (default: True - enabled)
+            if 'page_cache_enabled' not in settings_columns:
+                conn.execute("ALTER TABLE app_settings ADD COLUMN page_cache_enabled BOOLEAN NOT NULL DEFAULT 1")
+                logger.info("Added page_cache_enabled column to app_settings table")
+            
+            # Add page_cache_ttl_seconds to app_settings if missing (default: 300 - 5 minutes)
+            if 'page_cache_ttl_seconds' not in settings_columns:
+                conn.execute("ALTER TABLE app_settings ADD COLUMN page_cache_ttl_seconds INTEGER NOT NULL DEFAULT 300")
+                logger.info("Added page_cache_ttl_seconds column to app_settings table")
             
             # Check if message_tags table exists
             cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='message_tags'")

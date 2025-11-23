@@ -4,7 +4,6 @@ License information card component.
 
 import flet as ft
 from ui.theme import theme_manager
-from utils.constants import LICENSE_TIER_BRONZE, LICENSE_TIER_SILVER, LICENSE_TIER_GOLD, LICENSE_TIER_PREMIUM
 
 
 class LicenseInfoCard:
@@ -26,14 +25,15 @@ class LicenseInfoCard:
         current_groups = self.license_info['current_groups']
         max_groups = self.license_info['max_groups']
         
-        # Tier color
+        # Tier color - dynamic mapping based on tier key
         tier_colors = {
-            LICENSE_TIER_BRONZE: ft.Colors.BROWN,
-            LICENSE_TIER_SILVER: ft.Colors.GREY,
-            LICENSE_TIER_GOLD: ft.Colors.AMBER,
-            LICENSE_TIER_PREMIUM: ft.Colors.PURPLE
+            'bronze': ft.Colors.BROWN,
+            'silver': ft.Colors.GREY,
+            'gold': ft.Colors.AMBER,
+            'premium': ft.Colors.PURPLE,
+            'custom': ft.Colors.BLUE_GREY
         }
-        tier_color = tier_colors.get(tier, ft.Colors.GREY)
+        tier_color = tier_colors.get(tier.lower(), ft.Colors.GREY)
         
         # Status text
         if expired:

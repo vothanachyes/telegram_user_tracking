@@ -70,23 +70,92 @@ class TelegramPage(ft.Container):
             pdf_picker_users=self.users_pdf_picker
         )
         
-        # Create tabs
-        self.tabs = ft.Tabs(
-            selected_index=0,
-            animation_duration=300,
-            tabs=[
-                ft.Tab(
-                    text=theme_manager.t("messages"),
-                    icon=ft.Icons.MESSAGE,
-                    content=self.messages_tab.build()
-                ),
-                ft.Tab(
-                    text=theme_manager.t("users"),
-                    icon=ft.Icons.PEOPLE,
-                    content=self.users_tab.build()
-                ),
-            ],
+        # Get groups for group dropdowns (after tabs are initialized to get their default groups)
+        groups = self.view_model.get_all_groups()
+        messages_default_group_id = self.messages_tab.filters_bar.get_selected_group()
+        users_default_group_id = self.users_tab.filters_bar.get_selected_group()
+        
+        # Create group options (only group names, no IDs)
+        group_options = [g.group_name for g in groups] if groups else []
+        
+        # Create mapping from group_name to group_id for easy lookup
+        self.group_name_to_id_map = {g.group_name: g.group_id for g in groups}
+        
+        # Get default values for each tab (group names only)
+        messages_default_value = None
+        if messages_default_group_id and groups:
+            default_group = next((g for g in groups if g.group_id == messages_default_group_id), None)
+            messages_default_value = default_group.group_name if default_group else (group_options[0] if group_options else None)
+        else:
+            messages_default_value = group_options[0] if group_options else None
+        
+        users_default_value = None
+        if users_default_group_id and groups:
+            default_group = next((g for g in groups if g.group_id == users_default_group_id), None)
+            users_default_value = default_group.group_name if default_group else (group_options[0] if group_options else None)
+        else:
+            users_default_value = group_options[0] if group_options else None
+        
+        # Messages tab group dropdown
+        self.messages_group_dropdown = theme_manager.create_dropdown(
+            label=theme_manager.t("select_group"),
+            options=group_options if group_options else ["No groups"],
+            value=messages_default_value,
+            on_change=self._on_messages_group_change,
+            width=250
+        )
+        
+        # Users tab group dropdown
+        self.users_group_dropdown = theme_manager.create_dropdown(
+            label=theme_manager.t("select_group"),
+            options=group_options if group_options else ["No groups"],
+            value=users_default_value,
+            on_change=self._on_users_group_change,
+            width=250
+        )
+        
+        # Note: Refresh and export buttons are now in tab content (above filters), not in tab bar
+        
+        # Store selected tab index
+        self.selected_tab_index = 0
+        
+        # Create tab content containers
+        self.messages_content = self.messages_tab.build()
+        self.users_content = self.users_tab.build()
+        
+        # Create tab buttons with references for easy updating
+        self.messages_tab_btn = ft.TextButton(
+            text=theme_manager.t("messages"),
+            icon=ft.Icons.MESSAGE,
+            on_click=lambda e: self._switch_tab(0),
+            style=ft.ButtonStyle(
+                color=theme_manager.primary_color if self.selected_tab_index == 0 else None
+            )
+        )
+        
+        self.users_tab_btn = ft.TextButton(
+            text=theme_manager.t("users"),
+            icon=ft.Icons.PEOPLE,
+            on_click=lambda e: self._switch_tab(1),
+            style=ft.ButtonStyle(
+                color=theme_manager.primary_color if self.selected_tab_index == 1 else None
+            )
+        )
+        
+        # Create custom tab bar with buttons inline
+        self.tab_content_container = ft.Container(
+            content=self.messages_content,
             expand=True
+        )
+        
+        # Store references to group dropdown containers for easy access
+        self.messages_group_container = ft.Container(
+            content=self.messages_group_dropdown,
+            visible=self.selected_tab_index == 0
+        )
+        self.users_group_container = ft.Container(
+            content=self.users_group_dropdown,
+            visible=self.selected_tab_index == 1
         )
         
         super().__init__(
@@ -96,7 +165,25 @@ class TelegramPage(ft.Container):
                     size=theme_manager.font_size_page_title,
                     weight=ft.FontWeight.BOLD
                 ),
-                self.tabs,
+                # Custom tab bar row with group selection
+                ft.Container(
+                    content=ft.Row([
+                        # Tab buttons
+                        ft.Row([
+                            self.messages_tab_btn,
+                            self.users_tab_btn,
+                        ], spacing=0),
+                        ft.Container(expand=True),  # Spacer
+                        # Group dropdown (context-aware - shows based on selected tab)
+                        self.messages_group_container,
+                        self.users_group_container,
+                    ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    height=48,
+                    border=ft.border.only(bottom=ft.BorderSide(1, theme_manager.border_color)),
+                    padding=ft.padding.only(left=20, right=10),
+                ),
+                # Tab content container
+                self.tab_content_container,
             ], spacing=0, expand=True),
             padding=theme_manager.padding_lg,
             expand=True
@@ -109,6 +196,12 @@ class TelegramPage(ft.Container):
         # Update page reference in import users handler
         if hasattr(self.handlers, 'import_users_handler'):
             self.handlers.import_users_handler.page = page
+        
+        # Set page reference for filters bar components (for date pickers)
+        if hasattr(self.messages_tab, 'filters_bar'):
+            self.messages_tab.filters_bar.set_page(page)
+        if hasattr(self.users_tab, 'filters_bar'):
+            self.users_tab.filters_bar.set_page(page)
         
         if not hasattr(page, 'overlay') or page.overlay is None:
             page.overlay = []
@@ -178,4 +271,66 @@ class TelegramPage(ft.Container):
         logger = logging.getLogger(__name__)
         logger.debug("_on_import_users called in TelegramPage")
         self.handlers.handle_import_users()
+    
+    def _switch_tab(self, index: int):
+        """Switch to a different tab."""
+        self.selected_tab_index = index
+        # Update tab content
+        if index == 0:
+            self.tab_content_container.content = self.messages_content
+        else:
+            self.tab_content_container.content = self.users_content
+        
+        # Update tab button styles
+        self.messages_tab_btn.style = ft.ButtonStyle(
+            color=theme_manager.primary_color if index == 0 else None
+        )
+        self.users_tab_btn.style = ft.ButtonStyle(
+            color=theme_manager.primary_color if index == 1 else None
+        )
+        
+        # Show/hide group dropdowns based on selected tab
+        self.messages_group_container.visible = index == 0
+        self.users_group_container.visible = index == 1
+        
+        if self.page:
+            self.tab_content_container.update()
+            self.messages_tab_btn.update()
+            self.users_tab_btn.update()
+            self.messages_group_container.update()
+            self.users_group_container.update()
+    
+    # Note: Refresh and export handlers are now called directly from tab components
+    
+    def _on_messages_group_change(self, e):
+        """Handle messages tab group selection change."""
+        if e.control.value and e.control.value != "No groups":
+            group_name = e.control.value
+            group_id = self.group_name_to_id_map.get(group_name)
+            # Update messages tab filters bar
+            if hasattr(self.messages_tab, 'filters_bar') and group_id is not None:
+                self.messages_tab.filters_bar.selected_group = group_id
+                if self.messages_tab.filters_bar.on_group_change:
+                    self.messages_tab.filters_bar.on_group_change(group_id)
+        else:
+            if hasattr(self.messages_tab, 'filters_bar'):
+                self.messages_tab.filters_bar.selected_group = None
+                if self.messages_tab.filters_bar.on_group_change:
+                    self.messages_tab.filters_bar.on_group_change(None)
+    
+    def _on_users_group_change(self, e):
+        """Handle users tab group selection change."""
+        if e.control.value and e.control.value != "No groups":
+            group_name = e.control.value
+            group_id = self.group_name_to_id_map.get(group_name)
+            # Update users tab filters bar
+            if hasattr(self.users_tab, 'filters_bar') and group_id is not None:
+                self.users_tab.filters_bar.selected_group = group_id
+                if self.users_tab.filters_bar.on_group_change:
+                    self.users_tab.filters_bar.on_group_change(group_id)
+        else:
+            if hasattr(self.users_tab, 'filters_bar'):
+                self.users_tab.filters_bar.selected_group = None
+                if self.users_tab.filters_bar.on_group_change:
+                    self.users_tab.filters_bar.on_group_change(None)
 

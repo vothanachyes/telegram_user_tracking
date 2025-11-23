@@ -1,0 +1,70 @@
+{
+  "sync_date": "2025-11-23T08:34:02.976329Z",
+  "tiers": [
+    {
+      "tier_key": "bronze",
+      "name": "Bronze",
+      "price_usd": 0,
+      "price_khr": 0,
+      "max_groups": 1,
+      "max_devices": 1,
+      "max_accounts": 1,
+      "period": 3,
+      "features": [
+        "max_groups",
+        "max_devices"
+      ],
+      "created_at": "2025-11-22T17:56:53.658142Z",
+      "modified_date": "2025-11-23T07:07:22.504973Z"
+    },
+    {
+      "tier_key": "gold",
+      "name": "Gold",
+      "price_usd": 12,
+      "price_khr": 48000,
+      "max_groups": 10,
+      "max_devices": 2,
+      "max_accounts": 3,
+      "period": 30,
+      "features": [
+        "max_groups",
+        "max_devices"
+      ],
+      "created_at": "2025-11-22T17:56:54.021247Z",
+      "modified_date": "2025-11-23T07:07:22.925043Z"
+    },
+    {
+      "tier_key": "premium",
+      "name": "Premium",
+      "price_usd": 25,
+      "price_khr": 100000,
+      "max_groups": -1,
+      "max_devices": 5,
+      "max_accounts": 5,
+      "period": 30,
+      "features": [
+        "unlimited_groups",
+        "max_devices",
+        "priority_support"
+      ],
+      "created_at": "2025-11-22T17:56:54.198497Z",
+      "modified_date": "2025-11-23T07:07:23.136750Z"
+    },
+    {
+      "tier_key": "silver",
+      "name": "Silver",
+      "price_usd": 5,
+      "price_khr": 20000,
+      "max_groups": 3,
+      "max_devices": 1,
+      "max_accounts": 1,
+      "period": 30,
+      "features": [
+        "max_groups",
+        "max_devices"
+      ],
+      "created_at": "2025-11-22T17:56:53.833265Z",
+      "modified_date": "2025-11-23T07:07:22.715622Z"
+    }
+  ]
+}

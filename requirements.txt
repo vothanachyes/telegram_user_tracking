@@ -10,6 +10,7 @@ telethon>=1.34.0
 # Firebase Authentication (using REST API - no Admin SDK needed in desktop app)
 firebase-admin>=6.2.0  # Only needed for deployment scripts and admin interface, not desktop app
 PyJWT>=2.8.0  # For decoding Firebase ID tokens
+google-cloud-firestore>=2.11.0  # For gRPC-based real-time watch streams
 
 # Export Libraries
 xlsxwriter>=3.1.9
@@ -22,6 +23,8 @@ qrcode[pil]>=7.4.2
 python-dotenv>=1.0.0
 cryptography>=41.0.5
 requests>=2.31.0
+beautifulsoup4>=4.14.0
+httpx[http2]>=0.25.0  # For Firestore real-time watch streams
 
 # Platform-specific Authentication
 pywin32>=306; sys_platform == "win32"

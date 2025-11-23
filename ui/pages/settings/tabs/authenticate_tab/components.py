@@ -136,11 +136,20 @@ class AuthenticateTabComponents:
             ft.Divider(),
             theme_manager.create_card(
                 content=ft.Column([
-                    ft.Text(
-                        theme_manager.t("api_app_configuration"),
-                        size=20,
-                        weight=ft.FontWeight.BOLD
-                    ),
+                    ft.Row([
+                        ft.Text(
+                            theme_manager.t("api_app_configuration"),
+                            size=20,
+                            weight=ft.FontWeight.BOLD,
+                            expand=True
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.HELP_OUTLINE,
+                            tooltip=theme_manager.t("api_credentials_instructions") or "How to Get API Credentials",
+                            on_click=self.tab._show_api_instructions,
+                            icon_size=20,
+                        ),
+                    ], spacing=5, tight=True),
                     ft.Divider(),
                     self.tab.api_id_field,
                     self.tab.api_hash_field,
